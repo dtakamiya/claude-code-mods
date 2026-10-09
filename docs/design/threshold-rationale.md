@@ -45,8 +45,8 @@
 - `SessionContextBreakdown`（L10866）: `totalTokens` `maxTokens` `rawMaxTokens` `percentage` `autoCompactThreshold?`（「自動圧縮が走るトークン数。無効なら欠落」）`isAutoCompactEnabled` `mcpTools` `memoryFiles`
 - `ContextMcpTool.isLoaded`（L2211）
 
-## 相談キューに追記すべき項目（本書では open-questions.md を編集していない）
+## 相談キューに追記した項目（open-questions.md に Q-004〜006 として追記済み）
 
-- 提案 Q-004: フック経由 `/ctx` の `totalTokens` が組み込み `/context` と同じ定義かの実測（U-1 の残り）。実行を伴うため要相談。
-- 提案 Q-005: 自動圧縮を無効にして `fallbackPercent` の妥当性を確かめる実験。設定変更を伴うため要相談。
-- 提案 Q-006: `.gitignore` の素の `plugin.json` / `types` の意図確認（prepublish-scan.md 参照）と、コミット履歴の個人メールの扱い（公開判断が出たときに決める）。
+- Q-004: フック経由 `/ctx` の `totalTokens` が組み込み `/context` と同じ定義かの実測（U-1 の残り）。実行を伴うため要相談。
+- Q-005: 自動圧縮を無効にして `fallbackPercent` の妥当性を確かめる実験。設定変更を伴うため要相談。
+- Q-006: `.gitignore` の素の `plugin.json` / `types` の意図確認（prepublish-scan.md 参照）と、コミット履歴の個人メールの扱い（公開判断が出たときに決める）。
