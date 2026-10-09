@@ -1,6 +1,6 @@
 # context-doctor ペイン表示設計（mod-004）
 
-**状態: UI 実装は未着手／目視未確認。** 本書は設計のみ（読み取り専用・コード変更なし）。出所は repo のコードと、Claude Code 2.1.295 同梱の plugin-authoring 型定義（`claude-code.d.ts`）、`reference.md`、`examples/pane.tsx`・`pane-state.d.ts`。型の行番号は 2.1.295 同梱版のもので、バージョンが変わるとずれる。サンプル数値はすべて架空。
+**状態: T1・T2 は PR#9 マージ済み。T3（配線の最小版）は PR で実装済み・目視未確認。T4 以降は未着手。** 本書は設計書（読み取り専用）。出所は repo のコードと、Claude Code 2.1.295 同梱の plugin-authoring 型定義（`claude-code.d.ts`）、`reference.md`、`examples/pane.tsx`・`pane-state.d.ts`。型の行番号は 2.1.295 同梱版のもので、バージョンが変わるとずれる。サンプル数値はすべて架空。
 
 ## 結論
 
@@ -19,7 +19,7 @@
 
 ## 現行 `/ctx` との差分
 
-| 項目 | 現行 `/ctx`（観察: register.ts / analyze.ts） | ペイン案 |
+| 項目 | 現行 `/ctx`（観察: register.tsx / analyze.ts） | ペイン案 |
 |---|---|---|
 | 出力先 | `command.run` の `text`（transcript 1 行、モデルも読む） | ペイン（transcript の外）。`/ctx` の返答は placed 時 1 行 |
 | 更新 | 叩いた時だけ | ターンごとに自動（`session.measure`）+ 開いた時 |
@@ -94,17 +94,19 @@ ctx 62% 124,000/200,000
 ## `$.state` 契約案
 
 ```ts
-// mods/context-doctor/hooks/pane-state.d.ts （案。examples/pane-state.d.ts と同形式）
-import type { Snapshot } from './analyze'
+// mods/context-doctor/types/index.d.ts（plugin.json の "types" で指定）。自己完結で import しない。
+export type PaneViewSnapshot = { /* analyze.ts の Snapshot と同形の再宣言 */ }
+export type PaneView = { v: 1; status: 'empty' | 'ok'; snapshot?: PaneViewSnapshot; measuredAtMs?: number }
 
 declare module 'claude-code' {
   interface PluginState {
-    'context-doctor': {
-      view: { v: 1; status: 'empty' | 'ok'; snapshot?: Snapshot; measuredAtMs?: number }
-    }
+    'context-doctor': { view: PaneView }
   }
 }
 ```
+
+- 契約は `hooks/` でなく `types/index.d.ts` に置き、`plugin.json` の `types` で指定する。契約ファイルは `analyze.ts` を import せず、`PaneViewSnapshot` を `analyze.ts` の `Snapshot` と同形で再宣言する。形を変えるときは両方を直し、`PaneView.v` を上げる。
+- atom 本体（`atom({ plugin: 'context-doctor', key: 'view' } as const, EMPTY_PANE_VIEW)`）は `register.tsx` に置く。`claude plugin validate` の静的走査は、`update` / `read` の参照を同じファイル内のリテラル参照か atom の const としてしか読めないため（別ファイルから import した atom は検証エラーになった）。更新は `update($, paneView, () => view)` の関数形で書く。
 
 - `plugin` はリテラル `'context-doctor'`（`plugin.json` の `name` と一致）、`key` はリテラル `'view'`。`as const` の参照を atom 生成にのみ使う（型ファイルの注記: リテラルでないと `claude plugin validate` で検出される）。
 - atom の初期値は `{ v: 1, status: 'empty' }`。`status: 'empty'` なら描画は「まだ内訳がありません（最初の応答後に開き直してください）」を出す（現行 `register.ts` の文言を再利用）。
@@ -138,13 +140,15 @@ CLAUDE.md の「判定ロジックは純粋関数、register は薄く」に従�
 | ファイル | 役割 | `$` への依存 |
 |---|---|---|
 | `analyze.ts`（既存・**無変更**） | `Snapshot` → `Finding[]`、既存の文字列 `render`（フォールバック A で再利用） | なし |
-| `pane-model.ts`（新規） | `Snapshot` + `Finding[]` + `bodyColumns` + `measuredAtMs` → 描画用の行モデル（`{ kind: 'heading' \| 'bar' \| 'finding' ..., text, ratio? }[]`）。通常／コンパクトの切替、棒グラフ幅の計算、時刻整形を持つ | なし |
-| `pane-state.d.ts`（新規） | `PluginState` の宣言 | 型のみ |
-| `pane-view.tsx`（新規） | 行モデル → `Box` / `Text`（`$.ui.resolve(e)` の戻りを引数で受ける）。ロジックを持たない | 要素表のみ |
+| `pane-model.ts`（既存） | 入力 `{ view, findings, bodyColumns, measuredAtMs? }` → 行モデル `PaneRow[]`。export は `buildPaneRows`。通常／コンパクトの切替、棒の比率、時刻整形を持つ | なし |
+| `types/index.d.ts`（既存） | `PaneView` / `PaneViewSnapshot` と `PluginState` の宣言（`plugin.json` の `types`） | 型のみ |
+| `pane-atom.ts`（既存） | `EMPTY_PANE_VIEW`（初期値）。atom 本体は上記の理由で `register.tsx` | なし |
+| `pane-snapshot.ts`（既存） | `buildSnapshot`（内訳 → Snapshot）、`dropUndefined`、`buildPaneView`（atom に書く値） | なし |
+| `pane-view.tsx`（T3 で最小版） | 行モデル → `Box` / `Text`（`$.ui.resolve(e)` の戻りを引数で受ける）。ロジックを持たない | 要素表のみ |
 | `register.tsx`（`register.ts` から改名） | `session.start`（コマンド登録）、`command.run`、`session.measure`、`ui.render` の配線のみ。Snapshot 組立は既存コードを関数に括り出して共有 | あり |
 | `hooks.json` | `"modules": ["./register.tsx"]` に変更 | - |
 
-- Snapshot の組立（`register.ts` の現行 `b.categories` … をコピーする部分）は `command.run` と `session.measure` の両方で要るので、`register.tsx` 内の小さな関数にまとめる（DRY）。ただし `$` を引数に取る薄い関数に留める。
+- Snapshot の組立は `register.tsx` 内でなく `pane-snapshot.ts` の `buildSnapshot`。`command.run` と `session.measure` の両方がそれを呼ぶ（DRY）。
 - 画面モデルの純粋関数はテストしやすさ優先。JSX は `pane-view.tsx` だけに閉じる。
 
 ## API 名 → 型ファイル内の宣言（確認表）
@@ -202,9 +206,9 @@ CLAUDE.md の「判定ロジックは純粋関数、register は薄く」に従�
 
 | # | タスク | 依存 | 完了条件 |
 |---|---|---|---|
-| T1 | `pane-model.ts` + テスト（RED → GREEN）。`NARROW_BODY_COLUMNS` を名前付き定数に | なし | 通常／コンパクト／empty の各テスト通過 |
-| T2 | `pane-state.d.ts` と atom 定義、Snapshot 組立の共通関数化（既存の挙動不変）。書込前に `undefined` キーを除く処理とそのテストを含む | なし（T1 と並行可） | 既存 `analyze.test.ts` が全通過、tsc 通過 |
-| T3 | `register.ts` → `register.tsx` に改名、`hooks.json` を更新。`command.register` に `argumentHint: 'pane'` を付け（`/ctx pane` を一覧で発見できるように）、`command.run` の `pane` 引数、`session.measure` 更新、`ui.render` 配線 | T1・T2 | フォールバック A のテスト通過 |
+| T1 | **済（PR#9）** `pane-model.ts` + テスト（RED → GREEN）。`NARROW_BODY_COLUMNS` を名前付き定数に | なし | 通常／コンパクト／empty の各テスト通過 |
+| T2 | **済（PR#9）** `types/index.d.ts` と atom 初期値、Snapshot 組立の共通関数化（既存の挙動不変）。書込前に `undefined` キーを除く処理とそのテストを含む | なし（T1 と並行可） | 既存 `analyze.test.ts` が全通過、tsc 通過 |
+| T3 | **実装済（本 PR・目視未確認。`session.measure` 経路はテストキットで発火できず未テスト）** `register.ts` → `register.tsx` に改名、`hooks.json` を更新。`command.register` に `argumentHint: 'pane'` を付け（`/ctx pane` を一覧で発見できるように）、`command.run` の `pane` 引数、`session.measure` 更新、`ui.render` 配線 | T1・T2 | フォールバック A のテスト通過 |
 | T4 | `pane-view.tsx` + `mount` テスト（terminal/desktop） | T1 | 両面でテスト通過 |
 | T5 | `claude plugin validate/test`、tsc、README の「動作確認済みバージョン」更新、feat ブランチ → push → PR（main 直 push 禁止） | T3・T4 | 全通過。PR 説明に「目視未確認」と明記 |
 | T6 | だいすけによる目視確認（fullscreen／通常画面）。結果で `NARROW_BODY_COLUMNS` を調整 | T5 | 目視 OK の記録 |
