@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 
-import { analyze, render } from './analyze'
+import { analyze, render, type Snapshot } from './analyze'
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -15,13 +15,18 @@ export const register: Register = on => {
     const { context } = await $.session.usage({ breakdown: 'summary' })
     const b = context.breakdown
     if (!b) return { text: 'まだ内訳がありません（最初の応答後に再実行してください）。' }
-    const snap = {
+    const snap: Snapshot = {
       percentage: b.percentage,
       totalTokens: b.totalTokens,
       maxTokens: b.maxTokens,
       categories: b.categories,
       mcpTools: b.mcpTools,
       memoryFiles: b.memoryFiles,
+      skills: b.skills,
+      agents: b.agents,
+      slashCommands: b.slashCommands,
+      autoCompactThreshold: b.autoCompactThreshold,
+      isAutoCompactEnabled: b.isAutoCompactEnabled,
     }
     return { text: render(snap, analyze(snap)) }
   })
