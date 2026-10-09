@@ -1,0 +1,6 @@
+.claude-plugin/types/
+mods/*/.claude-plugin/types/
+node_modules/
+data/
+.env*
+.DS_Store

@@ -1,0 +1,7 @@
+{
+  "name": "claude-code-mods",
+  "owner": { "name": "dtakamiya" },
+  "plugins": [
+    { "name": "context-doctor", "source": "./mods/context-doctor", "description": "コンテキストの内訳を分析し、課題点と改善点を提示する" }
+  ]
+}

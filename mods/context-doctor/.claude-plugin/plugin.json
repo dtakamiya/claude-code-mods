@@ -1,0 +1,1 @@
+{ "name": "context-doctor", "version": "0.1.0", "description": "コンテキストの内訳を分析し、課題点と改善点を提示する（読み取り専用）", "author": { "name": "dtakamiya" } }
