@@ -20,7 +20,7 @@ export type BreakdownSource = Pick<
   | 'isAutoCompactEnabled'
 >
 
-/** register.ts が従来インラインで行っていた組立。値は加工せずそのまま渡す（挙動不変）。 */
+/** register が従来インラインで行っていた組立。値は加工せずそのまま渡す（挙動不変）。 */
 export function buildSnapshot(b: BreakdownSource): Snapshot {
   return {
     percentage: b.percentage,
