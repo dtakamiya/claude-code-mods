@@ -8,7 +8,13 @@ Claude Code の **Mods**（関数フック型プラグイン）を作って配�
 |---|---|---|
 | `context-doctor` | コンテキストの内訳を分析し、課題点と改善点を出す（読み取り専用） | `/ctx` |
 
+## 公開範囲（private リポジトリ）
+
+このリポジトリは現在 **private** です。リポジトリへのアクセス権（GitHub 上で閲覧できる権限）がある人だけが取得できます。公開するかどうかは未判断で、判断の経緯は [`docs/design/open-questions.md`](docs/design/open-questions.md) の Q-001 を参照してください。
+
 ## インストール
+
+以下の手順は、リポジトリへのアクセス権があり、GitHub 認証済みの利用者向けです。
 
 ```
 /plugin install context-doctor --marketplace dtakamiya/claude-code-mods
