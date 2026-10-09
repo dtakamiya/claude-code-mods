@@ -23,3 +23,4 @@
 - `.claude-plugin/types/` はコミットしない（エンジンが毎回生成）
 - Claude Code のバージョンが変わったら validate/test を再実行し、README の「動作確認済みバージョン」を更新
 - feat/ ブランチ → push → PR まで行う。main 直 push 禁止
+- mod を変更する PR では `.claude-plugin/plugin.json` の `version` を上げる（機能追加=minor / 修正=patch）。同じ version だとインストール済み環境が更新されない
