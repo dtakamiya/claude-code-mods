@@ -54,9 +54,9 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const view = await read($, paneView)
-    const { bodyColumns } = e.props
+    const { bodyColumns, placement, scroll } = e.props
     const findings = view.snapshot ? analyze(view.snapshot) : []
-    const rows = buildPaneRows({ view, findings, bodyColumns })
-    return <PaneBody ui={$.ui.resolve(e)} rows={rows} bodyColumns={bodyColumns} />
+    const rows = buildPaneRows({ view, findings, bodyColumns, placement, bodyRows: scroll.bodyRows })
+    return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }

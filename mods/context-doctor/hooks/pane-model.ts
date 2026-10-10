@@ -1,96 +1,110 @@
-// 純粋関数: ペインの値 + 所見 + 幅 → 描画用の行モデル。`$` にも JSX にも依存しない。
-import { fmt, type Finding, type Level, type Snapshot } from './analyze'
+// 純粋関数: ペインの値 + 所見 + 幅・高さ → 描画用の行モデル。`$` にも JSX にも依存しない。
+import type { Finding, Snapshot } from './analyze'
+import type { PaneRow } from './pane-row'
+import { breakdownCount, breakdownRows, findingRows, headerRows, pickFindings, referenceRows, type Tier } from './pane-sections'
 import type { PaneView } from '../types'
 
-/** 仮置き: これ未満の本文幅ではコンパクト表示にする。目視確認の結果で調整する。 */
+export type { PaneRow } from './pane-row'
+
+/** 仮置き: これ未満の本文幅では狭幅表示にする。目視確認の結果で調整する。 */
 export const NARROW_BODY_COLUMNS = 40
+/** 仮置き: この桁数以上で所見を 1 行に連結する。 */
+export const WIDE_BODY_COLUMNS = 68
 
 const SUPPORTED_VIEW_VERSION = 1
-const TOP_N = 3
-const LEVEL_LABEL: Record<Level, string> = { high: '要対応', mid: '注意', info: '参考' }
+const MAX_FINDINGS = 3
+const MAX_FINDINGS_NARROW = 2
 const EMPTY_MESSAGE = 'まだ内訳がありません（最初の応答後に開き直してください）'
 const pad2 = (n: number) => String(n).padStart(2, '0')
-
-export type PaneRow = {
-  kind: 'message' | 'heading' | 'usage' | 'bar' | 'item' | 'finding' | 'note'
-  text: string
-  /** 0〜1。bar / item の長さ。 */
-  ratio?: number
-  /** finding の行頭（所見の最初の行）なら重大度。 */
-  level?: Level
-}
 
 export type PaneModelInput = {
   view: PaneView
   findings: readonly Finding[]
   bodyColumns: number
+  /** `dock`（fullscreen の横置き）のときだけ「参考」を出す。 */
+  placement?: 'dock' | 'inline'
+  /** 本体が使える行数。超えるときは下位の情報から省く。無ければ省かない。 */
+  bodyRows?: number
   /** 通常は view.measuredAtMs。無ければ測定時刻は出さない。 */
   measuredAtMs?: number
 }
 
-const ratioOf = (n: number, total: number) => (total > 0 ? Math.min(1, Math.max(0, n / total)) : 0)
-const clock = (ms: number) => {
-  const d = new Date(ms)
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-}
-const sumTokens = (xs: readonly { tokens: number }[]) => xs.reduce((a, c) => a + c.tokens, 0)
-
-function topUsed(s: Snapshot) {
-  return [...s.categories].filter(c => c.kind === 'used').sort((a, b) => b.tokens - a.tokens).slice(0, TOP_N)
-}
-
-function remainingText(s: Snapshot, compact: boolean): string | undefined {
-  if (!s.isAutoCompactEnabled || s.autoCompactThreshold === undefined) return undefined
-  const left = s.autoCompactThreshold - s.totalTokens
-  if (left <= 0) return `圧縮点を ${fmt(-left)} 超過`
-  return compact ? `圧縮点まで ${fmt(left)}` : `圧縮点 ${fmt(s.autoCompactThreshold)} まで ${fmt(left)}`
+/** 何を出すか。高さが足りないとき、`RELAXATIONS` の順に 1 つずつ緩める。 */
+type Options = {
+  reference: boolean
+  deferred: boolean
+  footer: boolean
+  legend: boolean
+  findingCount: number
+  /** 内訳の表示件数（超えた分は畳む）。 */
+  breakdownVisible: number
 }
 
-function findingRows(f: Finding): PaneRow[] {
-  const head: PaneRow = { kind: 'finding', level: f.level, text: `[${LEVEL_LABEL[f.level]}] 観察: ${f.observation}` }
-  const rest: PaneRow[] = [
-    ...(f.hypothesis ? [{ kind: 'finding' as const, text: `仮説: ${f.hypothesis}` }] : []),
-    ...(f.suggestion ? [{ kind: 'finding' as const, text: `→ ${f.suggestion}` }] : []),
-  ]
-  return [head, ...rest]
+const RELAXATIONS: readonly ((o: Options) => Options)[] = [
+  o => ({ ...o, reference: false }),
+  o => ({ ...o, deferred: false }),
+  o => ({ ...o, footer: false }),
+  o => ({ ...o, legend: false }),
+  o => ({ ...o, findingCount: Math.min(o.findingCount, 2) }),
+  o => ({ ...o, findingCount: 1 }),
+]
+
+const tierOf = (bodyColumns: number): Tier =>
+  bodyColumns < NARROW_BODY_COLUMNS ? 'narrow' : bodyColumns >= WIDE_BODY_COLUMNS ? 'wide' : 'regular'
+
+const clock = (ms: number) => `${pad2(new Date(ms).getHours())}:${pad2(new Date(ms).getMinutes())}`
+
+function footerRow(tier: Tier, at?: number): PaneRow {
+  const time = at === undefined ? '' : clock(at)
+  const text = tier === 'narrow' ? `${time} 推定値` : `${at === undefined ? '' : `測定 ${time} ・`}推定値 ・しきい値は仮置き`
+  return { kind: 'note', text: text.trim() }
 }
 
-function regularRows(s: Snapshot, findings: readonly Finding[], at?: number): PaneRow[] {
-  const remaining = remainingText(s, false)
-  const used = topUsed(s)
-  const kindSum = (k: 'free' | 'buffer') => sumTokens(s.categories.filter(c => c.kind === k))
+const BLANK: PaneRow = { kind: 'blank', text: '' }
+
+function compose(s: Snapshot, findings: readonly Finding[], tier: Tier, input: PaneModelInput, o: Options, at?: number): PaneRow[] {
+  const shown = pickFindings(findings, o.findingCount)
+  const reference = o.reference && input.placement === 'dock' ? referenceRows(findings) : []
   return [
-    { kind: 'usage', text: `コンテキスト ${s.percentage}%   ${fmt(s.totalTokens)} / ${fmt(s.maxTokens)} トークン（推定）` },
-    { kind: 'bar', ratio: ratioOf(s.totalTokens, s.maxTokens), text: remaining ?? '' },
-    { kind: 'heading', text: '内訳（使用上位）' },
-    ...used.map((c): PaneRow => ({ kind: 'item', text: `${c.name} ${fmt(c.tokens)}`, ratio: ratioOf(c.tokens, s.maxTokens) })),
-    { kind: 'note', text: `空き ${fmt(kindSum('free'))} ／ 圧縮バッファ ${fmt(kindSum('buffer'))}` },
-    { kind: 'heading', text: '所見' },
-    ...(findings.length === 0 ? [{ kind: 'message' as const, text: '所見なし。' }] : findings.flatMap(findingRows)),
-    { kind: 'note', text: `${at === undefined ? '' : `測定 ${clock(at)}`}（推定値）  ※しきい値は仮置き`.trim() },
+    ...headerRows(s, tier, input.bodyColumns, o.legend),
+    BLANK,
+    { kind: 'heading', text: tier === 'narrow' ? '所見' : '所見（今すぐ効く順）' },
+    ...findingRows(shown, tier),
+    BLANK,
+    ...breakdownRows(s, tier, o.breakdownVisible, o.deferred),
+    ...(reference.length > 0 ? [BLANK, ...reference] : []),
+    ...(o.footer ? [BLANK, footerRow(tier, at)] : []),
   ]
 }
 
-function compactRows(s: Snapshot, findings: readonly Finding[], at?: number): PaneRow[] {
-  const remaining = remainingText(s, true)
-  const used = topUsed(s)
-  return [
-    { kind: 'usage', text: `ctx ${s.percentage}% ${fmt(s.totalTokens)}/${fmt(s.maxTokens)}` },
-    ...(remaining ? [{ kind: 'note' as const, text: remaining }] : []),
-    ...used.map((c, i): PaneRow => ({ kind: 'item', text: `${i === 0 ? '上位: ' : '      '}${c.name} ${fmt(c.tokens)}` })),
-    ...findings.map((f): PaneRow => ({ kind: 'finding', level: f.level, text: `[${LEVEL_LABEL[f.level]}] ${f.observation}` })),
-    { kind: 'note', text: `${at === undefined ? '' : `測定 ${clock(at)} `}推定値`.trim() },
-  ]
-}
-
-/** 空・版違い・Snapshot なしは「内訳なし」の1行。それ以外は幅に応じて通常／コンパクト。 */
+/** 空・版違い・Snapshot なしは「内訳なし」の1行。それ以外は幅に応じた 3 段、高さに応じて省略。 */
 export function buildPaneRows(input: PaneModelInput): readonly PaneRow[] {
-  const { view, findings, bodyColumns } = input
+  const { view, findings, bodyColumns, bodyRows } = input
   const at = input.measuredAtMs ?? view.measuredAtMs
   if (view.v !== SUPPORTED_VIEW_VERSION || view.status !== 'ok' || !view.snapshot) {
     return [{ kind: 'message', text: EMPTY_MESSAGE }]
   }
-  return bodyColumns < NARROW_BODY_COLUMNS
-    ? compactRows(view.snapshot, findings, at)
-    : regularRows(view.snapshot, findings, at)
+  const s: Snapshot = view.snapshot
+  const tier = tierOf(bodyColumns)
+  const total = breakdownCount(s)
+  const initial: Options = {
+    reference: true,
+    deferred: true,
+    footer: true,
+    legend: true,
+    findingCount: tier === 'narrow' ? MAX_FINDINGS_NARROW : MAX_FINDINGS,
+    breakdownVisible: total,
+  }
+  const build = (o: Options) => compose(s, findings, tier, input, o, at)
+  if (bodyRows === undefined) return build(initial)
+
+  const relaxed = RELAXATIONS.reduce(
+    (o, relax) => (build(o).length > bodyRows ? relax(o) : o),
+    initial,
+  )
+  // 内訳は、収まるまで下位を 1 件ずつ畳む（畳む行が 1 行増えるので、2 件以上減らせるときだけ）。
+  const fitted = Array.from({ length: Math.max(0, total - 1) }, (_, i) => total - 2 - i)
+    .filter(v => v >= 1)
+    .reduce((o, v) => (build(o).length > bodyRows ? { ...o, breakdownVisible: v } : o), relaxed)
+  return build(fitted)
 }
