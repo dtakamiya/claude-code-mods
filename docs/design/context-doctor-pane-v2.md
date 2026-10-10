@@ -1,6 +1,6 @@
 # context-doctor ペイン再設計 v2（mod-008・設計書＋ASCII モック）
 
-**状態: モック承認待ち。実装は承認後。** 本書は設計とモックのみで、コードは書いていない。出所は repo のコード（`mods/context-doctor/hooks/`）、既存設計 3 本、Claude Code 2.1.296 同梱 `plugin-authoring/types/claude-code.d.ts`、参照 3 プロジェクト（下記）。モックの数値はすべて架空。**実画面での見た目はすべて目視未確認**（無人セッションでは `claude --plugin-dir` を操作できない）。
+**状態: モック承認済み（①並び=バー→所見→内訳 ②内訳に空き行を含める ③通常画面 22 行を許容）。実装は `feat/mod-008-context-doctor-pane-v2` の PR を参照。** 本書は設計とモックで、実装との差分は PR の説明に書く。出所は repo のコード（`mods/context-doctor/hooks/`）、既存設計 3 本、Claude Code 2.1.296 同梱 `plugin-authoring/types/claude-code.d.ts`、参照 3 プロジェクト（下記）。モックの数値はすべて架空。**実画面での見た目はすべて目視未確認**（無人セッションでは `claude --plugin-dir` を操作できない）。
 
 ## 結論
 

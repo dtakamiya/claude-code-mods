@@ -64,12 +64,12 @@ const BLANK: PaneRow = { kind: 'blank', text: '' }
 
 function compose(s: Snapshot, findings: readonly Finding[], tier: Tier, input: PaneModelInput, o: Options, at?: number): PaneRow[] {
   const shown = pickFindings(findings, o.findingCount)
-  const reference = o.reference && input.placement === 'dock' ? referenceRows(findings) : []
+  const reference = o.reference && input.placement === 'dock' ? referenceRows(findings, input.bodyColumns) : []
   return [
     ...headerRows(s, tier, input.bodyColumns, o.legend),
     BLANK,
     { kind: 'heading', text: tier === 'narrow' ? '所見' : '所見（今すぐ効く順）' },
-    ...findingRows(shown, tier),
+    ...findingRows(shown, tier, input.bodyColumns),
     BLANK,
     ...breakdownRows(s, tier, o.breakdownVisible, o.deferred),
     ...(reference.length > 0 ? [BLANK, ...reference] : []),

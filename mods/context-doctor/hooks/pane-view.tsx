@@ -3,7 +3,7 @@ import type { Elements } from 'claude-code'
 
 import type { Level } from './analyze'
 import type { BarKind, Stage } from './pane-bar'
-import type { PaneRow } from './pane-row'
+import { ACTION_INDENT, ACTION_PREFIX, FINDING_GAP, type PaneRow } from './pane-row'
 
 type Ui = Pick<Elements['terminal'], 'Box' | 'Text'>
 
@@ -12,8 +12,6 @@ const LEVEL_COLOR: Record<Level, 'error' | 'warning' | undefined> = { high: 'err
 const BAR_GLYPH: Record<BarKind, string> = { used: '█', margin: '▒', compact: '┃', buffer: '░', free: '░' }
 const ITEM_GLYPH = { used: '█', free: '▒', buffer: '░' } as const
 const ITEM_COLOR = { used: undefined, free: 'subtle', buffer: 'inactive' } as const
-const ACTION_PREFIX = '→ '
-const ACTION_INDENT = '  '
 
 export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
   const { Box, Text } = ui
@@ -56,7 +54,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
           <Box flexDirection="row">
             <Text bold color={LEVEL_COLOR[row.level ?? 'info']}>{row.label}</Text>
             <Text>{` ${row.text}`}</Text>
-            {row.tail ? <Text color="suggestion">{`  ${ACTION_PREFIX}${row.tail}`}</Text> : undefined}
+            {row.tail ? <Text color="suggestion">{`${FINDING_GAP}${ACTION_PREFIX}${row.tail}`}</Text> : undefined}
           </Box>
         )
       case 'action':
