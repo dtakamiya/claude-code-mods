@@ -67,3 +67,49 @@ test('内訳が無い間の Pane は「まだ内訳がありません」を出�
     await ui.unmount()
   }
 })
+
+// 配線: placement と scroll.bodyRows が行モデルまで届く。
+const listedBreakdown = {
+  ...breakdown,
+  skills: { totalSkills: 40, includedSkills: 40, tokens: 5_700 },
+} as unknown as BreakdownSource
+const listedUsage = { context: { breakdown: listedBreakdown } } as unknown as SessionUsage
+
+const mountPane = async ($: Engine, placement: 'dock' | 'inline', bodyRows: number) =>
+  $.ui.mount({
+    plugin: 'context-doctor',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'context-doctor',
+    props: { ...PANE_PROPS, bodyColumns: 72, placement, scroll: { offset: 0, bodyRows } },
+  } as never)
+
+test('Pane: placement=dock で余白があれば「参考」と脚注を出す', async ($, on) => {
+  on('session.usage', () => ({ value: listedUsage }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  await runCtx($, 'pane')
+  const ui = await mountPane($, 'dock', 40)
+  expect(await ui.find({ type: 'Text', text: /スキル一覧/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /測定 / })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Pane: placement=inline では「参考」を出さない', async ($, on) => {
+  on('session.usage', () => ({ value: listedUsage }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  await runCtx($, 'pane')
+  const ui = await mountPane($, 'inline', 40)
+  expect(await ui.find({ type: 'Text', text: /スキル一覧/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Pane: bodyRows が少ないと脚注・参考を省き、使用率は残す', async ($, on) => {
+  on('session.usage', () => ({ value: listedUsage }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  await runCtx($, 'pane')
+  const ui = await mountPane($, 'dock', 8)
+  expect(await ui.find({ type: 'Text', text: /62%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /測定 / })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /スキル一覧/ })).toBeUndefined()
+  await ui.unmount()
+})

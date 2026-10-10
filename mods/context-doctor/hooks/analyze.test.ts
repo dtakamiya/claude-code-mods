@@ -153,3 +153,21 @@ test('fmt: 桁区切り', () => {
   expect(fmt(1234567)).toBe('1,234,567')
   expect(fmt(12)).toBe('12')
 })
+
+test('ペイン用の headline / action / tokens: メモリ・MCP・圧縮点', () => {
+  const mem = analyze({ ...base, memoryFiles: [{ path: '/x/M.md', type: 'User', tokens: 21_400 }] })[0]
+  expect(mem?.headline).toBe('メモリ 21,400（11%）')
+  expect(mem?.shortHeadline).toBe('メモリ 21,400 (11%)')
+  expect(mem?.action).toBe('長文を参照ファイルへ切り出す')
+  expect(mem?.tokens).toBe(21_400)
+
+  const mcp = analyze({ ...base, mcpTools: [{ serverName: 'github', tokens: 12_000, isLoaded: true }, { serverName: 'b', tokens: 8_500, isLoaded: true }] })[0]
+  expect(mcp?.headline).toBe('MCP 20,500（10%）上位 github 12,000')
+  expect(mcp?.shortAction).toBe('/mcp で要否確認')
+  expect(mcp?.tokens).toBe(20_500)
+
+  const over = analyze({ ...base, totalTokens: 170_000, percentage: 85 })[0]
+  expect(over?.headline).toBe('圧縮点を 10,000 超過')
+  expect(over?.action).toContain('/compact')
+  expect(over?.tokens).toBeUndefined()
+})

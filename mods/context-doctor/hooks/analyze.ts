@@ -17,7 +17,20 @@ export type Snapshot = {
   isAutoCompactEnabled: boolean
 }
 export type Level = 'high' | 'mid' | 'info'
-export type Finding = { level: Level; observation: string; hypothesis?: string; suggestion?: string }
+export type Finding = {
+  level: Level
+  observation: string
+  hypothesis?: string
+  suggestion?: string
+  /** ペイン用の 1 行見出し（観察できる数値のみ）。 */
+  headline?: string
+  shortHeadline?: string
+  /** ペイン用の 1 行アクション。 */
+  action?: string
+  shortAction?: string
+  /** 回収できる見込みのトークン（並べ替え用）。 */
+  tokens?: number
+}
 
 // しきい値はすべて仮置き（実測による裏付け待ち: docs/design/open-questions.md Q-002）。
 export const THRESHOLDS = {
@@ -34,6 +47,8 @@ export const THRESHOLDS = {
 } as const
 
 const TOP_N = 3
+const COMPACT_ACTION = '/compact で要約（区切りなら /clear）'
+const COMPACT_ACTION_SHORT = '/compact で要約'
 const LEVEL_ORDER: Record<Level, number> = { high: 0, mid: 1, info: 2 }
 const LEVEL_LABEL: Record<Level, string> = { high: '要対応', mid: '注意', info: '参考' }
 
@@ -61,6 +76,10 @@ function compactionFinding(s: Snapshot): Finding | undefined {
         observation: `使用量が自動圧縮の基準 ${fmt(s.autoCompactThreshold)} トークンを ${fmt(-remaining)} 超えている`,
         hypothesis: '基準を超えた状態のため、近く自動圧縮が走るか、すでに走りきれていない可能性がある',
         suggestion: '/compact で先に要約するのが第一候補。会話を捨てて良い区切りなら /clear も可（履歴は失われる）',
+        headline: `圧縮点を ${fmt(-remaining)} 超過`,
+        shortHeadline: `圧縮点を ${fmt(-remaining)} 超過`,
+        action: COMPACT_ACTION,
+        shortAction: COMPACT_ACTION_SHORT,
       }
     }
     if (s.maxTokens > 0 && remaining <= s.maxTokens * THRESHOLDS.nearCompactShare) {
@@ -68,6 +87,10 @@ function compactionFinding(s: Snapshot): Finding | undefined {
         level: 'high',
         observation: `自動圧縮の基準まで残り ${fmt(remaining)} トークン（窓の ${pct(remaining, s.maxTokens)}）`,
         suggestion: '/compact を第一候補に。作業の区切りなら /clear も可（履歴は失われる）。長い出力を返すコマンドは避ける',
+        headline: `圧縮点まで残り ${fmt(remaining)}（窓の ${pct(remaining, s.maxTokens)}）`,
+        shortHeadline: `圧縮点まで ${fmt(remaining)}`,
+        action: COMPACT_ACTION,
+        shortAction: COMPACT_ACTION_SHORT,
       }
     }
     return undefined
@@ -78,6 +101,10 @@ function compactionFinding(s: Snapshot): Finding | undefined {
       observation: `窓の ${s.percentage}% を使用中。自動圧縮は無効`,
       hypothesis: '自動では圧縮されないため、窓を使い切る前に手動対応が必要になる可能性がある',
       suggestion: '/compact を第一候補に。作業の区切りなら /clear も可（履歴は失われる）',
+      headline: `窓の ${s.percentage}% を使用・自動圧縮は無効`,
+      shortHeadline: `${s.percentage}% 使用・自動圧縮なし`,
+      action: COMPACT_ACTION,
+      shortAction: COMPACT_ACTION_SHORT,
     }
   }
   return undefined
@@ -88,12 +115,19 @@ function mcpFindings(s: Snapshot): Finding[] {
   const unloaded = s.mcpTools.filter(t => !t.isLoaded)
   const out: Finding[] = []
   const total = sum(loaded.map(t => t.tokens))
+  const top = topBy(loaded, t => t.serverName, t => t.tokens)[0]
+  const topMcp = top ? `${top[0]} ${fmt(top[1])}` : ''
   if (total > 0 && (share(total, s.maxTokens) >= THRESHOLDS.mcpShare || total >= THRESHOLDS.mcpAbsolute)) {
     out.push({
       level: 'mid',
       observation: `読込済み MCP ツール定義が ${fmt(total)} トークン（窓の ${pct(total, s.maxTokens)}）。上位サーバー: ${listTop(topBy(loaded, t => t.serverName, t => t.tokens))}`,
       hypothesis: '使っていないサーバーが含まれていれば、無効化で窓を空けられる可能性がある',
       suggestion: '/mcp で上位サーバーの要否を確認し、不要なものを無効化する',
+      headline: `MCP ${fmt(total)}（${pct(total, s.maxTokens)}）上位 ${topMcp}`,
+      shortHeadline: `MCP ${fmt(total)} (${pct(total, s.maxTokens)})`,
+      action: '/mcp で上位サーバーの要否を確認',
+      shortAction: '/mcp で要否確認',
+      tokens: total,
     })
   }
   const unloadedTotal = sum(unloaded.map(t => t.tokens))
@@ -117,6 +151,11 @@ function memoryFinding(s: Snapshot): Finding | undefined {
     observation: `メモリファイルが ${fmt(total)} トークン（窓の ${pct(total, s.maxTokens)}）。上位: ${list}`,
     hypothesis: '常時読み込みが長いほど、毎ターン窓を占有している可能性がある',
     suggestion: '長文は参照ファイルへ切り出し、常時読み込みを短くする',
+    headline: `メモリ ${fmt(total)}（${pct(total, s.maxTokens)}）`,
+    shortHeadline: `メモリ ${fmt(total)} (${pct(total, s.maxTokens)})`,
+    action: '長文を参照ファイルへ切り出す',
+    shortAction: '長文を切り出す',
+    tokens: total,
   }
 }
 
