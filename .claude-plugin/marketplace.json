@@ -2,6 +2,7 @@
   "name": "claude-code-mods",
   "owner": { "name": "dtakamiya" },
   "plugins": [
-    { "name": "context-doctor", "source": "./mods/context-doctor", "description": "コンテキストの内訳を分析し、課題点と改善点を提示する" }
+    { "name": "context-doctor", "source": "./mods/context-doctor", "description": "コンテキストの内訳を分析し、課題点と改善点を提示する" },
+    { "name": "session-recap", "source": "./mods/session-recap", "description": "ツール別の呼び出し回数とエラー件数を一覧にする" }
   ]
 }

@@ -1,0 +1,1 @@
+{ "name": "session-recap", "version": "0.1.0", "description": "ツール別の呼び出し回数とエラー件数を一覧にする（読み取り専用）", "author": { "name": "dtakamiya" } }
