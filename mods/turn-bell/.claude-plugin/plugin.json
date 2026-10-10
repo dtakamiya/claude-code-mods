@@ -1,0 +1,1 @@
+{ "name": "turn-bell", "version": "0.1.0", "description": "閾値以上かかったターンの完了を、所要時間付きのトーストで知らせる（読み取り専用・音なし）", "author": { "name": "dtakamiya" } }
