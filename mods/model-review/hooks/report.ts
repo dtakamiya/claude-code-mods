@@ -5,6 +5,7 @@ import { formatInt, formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
+import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
 import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
@@ -18,13 +19,6 @@ import {
   type Concern,
   type ModelGroup,
 } from './analyze'
-
-const CONCERN_TITLE: Readonly<Record<Concern['kind'], string>> = {
-  overspec: '過剰の可能性',
-  underspec: '不足の可能性',
-  delegation: '指揮者モデル運用の確認',
-  switch: 'モデル・effort の切替',
-}
 
 /** 指摘の金額の前に付ける語。金額の意味が種類ごとに違う。 */
 export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | null>> = {
@@ -80,10 +74,10 @@ function amountSuffix(concern: Concern): string {
 }
 
 function concernLines(concerns: readonly Concern[]): string[] {
-  if (concerns.length === 0) return ['指摘はありません。']
+  if (concerns.length === 0) return [`  ${NO_CONCERNS_TEXT}`]
   return concerns.flatMap(concern => [
-    `【${CONCERN_TITLE[concern.kind]}】 ${concern.count} 件${amountSuffix(concern)}`,
-    ...concern.examples.map(example => `  ・${example}`),
+    `  【${CONCERN_TEXT[concern.kind].label}】 ${CONCERN_TEXT[concern.kind].summary} · ${concern.count} 件${amountSuffix(concern)}`,
+    ...concern.examples.map(example => `    ・${example}`),
   ])
 }
 
@@ -103,7 +97,7 @@ function loopLines(records: readonly TurnRecord[]): string[] {
   const summaries = summarizeLoops(records)
   if (summaries.length < 2) return []
   return [
-    '■ ループ別（キャッシュ効率）',
+    `■ ${HEADING.loops}`,
     ...summaries.map(summary => `  ${loopLabel(summary.kind)}  ${describeLoop(summary)}`),
     ...(subagentHitRateLow(summaries) ? [`  ${SUBAGENT_CACHE_NOTE}`] : []),
     '',
@@ -113,7 +107,7 @@ function loopLines(records: readonly TurnRecord[]): string[] {
 function whatIfLines(records: readonly TurnRecord[]): string[] {
   const options = estimateSwitchOptions(records)
   if (options.length === 0) return []
-  return ['■ いま切り替えたら（目安）', ...options.map(option => `  ${describeOption(option)}`), `  ${WHATIF_NOTE}`, '']
+  return [`■ ${HEADING.whatIf}`, ...options.map(option => `  ${describeOption(option)}`), `  ${WHATIF_NOTE}`, '']
 }
 
 const CRITERIA_LINES = [
@@ -129,22 +123,22 @@ export function buildReportLines(review: ReviewState): string[] {
   return [
     `対象: ${records.length} ターン（サブエージェント ${subagentCount} 件）。Mod 読み込み前のターンは含みません。`,
     '',
-    '■ モデル × effort 別',
+    `■ ${HEADING.concerns}（ヒューリスティック）`,
+    ...concernLines(findConcerns(records)),
+    '',
+    `■ ${HEADING.groups}`,
     ...groupByModelEffort(records).map(groupLine),
     '',
-    '■ 高コストターン',
+    `■ ${HEADING.topTurns}`,
     ...topTurnLines(records),
     '',
     ...loopLines(records),
     ...whatIfLines(records),
-    '■ コスト',
+    `■ ${HEADING.cost}`,
     ...costLines(review, records),
     ...advisorLines(records),
     ...buildNotes(review),
     ALWAYS_NOTE,
-    '',
-    '■ 妥当性（参考・ヒューリスティック）',
-    ...concernLines(findConcerns(records)),
     '',
     ...CRITERIA_LINES,
   ]
