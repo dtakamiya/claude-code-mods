@@ -29,6 +29,8 @@ export type TokenUsageLike = {
 export const PRICE_TABLE_FETCHED_AT = '2026-10-15'
 /** 「Haiku なら」の差額を出すときの基準モデル。 */
 export const HAIKU_REFERENCE_MODEL = 'claude-haiku-5-5'
+/** 切替の見積りで Opus 側の候補にするモデル。 */
+export const OPUS_REFERENCE_MODEL = 'claude-opus-5-5'
 /** Opus 系の軽作業で「Sonnet なら」の差額を出すときの基準モデル。 */
 export const SONNET_REFERENCE_MODEL = 'claude-sonnet-5-5'
 

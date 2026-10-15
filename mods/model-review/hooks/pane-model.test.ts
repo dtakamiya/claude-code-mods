@@ -287,3 +287,16 @@ test('単価不明の割合がちょうど 3 割なら単価表の注記を出�
   expect(atLimit.some(text => text.includes('単価表が古い可能性'))).toBe(true)
   expect(below.some(text => text.includes('単価表が古い可能性'))).toBe(false)
 })
+
+test('切替の見積りは、基準にできるターンがあるときだけ見出しつきで出す', () => {
+  // Arrange
+  const withBase = rowsOf([turn({ firstStepCacheWrite: 100_000, firstStepPromptTokens: 600_000 })])
+  const withoutBase = rowsOf([turn({})])
+
+  // Act
+  const headings = (rows: PaneRow[]) => rows.filter(row => row.kind === 'heading').map(row => (row as { text: string }).text)
+
+  // Assert
+  expect(headings(withBase)).toContain('いま切り替えたら（目安）')
+  expect(headings(withoutBase)).not.toContain('いま切り替えたら（目安）')
+})

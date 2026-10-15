@@ -4,6 +4,7 @@ import { cacheHitRate } from './cache'
 import { formatInt, formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
+import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
@@ -97,6 +98,12 @@ function advisorLines(records: readonly TurnRecord[]): string[] {
   return calls === 0 ? [] : [`advisor ${calls} 回（費用が usage に載るかは未確認。金額には含めていません）`]
 }
 
+function whatIfLines(records: readonly TurnRecord[]): string[] {
+  const options = estimateSwitchOptions(records)
+  if (options.length === 0) return []
+  return ['■ いま切り替えたら（目安）', ...options.map(option => `  ${describeOption(option)}`), `  ${WHATIF_NOTE}`, '']
+}
+
 const CRITERIA_LINES = [
   `判定基準（参考）: 軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集系なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下。重い = ツール ${HEAVY_TOOL_CALLS} 回以上、または長時間・エラー。`,
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
@@ -116,6 +123,7 @@ export function buildReportLines(review: ReviewState): string[] {
     '■ 高コストターン',
     ...topTurnLines(records),
     '',
+    ...whatIfLines(records),
     '■ コスト',
     ...costLines(review, records),
     ...advisorLines(records),

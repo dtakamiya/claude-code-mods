@@ -1,1 +1,1 @@
-{ "name": "model-review", "version": "0.6.1", "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）", "author": { "name": "dtakamiya" }, "types": "./types/index.d.ts" }
+{ "name": "model-review", "version": "0.7.0", "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）", "author": { "name": "dtakamiya" }, "types": "./types/index.d.ts" }
