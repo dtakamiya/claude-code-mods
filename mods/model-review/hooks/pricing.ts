@@ -27,6 +27,8 @@ export type TokenUsageLike = {
 
 /** 単価表を取得した日。ペインの注記で共用する。単価を直したらここも更新する。 */
 export const PRICE_TABLE_FETCHED_AT = '2026-10-15'
+/** 単価表の取得日からこの日数を超えたら、価格表の改定を確認するよう注記する（仮置き）。 */
+export const PRICE_TABLE_STALE_DAYS = 60
 /** 「Haiku なら」の差額を出すときの基準モデル。 */
 export const HAIKU_REFERENCE_MODEL = 'claude-haiku-5-5'
 /** 切替の見積りで Opus 側の候補にするモデル。 */
