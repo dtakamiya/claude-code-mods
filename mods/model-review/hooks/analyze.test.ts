@@ -12,6 +12,7 @@ import {
   MIN_OVERSPEC_SAVINGS_USD,
   UNDERSPEC_ERROR_STREAK,
   RANK_HAIKU,
+  estimateRange,
   RANK_OPUS,
   RANK_SONNET,
 } from './analyze'
@@ -317,4 +318,19 @@ test('Opus の軽作業には Sonnet 換算の差額も出し、Sonnet・古い�
   expect(lines[0]).toContain('Sonnet なら約 $0.2500 減 · Haiku なら約 $0.4800 減（上限）')
   expect(lines[1]).not.toContain('Sonnet なら')
   expect(lines[2]).not.toContain('Sonnet なら')
+})
+
+test('推定の幅は、上限のある記録は上限で、古い記録・単価不明は下限のまま・除外で足す', () => {
+  // Arrange
+  const records = [
+    turn({ turnId: 'a', costUsd: 1, costUpperUsd: 1.6 }),
+    turn({ turnId: 'b', costUsd: 2 }),
+    turn({ turnId: 'c', costUsd: null, costUpperUsd: null }),
+  ]
+
+  // Act
+  const range = estimateRange(records)
+
+  // Assert
+  expect(range).toEqual({ lowUsd: 3, highUsd: 3.6 })
 })

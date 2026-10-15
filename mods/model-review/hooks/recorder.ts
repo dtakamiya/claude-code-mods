@@ -15,6 +15,8 @@ export type LoopDraft = {
   readonly stepCount: number
   /** 単価が分かっている応答の推定コストの合計。 */
   readonly pricedCostUsd: number
+  /** 書込を 1 時間単価で計算した推定コストの合計（上限側）。 */
+  readonly pricedUpperCostUsd: number
   /** 単価不明のモデルで応答した step があるか。 */
   readonly hasUnpricedStep: boolean
   /** 同じ応答を Haiku 単価で計算した推定コストの合計（応答ごとに単価段を判定）。 */
@@ -69,6 +71,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   effort: null,
   stepCount: 0,
   pricedCostUsd: 0,
+  pricedUpperCostUsd: 0,
   hasUnpricedStep: false,
   haikuPricedCostUsd: 0,
   sonnetPricedCostUsd: 0,
@@ -100,6 +103,7 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
   const prev = draftOf(drafts, step.agentId, step.turnId)
   const usage = step.usage ?? null
   const priced = usage ? priceUsage(usage) : null
+  const pricedUpper = usage ? priceUsage(usage, '1h') : null
   const pricedAsHaiku = usage ? priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL }) : null
   const pricedAsSonnet = usage ? priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL }) : null
   const next: LoopDraft = {
@@ -109,6 +113,7 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
     effort: step.effort === undefined ? null : String(step.effort),
     stepCount: prev.stepCount + 1,
     pricedCostUsd: prev.pricedCostUsd + (priced ?? 0),
+    pricedUpperCostUsd: prev.pricedUpperCostUsd + (pricedUpper ?? 0),
     hasUnpricedStep: prev.hasUnpricedStep || (usage !== null && priced === null),
     haikuPricedCostUsd: prev.haikuPricedCostUsd + (pricedAsHaiku ?? 0),
     sonnetPricedCostUsd: prev.sonnetPricedCostUsd + (pricedAsSonnet ?? 0),
@@ -147,6 +152,14 @@ function costOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | n
   return priceUsage(usage)
 }
 
+/** costOf と同じ規則で、キャッシュ書込を 1 時間単価にした推定コスト（上限側）。 */
+function upperCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+  if (draft.hasUnpricedStep) return null
+  if (draft.stepCount > 0) return draft.pricedUpperCostUsd
+  if (!usage) return 0
+  return priceUsage(usage, '1h')
+}
+
 /** costOf と同じ規則で、Haiku 単価に置き換えた推定コスト。 */
 function haikuCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
   if (draft.hasUnpricedStep) return null
@@ -173,6 +186,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     effort: draft.effort,
     tokens: tokenCountsOf(end.usage),
     costUsd: costOf(draft, end.usage),
+    costUpperUsd: upperCostOf(draft, end.usage),
     toolCount: draft.toolCount,
     editCount: draft.editCount,
     durationMs: end.durationMs,

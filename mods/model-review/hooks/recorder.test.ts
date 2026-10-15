@@ -41,6 +41,7 @@ test('メインループのターンは開始・step・ツール・終了の順�
     editCount: 1,
     durationMs: 4_200,
     reason: 'answer',
+    costUpperUsd: 3,
     haikuCostUsd: 0.75,
     sonnetCostUsd: 3,
     firstStepCacheWrite: 0,
@@ -213,4 +214,25 @@ test('Sonnet 換算は同じ usage を Sonnet 単価で計算し、単価不明�
   expect(known.record.costUsd).toBe(6)
   expect(known.record.sonnetCostUsd).toBe(3)
   expect(unknown.record.sonnetCostUsd).toBeNull()
+})
+
+test('上限側の推定は書込を 1 時間単価にして足し、単価不明の応答を含むと null にする', () => {
+  // Arrange: Sonnet 5.5 の書込 1,000,000 tokens。5 分 $2.5、1 時間 $4。
+  const written = { ...sonnetUsage, input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 }
+  const unknown = { ...written, model: 'claude-unknown-9' }
+
+  // Act
+  const known = finishTurn(
+    recordStep(beginTurn({}, { turnId: 't7' }), { turnId: 't7', model: written.model, usage: written }),
+    { turnId: 't7', usage: written, durationMs: 1, reason: 'answer' },
+  )
+  const unpriced = finishTurn(
+    recordStep(beginTurn({}, { turnId: 't8' }), { turnId: 't8', model: unknown.model, usage: unknown }),
+    { turnId: 't8', usage: unknown, durationMs: 1, reason: 'answer' },
+  )
+
+  // Assert
+  expect(known.record.costUsd).toBe(2.5)
+  expect(known.record.costUpperUsd).toBe(4)
+  expect(unpriced.record.costUpperUsd).toBeNull()
 })

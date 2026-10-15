@@ -94,6 +94,20 @@ export function groupByModelEffort(records: readonly TurnRecord[]): readonly Mod
   return Object.values(groups).sort((a, b) => b.turns - a.turns || a.model.localeCompare(b.model))
 }
 
+/** 推定の幅。下限は 5 分単価、上限は書込を 1 時間単価にした値。上限のない古い記録は下限と同じ値で足す。 */
+export function estimateRange(records: readonly TurnRecord[]): { lowUsd: number; highUsd: number } {
+  return records.reduce(
+    (total, record) =>
+      record.costUsd === null
+        ? total
+        : {
+            lowUsd: total.lowUsd + record.costUsd,
+            highUsd: total.highUsd + (record.costUpperUsd ?? record.costUsd),
+          },
+    { lowUsd: 0, highUsd: 0 },
+  )
+}
+
 export function estimateTotal(records: readonly TurnRecord[]): { costUsd: number; unpricedTurns: number } {
   return records.reduce(
     (total, record) =>

@@ -4,6 +4,7 @@ import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
   LIGHT_MAX_TOOL_CALLS,
+  estimateRange,
   estimateTotal,
   findConcerns,
   groupByModelEffort,
@@ -15,7 +16,7 @@ import {
 } from './analyze'
 import type { Drafts, LoopDraft } from './recorder'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
-import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, hitRateText } from './report'
+import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
 
 export const BAR_WIDTH = 14
 const MODEL_ID_PREFIX = 'claude-'
@@ -90,7 +91,8 @@ function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
 
 function costRows(review: ReviewState, estimateUsd: number, unpricedTurns: number): PaneRow[] {
   const unpriced = unpricedTurns > 0 ? ` （単価不明 ${unpricedTurns} ターンを除く）` : ''
-  const estimate = `${formatUsd(estimateUsd)}${unpriced}`
+  const { lowUsd, highUsd } = estimateRange(review.turns)
+  const estimate = `${formatUsdRange(lowUsd, highUsd)}${unpriced}`
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) {
     return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimate} / 実コスト 取得できません`, tone: 'plain' }]

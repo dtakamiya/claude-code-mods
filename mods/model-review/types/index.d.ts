@@ -26,6 +26,8 @@ export type TurnRecord = {
   // 以下は 0.4.0 で足した項目。0.3.0 で $.state に残った記録には無いので、読むときは `?? 0` などで補う。
   /** 同じ応答を Haiku 5.5 の単価で計算した推定コスト（USD）。応答ごとに単価段を判定して足す。単価不明の応答を含むとき null。 */
   readonly haikuCostUsd?: number | null
+  /** キャッシュ書込を 1 時間単価で計算した推定コスト（USD、上限側）。0.6.0 で追加。単価不明の応答を含むとき null。 */
+  readonly costUpperUsd?: number | null
   /** 同じ応答を Sonnet 5.5 の単価で計算した推定コスト（USD）。0.5.0 で追加。単価不明の応答を含むとき null。 */
   readonly sonnetCostUsd?: number | null
   /** ターン最初の応答のキャッシュ書込トークン数。モデル切替の再構築コストの目安に使う（後続の追記分を含めない）。 */

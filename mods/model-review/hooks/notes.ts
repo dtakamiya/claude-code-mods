@@ -1,6 +1,6 @@
 // ペイン・コマンド出力で共用する注記と合計。$ に触れない純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
-import { estimateTotal } from './analyze'
+import { estimateRange, estimateTotal } from './analyze'
 import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { findSwitches } from './switches'
@@ -9,7 +9,7 @@ import { findSwitches } from './switches'
 export const UNPRICED_STALE_RATIO = 0.3
 
 export const ALWAYS_NOTE =
-  '推定に含まれないもの: fast mode の割増、advisor の費用（未確認）。キャッシュ書込は 5 分単価で概算しています。'
+  '推定に含まれないもの: fast mode の割増、advisor の費用（未確認）。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
 
 export const advisorCallTotal = (records: readonly TurnRecord[]): number =>
   records.reduce((sum, record) => sum + (record.advisorCalls ?? 0), 0)
@@ -25,16 +25,16 @@ function rebuildStreakNote(records: readonly TurnRecord[]): readonly string[] {
   ]
 }
 
-function ttlNote(review: ReviewState, estimateUsd: number): readonly string[] {
+function ttlNote(review: ReviewState, upperUsd: number): readonly string[] {
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) return []
   const suspected = ttlUnderestimateSuspected({
     actualUsd: current - baseline,
-    estimateUsd,
+    estimateUsd: upperUsd,
     cacheWriteTokens: cacheWriteTotal(review.turns),
   })
   if (!suspected) return []
-  return ['実コストが推定を大きく上回っています。原因の一つに、キャッシュ書込を 5 分単価で概算していること（1 時間 TTL はサブスクのメイン会話の既定）が考えられますが、fast mode・advisor・ターン外の要求でも差は出ます']
+  return ['実コストが、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます']
 }
 
 function staleNote(records: readonly TurnRecord[], unpricedTurns: number): readonly string[] {
@@ -51,10 +51,10 @@ function switchNote(records: readonly TurnRecord[]): readonly string[] {
 export function buildNotes(review: ReviewState): readonly string[] {
   const records = review.turns
   if (records.length === 0) return []
-  const { costUsd: estimateUsd, unpricedTurns } = estimateTotal(records)
+  const { unpricedTurns } = estimateTotal(records)
   return [
     ...rebuildStreakNote(records),
-    ...ttlNote(review, estimateUsd),
+    ...ttlNote(review, estimateRange(records).highUsd),
     ...staleNote(records, unpricedTurns),
     ...switchNote(records),
   ]
