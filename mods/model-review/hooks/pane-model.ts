@@ -15,6 +15,7 @@ import {
   type ModelGroup,
 } from './analyze'
 import type { Drafts, LoopDraft } from './recorder'
+import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
 
@@ -133,6 +134,17 @@ function topTurnRows(records: ReviewState['turns']): PaneRow[] {
   ]
 }
 
+function whatIfRows(records: ReviewState['turns']): PaneRow[] {
+  const options = estimateSwitchOptions(records)
+  if (options.length === 0) return []
+  return [
+    { kind: 'heading', text: 'いま切り替えたら（目安）' },
+    ...options.map((option): PaneRow => ({ kind: 'example', text: describeOption(option) })),
+    { kind: 'note', text: WHATIF_NOTE },
+    { kind: 'blank' },
+  ]
+}
+
 function advisorRows(records: ReviewState['turns']): PaneRow[] {
   const calls = advisorCallTotal(records)
   if (calls === 0) return []
@@ -185,6 +197,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow
     ...groupByModelEffort(records).map(group => groupRow(group, estimateUsd)),
     { kind: 'blank' },
     ...topTurnRows(records),
+    ...whatIfRows(records),
     { kind: 'heading', text: 'コスト' },
     ...costRows(review, estimateUsd, unpricedTurns),
     ...advisorRows(records),
