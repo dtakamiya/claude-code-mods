@@ -206,6 +206,7 @@ test('過剰の指摘は差額の大きい順に並び、合計の差額と例�
   // Assert: 差額 0.48 と 0.04。
   expect(overspec?.examples[0]).toContain('big')
   expect(overspec?.examples[0]).toContain('Haiku なら約 $0.4800 減')
+  expect(overspec?.examples[0]).not.toContain('Sonnet なら')
   expect(overspec?.examples[1]).toContain('small')
   expect(overspec?.amountUsd?.toFixed(4)).toBe('0.5200')
 })
@@ -301,4 +302,19 @@ test('メインループのモデル切替は、再構築コストの推定つ�
   // Assert
   expect(concern?.count).toBe(1)
   expect(concern?.amountUsd?.toFixed(4)).toBe('0.4800')
+})
+
+test('Opus の軽作業には Sonnet 換算の差額も出し、Sonnet・古い記録には出さない', () => {
+  // Arrange
+  const opus = turn({ turnId: 'o', model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 })
+  const sonnet = turn({ turnId: 's', model: 'claude-sonnet-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.5 })
+  const legacy = turn({ turnId: 'l', model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02 })
+
+  // Act
+  const lines = [opus, sonnet, legacy].map(record => findConcerns([record]).find(c => c.kind === 'overspec')?.examples[0])
+
+  // Assert
+  expect(lines[0]).toContain('Sonnet なら約 $0.2500 減 · Haiku なら約 $0.4800 減（上限）')
+  expect(lines[1]).not.toContain('Sonnet なら')
+  expect(lines[2]).not.toContain('Sonnet なら')
 })

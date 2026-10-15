@@ -1,7 +1,7 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { TurnRecord } from '../types'
-import { HAIKU_REFERENCE_MODEL, priceUsage, type TokenUsageLike } from './pricing'
+import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
 export const UNKNOWN_MODEL = 'unknown'
@@ -19,6 +19,8 @@ export type LoopDraft = {
   readonly hasUnpricedStep: boolean
   /** 同じ応答を Haiku 単価で計算した推定コストの合計（応答ごとに単価段を判定）。 */
   readonly haikuPricedCostUsd: number
+  /** 同じ応答を Sonnet 単価で計算した推定コストの合計。 */
+  readonly sonnetPricedCostUsd: number
   /** 最初の応答のキャッシュ書込トークン数。 */
   readonly firstStepCacheWrite: number
   /** 最初の応答のプロンプト長（入力 + 読込 + 書込）。 */
@@ -69,6 +71,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   pricedCostUsd: 0,
   hasUnpricedStep: false,
   haikuPricedCostUsd: 0,
+  sonnetPricedCostUsd: 0,
   firstStepCacheWrite: 0,
   firstStepPromptTokens: 0,
   advisorCalls: 0,
@@ -98,6 +101,7 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
   const usage = step.usage ?? null
   const priced = usage ? priceUsage(usage) : null
   const pricedAsHaiku = usage ? priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL }) : null
+  const pricedAsSonnet = usage ? priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL }) : null
   const next: LoopDraft = {
     ...prev,
     turnId: step.turnId,
@@ -107,6 +111,7 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
     pricedCostUsd: prev.pricedCostUsd + (priced ?? 0),
     hasUnpricedStep: prev.hasUnpricedStep || (usage !== null && priced === null),
     haikuPricedCostUsd: prev.haikuPricedCostUsd + (pricedAsHaiku ?? 0),
+    sonnetPricedCostUsd: prev.sonnetPricedCostUsd + (pricedAsSonnet ?? 0),
     firstStepCacheWrite: prev.stepCount === 0 ? (usage?.cache_creation_input_tokens ?? 0) : prev.firstStepCacheWrite,
     firstStepPromptTokens: prev.stepCount === 0 ? promptTokensOf(usage) : prev.firstStepPromptTokens,
     advisorCalls: prev.advisorCalls + (step.advisorCalls ?? 0),
@@ -150,6 +155,14 @@ function haikuCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): numbe
   return priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL })
 }
 
+/** costOf と同じ規則で、Sonnet 単価に置き換えた推定コスト。 */
+function sonnetCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+  if (draft.hasUnpricedStep) return null
+  if (draft.stepCount > 0) return draft.sonnetPricedCostUsd
+  if (!usage) return 0
+  return priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL })
+}
+
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
   const key = loopKey(end.agentId)
   const draft = draftOf(drafts, end.agentId, end.turnId)
@@ -165,6 +178,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     durationMs: end.durationMs,
     reason: end.reason,
     haikuCostUsd: haikuCostOf(draft, end.usage),
+    sonnetCostUsd: sonnetCostOf(draft, end.usage),
     firstStepCacheWrite: draft.firstStepCacheWrite,
     firstStepPromptTokens: draft.firstStepPromptTokens,
     advisorCalls: draft.advisorCalls,

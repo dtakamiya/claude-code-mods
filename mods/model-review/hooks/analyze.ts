@@ -116,6 +116,13 @@ const haikuSavingsUsd = (record: TurnRecord): number | null => {
   return Math.max(0, record.costUsd - haiku)
 }
 
+/** 同じ応答を Sonnet 単価で計算した場合との差額（上限）。Opus 系のみ意味がある。古い記録や単価不明は null。 */
+const sonnetSavingsUsd = (record: TurnRecord): number | null => {
+  const sonnet = record.sonnetCostUsd ?? null
+  if (record.costUsd === null || sonnet === null || modelRank(record.model) <= RANK_SONNET) return null
+  return Math.max(0, record.costUsd - sonnet)
+}
+
 /** モデル起因: Haiku より上位で、差額が下限以上（差額が分からないときは従来どおり指摘する）。 */
 const isModelOverspec = (record: TurnRecord): boolean => {
   if (!isLightTurn(record) || modelRank(record.model) <= RANK_HAIKU) return false
@@ -162,7 +169,10 @@ const loopLabel = (record: TurnRecord): string => (record.agentId === null ? '�
 
 const overspecLine = (record: TurnRecord): string => {
   const savings = isModelOverspec(record) ? haikuSavingsUsd(record) : null
-  const savingsText = savings === null ? '' : ` · Haiku なら約 ${formatUsd(savings)} 減（上限）`
+  const sonnetSavings = isModelOverspec(record) ? sonnetSavingsUsd(record) : null
+  const sonnetText = sonnetSavings === null ? '' : ` · Sonnet なら約 ${formatUsd(sonnetSavings)} 減`
+  const haikuText = savings === null ? '' : ` · Haiku なら約 ${formatUsd(savings)} 減（上限）`
+  const savingsText = `${sonnetText}${haikuText}`
   return `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回・出力 ${record.tokens.output} tokens の軽作業を ${record.model} / effort ${record.effort ?? '-'} で実行${savingsText}`
 }
 
