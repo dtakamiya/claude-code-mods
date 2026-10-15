@@ -188,7 +188,7 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
-export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow[] {
+export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: number): PaneRow[] {
   const records = review.turns
   const live = liveRows(drafts)
   if (records.length === 0) return live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
@@ -217,7 +217,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow
     ...costRows(review, estimateUsd, unpricedTurns),
     ...advisorRows(records),
     { kind: 'blank' },
-    ...buildNotes(review).map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
+    ...buildNotes(review, nowMs).map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
     { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },
   ]

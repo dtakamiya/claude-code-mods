@@ -116,7 +116,7 @@ const CRITERIA_LINES = [
 ]
 
 /** ペインに表示する行。記録がなければ案内の 1 行だけを返す。 */
-export function buildReportLines(review: ReviewState): string[] {
+export function buildReportLines(review: ReviewState, nowMs?: number): string[] {
   const records = review.turns
   if (records.length === 0) return [NO_TURNS_LINE]
   const subagentCount = records.filter(record => record.agentId !== null).length
@@ -137,7 +137,7 @@ export function buildReportLines(review: ReviewState): string[] {
     `■ ${HEADING.cost}`,
     ...costLines(review, records),
     ...advisorLines(records),
-    ...buildNotes(review),
+    ...buildNotes(review, nowMs),
     ALWAYS_NOTE,
     '',
     ...CRITERIA_LINES,

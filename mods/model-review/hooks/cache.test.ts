@@ -60,3 +60,23 @@ test('実コストが推定を 20% 超えて上回り、書込が十分あると
   expect(ttlUnderestimateSuspected({ actualUsd: 0.5, estimateUsd: 1, cacheWriteTokens: 100_000 })).toBe(false)
   expect(ttlUnderestimateSuspected({ actualUsd: 1, estimateUsd: 0, cacheWriteTokens: 100_000 })).toBe(false)
 })
+
+test('書込と読込が同じターンは再構築と数えず、連続を切る', () => {
+  // Arrange: 書込 > 読込, 書込 = 読込, 書込 > 読込 の順。
+  const turn = (cacheRead: number, cacheWrite: number, turnId: string): TurnRecord => ({
+    turnId,
+    agentId: null,
+    model: 'claude-sonnet-5-5',
+    effort: 'medium',
+    tokens: { input: 1, output: 1, cacheRead, cacheWrite },
+    costUsd: 0.01,
+    toolCount: 0,
+    editCount: 0,
+    durationMs: 1,
+    reason: 'answer',
+  })
+  const records = [turn(10, 20, 'a'), turn(20, 20, 'b'), turn(10, 20, 'c')]
+
+  // Assert
+  expect(longestRebuildStreak(records)).toBe(1)
+})

@@ -32,7 +32,7 @@ export const register: Register = on => {
   on('command.run', { command: 'model-review' }, async $ => {
     const usd = (await $.session.usage()).cost?.usd
     if (usd !== undefined) await update($, reviewAtom, state => withCurrent(state, usd))
-    const lines = buildReportLines(await read($, reviewAtom))
+    const lines = buildReportLines(await read($, reviewAtom), Date.now())
     const opened = await $.ui.open({ id: PANE_ID, title: PANE_TITLE })
     return { text: opened.isPlaced ? PANE_OPENED_TEXT : lines.join('\n') }
   })
@@ -86,7 +86,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
-    const rows = buildPaneRows(await read($, reviewAtom), drafts)
+    const rows = buildPaneRows(await read($, reviewAtom), drafts, Date.now())
     return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }
