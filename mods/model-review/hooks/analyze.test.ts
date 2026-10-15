@@ -246,11 +246,11 @@ test('Haiku 換算がない古い記録（0.3.0）は、差額を判定せず従
   expect(overspec).toMatchObject({ count: 1, amountUsd: null })
 })
 
-test('Sonnet の low effort でエラー・中断が連続したターンを、不足の可能性として指摘する', () => {
+test('Sonnet の low effort でエラーが連続したターンを、不足の可能性として指摘する', () => {
   // Arrange: 連続 2 回目から数える。間に成功が入ると連続は切れる。
   const failed = (turnId: string, reason: TurnRecord['reason']) =>
     turn({ turnId, model: 'claude-sonnet-5-5', effort: 'low', toolCount: 0, reason })
-  const records = [failed('e1', 'error'), failed('ok', 'answer'), failed('e2', 'error'), failed('e3', 'aborted')]
+  const records = [failed('e1', 'error'), failed('ok', 'answer'), failed('e2', 'error'), failed('e3', 'error')]
 
   // Act
   const underspec = findConcerns(records).find(concern => concern.kind === 'underspec')
@@ -333,4 +333,32 @@ test('推定の幅は、上限のある記録は上限で、古い記録・単�
 
   // Assert
   expect(range).toEqual({ lowUsd: 3, highUsd: 3.6 })
+})
+
+test('ユーザーの中断（aborted）は、Haiku / Sonnet の low effort でも不足として指摘しない', () => {
+  // Arrange
+  const aborted = (turnId: string, model: string) => turn({ turnId, model, effort: 'low', toolCount: 0, reason: 'aborted' })
+  const records = [aborted('a1', 'claude-sonnet-5-5'), aborted('a2', 'claude-sonnet-5-5'), aborted('a3', 'claude-haiku-5-5')]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'underspec')).toBeUndefined()
+})
+
+test('不足の境界: ツール 10 回と 120 秒ちょうどで指摘し、9 回・119.999 秒では指摘しない', () => {
+  // Arrange
+  const haiku = (turnId: string, overrides: Partial<TurnRecord>) =>
+    turn({ turnId, model: 'claude-haiku-5-5', effort: 'low', ...overrides })
+  const hit = [haiku('tools-10', { toolCount: 10 }), haiku('time-120', { toolCount: 1, durationMs: 120_000 })]
+  const miss = [haiku('tools-9', { toolCount: 9 }), haiku('time-under', { toolCount: 1, durationMs: 119_999 })]
+
+  // Act
+  const hitCount = findConcerns(hit).find(concern => concern.kind === 'underspec')?.count
+  const missConcern = findConcerns(miss).find(concern => concern.kind === 'underspec')
+
+  // Assert
+  expect(hitCount).toBe(2)
+  expect(missConcern).toBeUndefined()
 })

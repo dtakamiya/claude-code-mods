@@ -22,7 +22,7 @@ export const LOW_EFFORT = 'low'
 export const EXAMPLE_LIMIT = 3
 /** 「Haiku なら」の差額がこれ未満の軽作業は、モデル起因の過剰として指摘しない（仮置き）。 */
 export const MIN_OVERSPEC_SAVINGS_USD = 0.01
-/** Sonnet の low effort で、エラー・中断がこの回数以上連続したら不足として指摘する（仮置き）。 */
+/** Sonnet の low effort で、エラーがこの回数以上連続したら不足として指摘する（仮置き）。 */
 export const UNDERSPEC_ERROR_STREAK = 2
 export const TOP_COST_TURN_LIMIT = 3
 
@@ -150,7 +150,8 @@ const isEffortOverspec = (record: TurnRecord): boolean =>
 
 const isOverspecTurn = (record: TurnRecord): boolean => isModelOverspec(record) || isEffortOverspec(record)
 
-const isFailureTurn = (record: TurnRecord): boolean => record.reason === 'error' || record.reason === 'aborted'
+/** 失敗はエラー終了のみ。ユーザーの中断（aborted）はモデルの不足とは言えないので含めない。 */
+const isFailureTurn = (record: TurnRecord): boolean => record.reason === 'error'
 
 const isHaikuUnderspecTurn = (record: TurnRecord): boolean =>
   (record.toolCount >= HEAVY_TOOL_CALLS || record.durationMs >= LONG_TURN_MS || isFailureTurn(record)) &&

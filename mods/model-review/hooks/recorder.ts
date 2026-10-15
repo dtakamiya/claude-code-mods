@@ -176,9 +176,23 @@ function sonnetCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): numb
   return priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL })
 }
 
+/**
+ * 最初の応答のキャッシュ書込とプロンプト長。応答（step）がないターンは終了時の usage で補い、
+ * どちらもなければ未取得（undefined）にする。0 と書くと切替の再構築が 0 円に読めてしまう。
+ */
+function firstStepOf(
+  draft: LoopDraft,
+  usage: TokenUsageLike | undefined,
+): { readonly cacheWrite: number | undefined; readonly promptTokens: number | undefined } {
+  if (draft.stepCount > 0) return { cacheWrite: draft.firstStepCacheWrite, promptTokens: draft.firstStepPromptTokens }
+  if (!usage) return { cacheWrite: undefined, promptTokens: undefined }
+  return { cacheWrite: usage.cache_creation_input_tokens, promptTokens: promptTokensOf(usage) }
+}
+
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
   const key = loopKey(end.agentId)
   const draft = draftOf(drafts, end.agentId, end.turnId)
+  const first = firstStepOf(draft, end.usage)
   const record: TurnRecord = {
     turnId: end.turnId,
     agentId: end.agentId ?? null,
@@ -193,8 +207,8 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     reason: end.reason,
     haikuCostUsd: haikuCostOf(draft, end.usage),
     sonnetCostUsd: sonnetCostOf(draft, end.usage),
-    firstStepCacheWrite: draft.firstStepCacheWrite,
-    firstStepPromptTokens: draft.firstStepPromptTokens,
+    firstStepCacheWrite: first.cacheWrite,
+    firstStepPromptTokens: first.promptTokens,
     advisorCalls: draft.advisorCalls,
   }
   const remaining = Object.fromEntries(Object.entries(drafts).filter(([candidate]) => candidate !== key))

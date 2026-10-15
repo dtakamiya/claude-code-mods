@@ -195,6 +195,21 @@ test('応答がなく終了時の usage だけあるターンも Haiku 換算を
   expect(finished.record.haikuCostUsd?.toFixed(6)).toBe('0.750000')
 })
 
+test('応答がなく終了時の usage だけあるターンは、終了時の usage から最初の書込とプロンプト長を取る', () => {
+  // Arrange
+  const written = { ...sonnetUsage, input_tokens: 100, cache_read_input_tokens: 500, cache_creation_input_tokens: 40_000 }
+
+  // Act
+  const withUsage = finishTurn({}, { turnId: 'late', usage: written, durationMs: 9, reason: 'answer' })
+  const withoutUsage = finishTurn({}, { turnId: 'none', durationMs: 9, reason: 'aborted' })
+
+  // Assert
+  expect(withUsage.record.firstStepCacheWrite).toBe(40_000)
+  expect(withUsage.record.firstStepPromptTokens).toBe(40_600)
+  expect(withoutUsage.record.firstStepCacheWrite).toBeUndefined()
+  expect(withoutUsage.record.firstStepPromptTokens).toBeUndefined()
+})
+
 test('Sonnet 換算は同じ usage を Sonnet 単価で計算し、単価不明の応答を含むと null にする', () => {
   // Arrange: Opus 5.5 は入力 $4 / 出力 $20。同じ usage を Sonnet 5.5（$2 / $10）にすると半額。
   const opusUsage = { ...sonnetUsage, model: 'claude-opus-5-5' }
