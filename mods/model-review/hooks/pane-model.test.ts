@@ -300,3 +300,14 @@ test('切替の見積りは、基準にできるターンがあるときだけ�
   expect(headings(withBase)).toContain('いま切り替えたら（目安）')
   expect(headings(withoutBase)).not.toContain('いま切り替えたら（目安）')
 })
+
+test('ループ別の集計は、メインとサブエージェントの両方があるときだけ見出しつきで出す', () => {
+  // Arrange
+  const both = rowsOf([turn({}), turn({ turnId: 's1', agentId: 'a1' })])
+  const mainOnly = rowsOf([turn({})])
+  const headings = (rows: PaneRow[]) => rows.filter(row => row.kind === 'heading').map(row => (row as { text: string }).text)
+
+  // Assert
+  expect(headings(both)).toContain('ループ別（キャッシュ効率）')
+  expect(headings(mainOnly)).not.toContain('ループ別（キャッシュ効率）')
+})

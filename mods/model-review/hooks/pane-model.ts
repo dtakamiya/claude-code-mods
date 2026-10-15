@@ -15,6 +15,7 @@ import {
   type ModelGroup,
 } from './analyze'
 import type { Drafts, LoopDraft } from './recorder'
+import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
 import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
@@ -134,6 +135,18 @@ function topTurnRows(records: ReviewState['turns']): PaneRow[] {
   ]
 }
 
+/** メインとサブエージェントの両方があるときだけ出す（片方だけなら、モデル × effort の集計と同じ内容になる）。 */
+function loopRows(records: ReviewState['turns']): PaneRow[] {
+  const summaries = summarizeLoops(records)
+  if (summaries.length < 2) return []
+  return [
+    { kind: 'heading', text: 'ループ別（キャッシュ効率）' },
+    ...summaries.map((summary): PaneRow => ({ kind: 'kv', label: loopLabel(summary.kind), value: describeLoop(summary), tone: 'plain' })),
+    ...(subagentHitRateLow(summaries) ? [{ kind: 'note', text: SUBAGENT_CACHE_NOTE } as const] : []),
+    { kind: 'blank' },
+  ]
+}
+
 function whatIfRows(records: ReviewState['turns']): PaneRow[] {
   const options = estimateSwitchOptions(records)
   if (options.length === 0) return []
@@ -197,6 +210,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow
     ...groupByModelEffort(records).map(group => groupRow(group, estimateUsd)),
     { kind: 'blank' },
     ...topTurnRows(records),
+    ...loopRows(records),
     ...whatIfRows(records),
     { kind: 'heading', text: 'コスト' },
     ...costRows(review, estimateUsd, unpricedTurns),

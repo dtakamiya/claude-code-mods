@@ -4,6 +4,7 @@ import { cacheHitRate } from './cache'
 import { formatInt, formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
+import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
 import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
@@ -98,6 +99,17 @@ function advisorLines(records: readonly TurnRecord[]): string[] {
   return calls === 0 ? [] : [`advisor ${calls} 回（費用が usage に載るかは未確認。金額には含めていません）`]
 }
 
+function loopLines(records: readonly TurnRecord[]): string[] {
+  const summaries = summarizeLoops(records)
+  if (summaries.length < 2) return []
+  return [
+    '■ ループ別（キャッシュ効率）',
+    ...summaries.map(summary => `  ${loopLabel(summary.kind)}  ${describeLoop(summary)}`),
+    ...(subagentHitRateLow(summaries) ? [`  ${SUBAGENT_CACHE_NOTE}`] : []),
+    '',
+  ]
+}
+
 function whatIfLines(records: readonly TurnRecord[]): string[] {
   const options = estimateSwitchOptions(records)
   if (options.length === 0) return []
@@ -123,6 +135,7 @@ export function buildReportLines(review: ReviewState): string[] {
     '■ 高コストターン',
     ...topTurnLines(records),
     '',
+    ...loopLines(records),
     ...whatIfLines(records),
     '■ コスト',
     ...costLines(review, records),
