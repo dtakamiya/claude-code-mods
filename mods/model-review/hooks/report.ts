@@ -1,5 +1,6 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
+import { formatInt, formatUsd } from './format'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
@@ -19,13 +20,7 @@ const CONCERN_TITLE: Readonly<Record<Concern['kind'], string>> = {
 
 export const NO_TURNS_LINE ='記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
 
-export function formatInt(value: number): string {
-  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-}
-
-export function formatUsd(value: number | null): string {
-  return value === null ? '単価不明' : `$${value.toFixed(4)}`
-}
+export { formatInt, formatUsd }
 
 function groupLine(group: ModelGroup): string {
   const { tokens } = group

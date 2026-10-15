@@ -23,6 +23,13 @@ export type TurnRecord = {
   readonly editCount: number
   readonly durationMs: number
   readonly reason: 'answer' | 'aborted' | 'refusal' | 'error'
+  // 以下は 0.4.0 で足した項目。0.3.0 で $.state に残った記録には無いので、読むときは `?? 0` などで補う。
+  /** 同じ応答を Haiku 5.5 の単価で計算した推定コスト（USD）。応答ごとに単価段を判定して足す。単価不明の応答を含むとき null。 */
+  readonly haikuCostUsd?: number | null
+  /** ターン最初の応答のキャッシュ書込トークン数。モデル切替の再構築コストの目安に使う（後続の追記分を含めない）。 */
+  readonly firstStepCacheWrite?: number
+  /** API が実行した advisor サーバーツールの呼び出し回数。 */
+  readonly advisorCalls?: number
 }
 
 export type ReviewState = {
