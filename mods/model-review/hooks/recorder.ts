@@ -1,7 +1,7 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { TurnRecord } from '../types'
-import { priceUsage, type TokenUsageLike } from './pricing'
+import { HAIKU_REFERENCE_MODEL, priceUsage, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
 export const UNKNOWN_MODEL = 'unknown'
@@ -17,6 +17,11 @@ export type LoopDraft = {
   readonly pricedCostUsd: number
   /** 単価不明のモデルで応答した step があるか。 */
   readonly hasUnpricedStep: boolean
+  /** 同じ応答を Haiku 単価で計算した推定コストの合計（応答ごとに単価段を判定）。 */
+  readonly haikuPricedCostUsd: number
+  /** 最初の応答のキャッシュ書込トークン数。 */
+  readonly firstStepCacheWrite: number
+  readonly advisorCalls: number
   readonly toolCount: number
   readonly editCount: number
 }
@@ -29,6 +34,8 @@ export type StepInput = {
   readonly model: string
   readonly effort?: string | number
   readonly usage?: TokenUsageLike | null
+  /** この応答で API が実行した advisor の呼び出し回数。 */
+  readonly advisorCalls?: number
 }
 
 export type ToolInput = {
@@ -59,6 +66,9 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   stepCount: 0,
   pricedCostUsd: 0,
   hasUnpricedStep: false,
+  haikuPricedCostUsd: 0,
+  firstStepCacheWrite: 0,
+  advisorCalls: 0,
   toolCount: 0,
   editCount: 0,
 })
@@ -81,6 +91,7 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
   const prev = draftOf(drafts, step.agentId, step.turnId)
   const usage = step.usage ?? null
   const priced = usage ? priceUsage(usage) : null
+  const pricedAsHaiku = usage ? priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL }) : null
   const next: LoopDraft = {
     ...prev,
     turnId: step.turnId,
@@ -89,6 +100,9 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
     stepCount: prev.stepCount + 1,
     pricedCostUsd: prev.pricedCostUsd + (priced ?? 0),
     hasUnpricedStep: prev.hasUnpricedStep || (usage !== null && priced === null),
+    haikuPricedCostUsd: prev.haikuPricedCostUsd + (pricedAsHaiku ?? 0),
+    firstStepCacheWrite: prev.stepCount === 0 ? (usage?.cache_creation_input_tokens ?? 0) : prev.firstStepCacheWrite,
+    advisorCalls: prev.advisorCalls + (step.advisorCalls ?? 0),
   }
   return withDraft(drafts, step.agentId, next)
 }
@@ -121,6 +135,14 @@ function costOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | n
   return priceUsage(usage)
 }
 
+/** costOf と同じ規則で、Haiku 単価に置き換えた推定コスト。 */
+function haikuCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+  if (draft.hasUnpricedStep) return null
+  if (draft.stepCount > 0) return draft.haikuPricedCostUsd
+  if (!usage) return 0
+  return priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL })
+}
+
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
   const key = loopKey(end.agentId)
   const draft = draftOf(drafts, end.agentId, end.turnId)
@@ -135,6 +157,9 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     editCount: draft.editCount,
     durationMs: end.durationMs,
     reason: end.reason,
+    haikuCostUsd: haikuCostOf(draft, end.usage),
+    firstStepCacheWrite: draft.firstStepCacheWrite,
+    advisorCalls: draft.advisorCalls,
   }
   const remaining = Object.fromEntries(Object.entries(drafts).filter(([candidate]) => candidate !== key))
   return { drafts: remaining, record }

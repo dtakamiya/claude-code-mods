@@ -9,6 +9,7 @@ import { buildReportLines } from './report'
 
 const PANE_ID = 'model-review'
 const PANE_TITLE = 'モデル振り返り'
+const ADVISOR_TOOL_NAME = 'advisor'
 const PANE_OPENED_TEXT = 'モデル振り返りペインを開きました。'
 
 // validate の静的走査が読めるよう、参照はこのファイルに置く（リテラルの plugin / key）。
@@ -56,6 +57,7 @@ export const register: Register = on => {
       model: e.model,
       effort: e.effort,
       usage: result.usage,
+      advisorCalls: (result.serverToolUses ?? []).filter(use => use.name === ADVISOR_TOOL_NAME).length,
     })
     return result
   })
