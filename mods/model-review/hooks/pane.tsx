@@ -30,54 +30,55 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
     switch (row.kind) {
       case 'title':
         return (
-          <Box flexDirection="row">
+          <Text>
             <Text bold>{`${row.turns} ターン`}</Text>
             {dim(`  ·  サブエージェント ${row.subagents}  ·  推定 `)}
             <Text bold>{row.costText}</Text>
-          </Box>
+          </Text>
         )
       case 'heading':
         return <Text bold>{`▎${row.text}`}</Text>
       case 'group':
         return (
           <Box flexDirection="column">
-            <Box flexDirection="row">
+            <Text>
               <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
               <Text>{'  '}</Text>
               <Text color="subtle">{`effort ${row.effort}`}</Text>
               {dim(`  ${row.turns} ターン`)}
-            </Box>
-            <Box flexDirection="row">
+            </Text>
+            <Text>
               <Text>{'  '}</Text>
               <Text color={TIER_COLOR[row.tier]}>{FILLED_GLYPH.repeat(row.filled)}</Text>
               {dim(EMPTY_GLYPH.repeat(BAR_WIDTH - row.filled))}
               <Text bold>{`  ${row.costText}`}</Text>
-            </Box>
+              {row.percentText === '' ? null : dim(`  ${row.percentText}`)}
+            </Text>
             <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.tokenText}`}</Text>
           </Box>
         )
       case 'kv':
         return (
-          <Box flexDirection="row">
+          <Text>
             {dim(`${row.label}  `)}
             <Text color={TONE_COLOR[row.tone]}>{row.value}</Text>
-          </Box>
+          </Text>
         )
       case 'badge':
         return (
-          <Box flexDirection="row">
+          <Text>
             <Text bold inverse color={TONE_COLOR[row.tone]}>{` ${row.label} `}</Text>
             <Text>{` ${row.text}`}</Text>
-          </Box>
+          </Text>
         )
       case 'example':
         return <Text color="inactive" dimColor wrap="truncate-end">{`  ・${row.text}`}</Text>
       case 'ok':
         return (
-          <Box flexDirection="row">
+          <Text>
             <Text color="success" bold>{'✓ '}</Text>
             <Text>{row.text}</Text>
-          </Box>
+          </Text>
         )
       case 'note':
         return <Text color="inactive" dimColor>{row.text}</Text>

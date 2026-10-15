@@ -67,7 +67,35 @@ test('実コストと推定の差を符号付きで出す', () => {
   const rows = buildPaneRows(review([turn({ costUsd: 3 })], { baseline: 10, current: 14 }))
 
   // Assert
-  expect(rows).toContainEqual({ kind: 'kv', label: '差', value: '+$1.0000（実 − 推定）', tone: 'plain' })
+  expect(rows).toContainEqual({
+    kind: 'kv',
+    label: 'コスト',
+    value: '推定 $3.0000 / 実 $4.0000（読み込み後）/ 差 +$1.0000',
+    tone: 'plain',
+  })
+})
+
+test('グループごとにコスト割合を出し、1% 未満はバーを埋めない', () => {
+  // Arrange
+  const turns = [turn({ costUsd: 99.9 }), turn({ turnId: 't2', model: 'claude-haiku-5-5', effort: 'low', costUsd: 0.1 })]
+
+  // Act
+  const groups = buildPaneRows(review(turns)).filter(row => row.kind === 'group')
+
+  // Assert
+  const byTier = Object.fromEntries(groups.map(row => (row.kind === 'group' ? [row.tier, row] : [])))
+  expect(byTier.sonnet).toMatchObject({ percentText: '100%' })
+  expect(byTier.haiku).toMatchObject({ percentText: '<1%', filled: 0 })
+})
+
+test('妥当性セクションは内訳より上にあり、見出しに指摘件数が出る', () => {
+  // Act
+  const rows = buildPaneRows(review([turn({ model: 'claude-opus-5-5', effort: 'max' })]))
+
+  // Assert
+  const headings = rows.flatMap(row => (row.kind === 'heading' ? [row.text] : []))
+  expect(headings[0]).toMatch(/^妥当性（参考）· 指摘 \d+ 件$/)
+  expect(headings[1]).toContain('モデル × effort')
 })
 
 test('指摘がなければ OK 行、軽作業に重い設定ならバッジを出す', () => {
