@@ -91,7 +91,7 @@ test('サブエージェントのターンは切替の判定に含めず、モ�
   expect(summary.count).toBe(0)
 })
 
-test('0.3.0 の記録（firstStepCacheWrite なし）でも切替は数え、コストは 0 とする', () => {
+test('0.3.0 の記録（firstStepCacheWrite なし）でも切替は数え、コストは不明（null）とする', () => {
   // Arrange
   const records = [turn({ model: 'claude-sonnet-5-5' }), turn({ turnId: 't2', model: 'claude-opus-5-5' })]
 
@@ -100,7 +100,22 @@ test('0.3.0 の記録（firstStepCacheWrite なし）でも切替は数え、コ
 
   // Assert
   expect(summary.count).toBe(1)
-  expect(summary.costUsd).toBe(0)
+  expect(summary).toMatchObject({ count: 1, costUsd: null })
+  expect(summary.examples[0]).not.toContain('再構築の推定')
+})
+
+test('切替の再構築コストは、最初の応答のプロンプト全体の長さで単価段を判定する', () => {
+  // Arrange: Haiku 5.5 へ切替。書込 70,000 でもプロンプト全体 135,000 なら高い単価段。
+  const records = [
+    turn({ model: 'claude-sonnet-5-5' }),
+    turn({ turnId: 't2', model: 'claude-haiku-5-5', firstStepCacheWrite: 70_000, firstStepPromptTokens: 135_000 }),
+  ]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.costUsd?.toFixed(5)).toBe('0.04025')
 })
 
 test('単価不明のモデルへの切替は、数えるがコストは null にする', () => {

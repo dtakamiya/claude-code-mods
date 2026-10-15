@@ -117,9 +117,14 @@ export function priceUsage(usage: TokenUsageLike): number | null {
 /**
  * キャッシュを読めていれば払わなかった額の推定（USD）。書込トークンを、書込単価と読込単価の差で評価する。
  * 単価不明のモデルは null。
+ * 単価段はプロンプト全体の長さで決まる（priceUsage と同じ）。省略時は書込トークンだけで判定する。
  */
-export function cacheRebuildCostUsd(model: string, cacheWriteTokens: number): number | null {
-  const tierRates = ratesFor(model, cacheWriteTokens)
+export function cacheRebuildCostUsd(
+  model: string,
+  cacheWriteTokens: number,
+  promptTokens: number = cacheWriteTokens,
+): number | null {
+  const tierRates = ratesFor(model, Math.max(promptTokens, cacheWriteTokens))
   if (!tierRates) return null
   return (cacheWriteTokens * (tierRates.cacheWrite - tierRates.cacheRead)) / TOKENS_PER_MTOK
 }

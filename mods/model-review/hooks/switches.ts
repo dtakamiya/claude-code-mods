@@ -55,7 +55,11 @@ function describe(kind: SwitchKind, prev: TurnRecord, current: TurnRecord): stri
 function eventOf(prev: TurnRecord, current: TurnRecord): SwitchEvent | null {
   const kind = switchKind(prev, current)
   if (kind === null) return null
-  const costUsd = cacheRebuildCostUsd(current.model, current.firstStepCacheWrite ?? 0)
+  // 0.3.0 の記録（firstStepCacheWrite なし）は不明（null）として扱い、0 円とは読ませない。
+  const costUsd =
+    current.firstStepCacheWrite === undefined
+      ? null
+      : cacheRebuildCostUsd(current.model, current.firstStepCacheWrite, current.firstStepPromptTokens)
   const costText = costUsd === null ? '' : ` · 再構築の推定 ${formatUsd(costUsd)}`
   return { turnId: current.turnId, text: `${describe(kind, prev, current)}${costText}`, costUsd }
 }

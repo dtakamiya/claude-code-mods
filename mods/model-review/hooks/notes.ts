@@ -34,7 +34,7 @@ function ttlNote(review: ReviewState, estimateUsd: number): readonly string[] {
     cacheWriteTokens: cacheWriteTotal(review.turns),
   })
   if (!suspected) return []
-  return ['実コストが推定を大きく上回っています。キャッシュ書込を 5 分単価で概算しているため、1 時間 TTL（サブスクのメイン会話の既定）の書込単価差の可能性があります']
+  return ['実コストが推定を大きく上回っています。原因の一つに、キャッシュ書込を 5 分単価で概算していること（1 時間 TTL はサブスクのメイン会話の既定）が考えられますが、fast mode・advisor・ターン外の要求でも差は出ます']
 }
 
 function staleNote(records: readonly TurnRecord[], unpricedTurns: number): readonly string[] {

@@ -102,6 +102,18 @@ test('キャッシュ再構築コストは、書込単価と読込単価の差�
   expect(cost?.toFixed(6)).toBe('4.800000')
 })
 
+test('キャッシュ再構築コストの単価段は、書込だけでなくプロンプト全体の長さで判定する', () => {
+  // Arrange: Haiku 5.5 の書込 70,000 tokens。プロンプト全体が 135,000 なら高い単価段（書込 $0.625 / 読込 $0.05）。
+
+  // Act
+  const byWriteOnly = cacheRebuildCostUsd('claude-haiku-5-5', 70_000)
+  const byPrompt = cacheRebuildCostUsd('claude-haiku-5-5', 70_000, 135_000)
+
+  // Assert: 低い段は 70,000 × (0.125 − 0.01) = 0.00805、高い段は 70,000 × (0.625 − 0.05) = 0.04025。
+  expect(byWriteOnly?.toFixed(5)).toBe('0.00805')
+  expect(byPrompt?.toFixed(5)).toBe('0.04025')
+})
+
 test('キャッシュ再構築コストは、単価不明のモデルでは null、書込 0 では 0', () => {
   expect(cacheRebuildCostUsd('claude-unlisted-9', 1_000)).toBeNull()
   expect(cacheRebuildCostUsd('claude-opus-5-5', 0)).toBe(0)

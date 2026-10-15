@@ -80,8 +80,8 @@ export const register: Register = on => {
       reason: e.reason,
     })
     drafts = finished.drafts
-    $.ui.invalidate('ui.render')
     await update($, reviewAtom, state => appendTurn(state, finished.record))
+    $.ui.invalidate('ui.render')
     return next(e)
   })
 

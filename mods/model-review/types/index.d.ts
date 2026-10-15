@@ -28,6 +28,8 @@ export type TurnRecord = {
   readonly haikuCostUsd?: number | null
   /** ターン最初の応答のキャッシュ書込トークン数。モデル切替の再構築コストの目安に使う（後続の追記分を含めない）。 */
   readonly firstStepCacheWrite?: number
+  /** ターン最初の応答のプロンプト長（入力 + キャッシュ読込 + 書込）。単価段の判定に使う。 */
+  readonly firstStepPromptTokens?: number
   /** API が実行した advisor サーバーツールの呼び出し回数。 */
   readonly advisorCalls?: number
 }

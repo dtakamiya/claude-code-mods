@@ -255,3 +255,19 @@ test('実行中のターンがなく記録もなければ、従来どおり案�
   expect(rows).toHaveLength(1)
   expect(rows[0]?.kind).toBe('message')
 })
+
+test('単価不明の割合がちょうど 3 割なら単価表の注記を出し、それ未満なら出さない', () => {
+  // Arrange: 10 ターン中 3 件 / 2 件が単価不明。
+  const turns = (unpriced: number) =>
+    Array.from({ length: 10 }, (_, index) =>
+      turn({ turnId: `t${index}`, toolCount: 5, ...(index < unpriced ? { model: 'mystery', costUsd: null } : {}) }),
+    )
+
+  // Act
+  const atLimit = noteTexts(rowsOf(turns(3)))
+  const below = noteTexts(rowsOf(turns(2)))
+
+  // Assert
+  expect(atLimit.some(text => text.includes('単価表が古い可能性'))).toBe(true)
+  expect(below.some(text => text.includes('単価表が古い可能性'))).toBe(false)
+})

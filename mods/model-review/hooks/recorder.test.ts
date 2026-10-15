@@ -43,6 +43,7 @@ test('メインループのターンは開始・step・ツール・終了の順�
     reason: 'answer',
     haikuCostUsd: 0.75,
     firstStepCacheWrite: 0,
+    firstStepPromptTokens: 1_000_000,
     advisorCalls: 0,
   })
   expect(finished.drafts).toEqual({})
@@ -180,6 +181,7 @@ test('最初の応答のキャッシュ書込だけを firstStepCacheWrite に�
 
   // Assert
   expect(finished.record.firstStepCacheWrite).toBe(40_000)
+  expect(finished.record.firstStepPromptTokens).toBe(1_040_000)
   expect(finished.record.advisorCalls).toBe(3)
 })
 

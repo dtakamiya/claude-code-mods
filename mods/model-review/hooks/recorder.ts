@@ -21,6 +21,8 @@ export type LoopDraft = {
   readonly haikuPricedCostUsd: number
   /** 最初の応答のキャッシュ書込トークン数。 */
   readonly firstStepCacheWrite: number
+  /** 最初の応答のプロンプト長（入力 + 読込 + 書込）。 */
+  readonly firstStepPromptTokens: number
   readonly advisorCalls: number
   readonly toolCount: number
   readonly editCount: number
@@ -68,6 +70,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   hasUnpricedStep: false,
   haikuPricedCostUsd: 0,
   firstStepCacheWrite: 0,
+  firstStepPromptTokens: 0,
   advisorCalls: 0,
   toolCount: 0,
   editCount: 0,
@@ -87,6 +90,9 @@ export function beginTurn(drafts: Drafts, turn: { readonly turnId: string; reado
   return withDraft(drafts, turn.agentId, emptyDraft(turn.turnId, turn.agentId ?? null))
 }
 
+const promptTokensOf = (usage: TokenUsageLike | null): number =>
+  usage === null ? 0 : usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+
 export function recordStep(drafts: Drafts, step: StepInput): Drafts {
   const prev = draftOf(drafts, step.agentId, step.turnId)
   const usage = step.usage ?? null
@@ -102,6 +108,7 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
     hasUnpricedStep: prev.hasUnpricedStep || (usage !== null && priced === null),
     haikuPricedCostUsd: prev.haikuPricedCostUsd + (pricedAsHaiku ?? 0),
     firstStepCacheWrite: prev.stepCount === 0 ? (usage?.cache_creation_input_tokens ?? 0) : prev.firstStepCacheWrite,
+    firstStepPromptTokens: prev.stepCount === 0 ? promptTokensOf(usage) : prev.firstStepPromptTokens,
     advisorCalls: prev.advisorCalls + (step.advisorCalls ?? 0),
   }
   return withDraft(drafts, step.agentId, next)
@@ -159,6 +166,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     reason: end.reason,
     haikuCostUsd: haikuCostOf(draft, end.usage),
     firstStepCacheWrite: draft.firstStepCacheWrite,
+    firstStepPromptTokens: draft.firstStepPromptTokens,
     advisorCalls: draft.advisorCalls,
   }
   const remaining = Object.fromEntries(Object.entries(drafts).filter(([candidate]) => candidate !== key))
