@@ -8,6 +8,9 @@ import {
   findConcerns,
   groupByModelEffort,
   modelRank,
+  topCostTurns,
+  MIN_OVERSPEC_SAVINGS_USD,
+  UNDERSPEC_ERROR_STREAK,
   RANK_HAIKU,
   RANK_OPUS,
   RANK_SONNET,
@@ -177,4 +180,110 @@ test('記録がないときは集計も指摘も空になる', () => {
   expect(groupByModelEffort([])).toEqual([])
   expect(findConcerns([])).toEqual([])
   expect(estimateTotal([])).toEqual({ costUsd: 0, unpricedTurns: 0 })
+})
+
+test('Haiku 換算の差額が小さい軽作業は、モデル起因の過剰として指摘しない', () => {
+  // Arrange: 差額 0.0005 は下限未満。
+  const records = [turn({ model: 'claude-sonnet-5-5', effort: 'medium', toolCount: 1, costUsd: 0.02, haikuCostUsd: 0.0195 })]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'overspec')).toBeUndefined()
+})
+
+test('過剰の指摘は差額の大きい順に並び、合計の差額と例の文面に Haiku 換算の差額が入る', () => {
+  // Arrange
+  const records = [
+    turn({ turnId: 'small', model: 'claude-sonnet-5-5', effort: 'medium', costUsd: 0.05, haikuCostUsd: 0.01 }),
+    turn({ turnId: 'big', model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02 }),
+  ]
+
+  // Act
+  const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
+
+  // Assert: 差額 0.48 と 0.04。
+  expect(overspec?.examples[0]).toContain('big')
+  expect(overspec?.examples[0]).toContain('Haiku なら約 $0.4800 減')
+  expect(overspec?.examples[1]).toContain('small')
+  expect(overspec?.amountUsd?.toFixed(4)).toBe('0.5200')
+})
+
+test('Haiku の高 effort は Haiku 換算の差額が 0 でも、effort 起因の過剰として残る', () => {
+  // Arrange
+  const records = [turn({ model: 'claude-haiku-5-5', effort: 'max', toolCount: 0, costUsd: 0.01, haikuCostUsd: 0.01 })]
+
+  // Act
+  const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
+
+  // Assert
+  expect(overspec).toMatchObject({ count: 1, amountUsd: null })
+})
+
+test('Haiku 換算の差額が下限未満の Sonnet でも、effort が xhigh なら過剰として残る', () => {
+  // Arrange
+  const records = [turn({ model: 'claude-sonnet-5-5', effort: 'xhigh', toolCount: 0, costUsd: 0.001, haikuCostUsd: 0.0009 })]
+
+  // Act
+  const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
+
+  // Assert
+  expect(overspec?.count).toBe(1)
+  expect(MIN_OVERSPEC_SAVINGS_USD).toBeGreaterThan(0.001 - 0.0009)
+})
+
+test('Haiku 換算がない古い記録（0.3.0）は、差額を判定せず従来どおり過剰として指摘する', () => {
+  // Arrange: haikuCostUsd を持たない。
+  const records = [turn({ model: 'claude-opus-5-5', effort: 'medium', toolCount: 0 })]
+
+  // Act
+  const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
+
+  // Assert
+  expect(overspec).toMatchObject({ count: 1, amountUsd: null })
+})
+
+test('Sonnet の low effort でエラー・中断が連続したターンを、不足の可能性として指摘する', () => {
+  // Arrange: 連続 2 回目から数える。間に成功が入ると連続は切れる。
+  const failed = (turnId: string, reason: TurnRecord['reason']) =>
+    turn({ turnId, model: 'claude-sonnet-5-5', effort: 'low', toolCount: 0, reason })
+  const records = [failed('e1', 'error'), failed('ok', 'answer'), failed('e2', 'error'), failed('e3', 'aborted')]
+
+  // Act
+  const underspec = findConcerns(records).find(concern => concern.kind === 'underspec')
+
+  // Assert
+  expect(UNDERSPEC_ERROR_STREAK).toBe(2)
+  expect(underspec?.count).toBe(1)
+  expect(underspec?.examples[0]).toContain('e3')
+})
+
+test('Sonnet の low effort でも、エラーが 1 回だけなら不足として指摘しない', () => {
+  // Arrange
+  const records = [turn({ model: 'claude-sonnet-5-5', effort: 'low', toolCount: 0, reason: 'error' })]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'underspec')).toBeUndefined()
+})
+
+test('高コストターンはコストの降順で上位だけを返し、単価不明のターンは除く', () => {
+  // Arrange
+  const records = [
+    turn({ turnId: 'a', costUsd: 0.1 }),
+    turn({ turnId: 'b', costUsd: null }),
+    turn({ turnId: 'c', costUsd: 2 }),
+    turn({ turnId: 'd', costUsd: 1 }),
+    turn({ turnId: 'e', costUsd: 0.5 }),
+  ]
+
+  // Act
+  const top = topCostTurns(records, 3)
+
+  // Assert
+  expect(top.map(record => record.turnId)).toEqual(['c', 'd', 'e'])
+  expect(records[0]?.turnId).toBe('a')
 })
