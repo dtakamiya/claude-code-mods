@@ -13,6 +13,7 @@ import {
   type ConcernKind,
   type ModelGroup,
 } from './analyze'
+import type { Drafts, LoopDraft } from './recorder'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, hitRateText } from './report'
 
@@ -143,9 +144,27 @@ const concernHeading = (concerns: readonly Concern[]): string => {
 
 const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー・中断`
 
-export function buildPaneRows(review: ReviewState): PaneRow[] {
+const isStarted = (draft: LoopDraft): boolean => draft.stepCount > 0 || draft.toolCount > 0
+
+/** 完了前のターン（ループごと）の途中経過。まだ何も起きていないものは出さない。 */
+function liveRows(drafts: Drafts): PaneRow[] {
+  const started = Object.values(drafts).filter(isStarted)
+  if (started.length === 0) return []
+  return [
+    ...started.map((draft): PaneRow => ({
+      kind: 'kv',
+      label: '実行中',
+      value: `${draft.agentId === null ? 'メイン' : 'サブエージェント'} ${shortModel(draft.model ?? '-')} · 応答 ${draft.stepCount} 回 · ツール ${draft.toolCount} 回 · 推定 ${formatUsd(draft.hasUnpricedStep ? null : draft.pricedCostUsd)}`,
+      tone: 'suggestion',
+    })),
+    { kind: 'blank' },
+  ]
+}
+
+export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow[] {
   const records = review.turns
-  if (records.length === 0) return [{ kind: 'message', text: NO_TURNS_LINE }]
+  const live = liveRows(drafts)
+  if (records.length === 0) return live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
   const { costUsd: estimateUsd, unpricedTurns } = estimateTotal(records)
   const concerns = findConcerns(records)
   return [
@@ -156,6 +175,7 @@ export function buildPaneRows(review: ReviewState): PaneRow[] {
       costText: formatUsd(unpricedTurns === records.length ? null : estimateUsd),
     },
     { kind: 'blank' },
+    ...live,
     { kind: 'heading', text: concernHeading(concerns) },
     ...concernRows(concerns),
     { kind: 'blank' },

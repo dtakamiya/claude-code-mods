@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
 import { BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
+import { beginTurn, recordStep, recordTool } from './recorder'
 
 // 架空データのみ。
 const turn = (overrides: Partial<TurnRecord>): TurnRecord => ({
@@ -226,4 +227,31 @@ test('fast mode の割増が推定に含まれない旨を、常に注記する'
 
   // Assert
   expect(notes.some(text => text.includes('fast mode'))).toBe(true)
+})
+
+test('実行中のターンがあれば、完了前でも「実行中」の行にツール数と推定コストを出す', () => {
+  // Arrange: 完了済みのターンはない。Sonnet 5.5 の 1 応答（入力 100 万 tokens = $2）とツール 2 回。
+  const usage = { model: 'claude-sonnet-5-5', input_tokens: 1_000_000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+  let drafts = beginTurn({}, { turnId: 'live-1' })
+  drafts = recordStep(drafts, { turnId: 'live-1', model: 'claude-sonnet-5-5', effort: 'high', usage })
+  drafts = recordTool(drafts, { tool: 'Read' })
+  drafts = recordTool(drafts, { tool: 'Edit' })
+
+  // Act
+  const rows = buildPaneRows(review([]), drafts)
+
+  // Assert
+  const live = rows.find(row => row.kind === 'kv' && row.label === '実行中')
+  expect(live?.kind === 'kv' ? live.value : '').toContain('ツール 2 回')
+  expect(live?.kind === 'kv' ? live.value : '').toContain('$2.0000')
+  expect(rows.some(row => row.kind === 'message')).toBe(false)
+})
+
+test('実行中のターンがなく記録もなければ、従来どおり案内の 1 行だけを返す', () => {
+  // Act
+  const rows = buildPaneRows(review([]), beginTurn({}, { turnId: 'idle' }))
+
+  // Assert
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.kind).toBe('message')
 })

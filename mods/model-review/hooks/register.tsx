@@ -43,13 +43,15 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('turn.start', async (_$, e, next) => {
+  // 実行中のターンの途中経過は $.state に載らないので、変わるたびにペインを描き直させる（毎秒 10 回まで）。
+  on('turn.start', async ($, e, next) => {
     drafts = beginTurn(drafts, e)
+    $.ui.invalidate('ui.render')
     return next(e)
   })
 
   // モデルと effort は turn.start ではなく、応答ごとの turn.step にしか載らない。
-  on('turn.step', async function* (_$, e, next) {
+  on('turn.step', async function* ($, e, next) {
     const result = yield* next(e)
     drafts = recordStep(drafts, {
       turnId: e.turnId,
@@ -59,11 +61,13 @@ export const register: Register = on => {
       usage: result.usage,
       advisorCalls: (result.serverToolUses ?? []).filter(use => use.name === ADVISOR_TOOL_NAME).length,
     })
+    $.ui.invalidate('ui.render')
     return result
   })
 
-  on('tool.call', async (_$, e, next) => {
+  on('tool.call', async ($, e, next) => {
     drafts = recordTool(drafts, { agentId: e.agentId, tool: e.tool })
+    $.ui.invalidate('ui.render')
     return next(e)
   })
 
@@ -76,12 +80,13 @@ export const register: Register = on => {
       reason: e.reason,
     })
     drafts = finished.drafts
+    $.ui.invalidate('ui.render')
     await update($, reviewAtom, state => appendTurn(state, finished.record))
     return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
-    const rows = buildPaneRows(await read($, reviewAtom))
+    const rows = buildPaneRows(await read($, reviewAtom), drafts)
     return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }
