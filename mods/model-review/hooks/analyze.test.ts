@@ -287,3 +287,18 @@ test('高コストターンはコストの降順で上位だけを返し、単�
   expect(top.map(record => record.turnId)).toEqual(['c', 'd', 'e'])
   expect(records[0]?.turnId).toBe('a')
 })
+
+test('メインループのモデル切替は、再構築コストの推定つきで切替の指摘になる', () => {
+  // Arrange
+  const records = [
+    turn({ turnId: 't1', model: 'claude-sonnet-5-5', toolCount: 5 }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', toolCount: 5, firstStepCacheWrite: 100_000 }),
+  ]
+
+  // Act
+  const concern = findConcerns(records).find(candidate => candidate.kind === 'switch')
+
+  // Assert
+  expect(concern?.count).toBe(1)
+  expect(concern?.amountUsd?.toFixed(4)).toBe('0.4800')
+})

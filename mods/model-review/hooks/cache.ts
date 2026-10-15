@@ -1,0 +1,41 @@
+// キャッシュまわりの判定。$ に触れない純粋関数。閾値は名前付き定数（仮置き）。
+import type { TokenCounts, TurnRecord } from '../types'
+
+/** 書込が読込を上回るターンがこの回数以上続いたら、プレフィックスが変わり続けている可能性として注記する。 */
+export const CACHE_REBUILD_STREAK = 3
+/** 実コストが推定をこの割合より多く上回るとき、TTL 単価差（1 時間書込は 5 分書込の 1.6 倍）を疑う。 */
+export const CACHE_TTL_DIFF_RATIO = 0.2
+/** TTL 単価差を疑うために必要な、キャッシュ書込の合計トークン数。 */
+export const CACHE_TTL_MIN_WRITE_TOKENS = 50_000
+
+/** キャッシュ読込 ÷（入力 + 読込 + 書込）。分母が 0 なら null。 */
+export function cacheHitRate(tokens: TokenCounts): number | null {
+  const promptTokens = tokens.input + tokens.cacheRead + tokens.cacheWrite
+  return promptTokens === 0 ? null : tokens.cacheRead / promptTokens
+}
+
+/** メインループで、書込が読込を上回るターンの最長の連続回数。 */
+export function longestRebuildStreak(records: readonly TurnRecord[]): number {
+  const scan = records
+    .filter(record => record.agentId === null)
+    .reduce(
+      (acc, record) => {
+        const streak = record.tokens.cacheWrite > record.tokens.cacheRead ? acc.streak + 1 : 0
+        return { streak, longest: Math.max(acc.longest, streak) }
+      },
+      { streak: 0, longest: 0 },
+    )
+  return scan.longest
+}
+
+export type TtlCheck = {
+  readonly actualUsd: number
+  readonly estimateUsd: number
+  readonly cacheWriteTokens: number
+}
+
+/** 推定が 5 分書込単価の概算で、実際は 1 時間書込（サブスクのメイン会話）だった可能性があるか。 */
+export function ttlUnderestimateSuspected(check: TtlCheck): boolean {
+  if (check.estimateUsd <= 0 || check.cacheWriteTokens < CACHE_TTL_MIN_WRITE_TOKENS) return false
+  return (check.actualUsd - check.estimateUsd) / check.estimateUsd > CACHE_TTL_DIFF_RATIO
+}

@@ -8,11 +8,13 @@ import {
   findConcerns,
   groupByModelEffort,
   modelRank,
+  topCostTurns,
   type Concern,
   type ConcernKind,
   type ModelGroup,
 } from './analyze'
-import { NO_TURNS_LINE, formatInt, formatUsd } from './report'
+import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
+import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, hitRateText } from './report'
 
 export const BAR_WIDTH = 14
 const MODEL_ID_PREFIX = 'claude-'
@@ -27,6 +29,7 @@ export type PaneRow =
   | { kind: 'title'; turns: number; subagents: number; costText: string }
   | { kind: 'heading'; text: string }
   | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; filled: number; percentText: string; costText: string; tokenText: string }
+  | { kind: 'turn'; label: string; model: string; tier: Tier; costText: string; detail: string }
   | { kind: 'kv'; label: string; value: string; tone: Tone }
   | { kind: 'badge'; label: string; tone: Tone; text: string }
   | { kind: 'example'; text: string }
@@ -37,7 +40,12 @@ const TIER_OF_RANK: Readonly<Record<number, Tier>> = { 0: 'haiku', 1: 'sonnet', 
 const CONCERN_BADGE: Readonly<Record<ConcernKind, { label: string; tone: Tone; text: string }>> = {
   overspec: { label: '過剰', tone: 'warning', text: '軽作業に重いモデル / effort' },
   underspec: { label: '不足', tone: 'error', text: '重い作業に軽い設定' },
-  delegation: { label: '委譲', tone: 'suggestion', text: 'Haiku サブエージェントへの委譲なし' },
+  delegation: {
+    label: '委譲',
+    tone: 'suggestion',
+    text: 'Haiku サブエージェントへの委譲なし（サブエージェントは 5 分 TTL・親のキャッシュを読まない）',
+  },
+  switch: { label: '切替', tone: 'warning', text: 'モデル / effort の切替でキャッシュを再構築' },
 }
 
 const tierOf = (model: string): Tier => TIER_OF_RANK[modelRank(model)] ?? 'other'
@@ -65,6 +73,7 @@ function percentText(share: number | null): string {
 function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
   const { tokens } = group
   const share = costShare(group.costUsd, totalUsd)
+  const hit = hitRateText(tokens)
   return {
     kind: 'group',
     model: shortModel(group.model),
@@ -74,7 +83,7 @@ function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
     filled: filledCells(share),
     percentText: percentText(share),
     costText: formatUsd(group.costUsd),
-    tokenText: `入力 ${formatInt(tokens.input)} · 出力 ${formatInt(tokens.output)} · キャッシュ 読 ${formatInt(tokens.cacheRead)} / 書 ${formatInt(tokens.cacheWrite)}`,
+    tokenText: `${hit === null ? '' : `${hit} · `}入力 ${formatInt(tokens.input)} · 出力 ${formatInt(tokens.output)} · キャッシュ 読 ${formatInt(tokens.cacheRead)} / 書 ${formatInt(tokens.cacheWrite)}`,
   }
 }
 
@@ -95,11 +104,36 @@ function concernRows(concerns: readonly Concern[]): PaneRow[] {
   if (concerns.length === 0) return [{ kind: 'ok', text: '指摘なし' }]
   return concerns.flatMap((concern): PaneRow[] => {
     const badge = CONCERN_BADGE[concern.kind]
+    const amountLabel = CONCERN_AMOUNT_LABEL[concern.kind]
+    const amount = concern.amountUsd === null || amountLabel === null ? '' : ` · ${amountLabel} ${formatUsd(concern.amountUsd)}`
     return [
-      { kind: 'badge', label: badge.label, tone: badge.tone, text: `${badge.text} · ${concern.count} 件` },
+      { kind: 'badge', label: badge.label, tone: badge.tone, text: `${badge.text} · ${concern.count} 件${amount}` },
       ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
     ]
   })
+}
+
+function topTurnRows(records: ReviewState['turns']): PaneRow[] {
+  const top = topCostTurns(records)
+  if (top.length === 0) return []
+  return [
+    { kind: 'heading', text: '高コストターン' },
+    ...top.map((record): PaneRow => ({
+      kind: 'turn',
+      label: `${record.turnId} · ${record.agentId === null ? 'メイン' : 'サブエージェント'}`,
+      model: shortModel(record.model),
+      tier: tierOf(record.model),
+      costText: formatUsd(record.costUsd),
+      detail: `ツール ${record.toolCount} 回 · ${record.durationMs} ms`,
+    })),
+    { kind: 'blank' },
+  ]
+}
+
+function advisorRows(records: ReviewState['turns']): PaneRow[] {
+  const calls = advisorCallTotal(records)
+  if (calls === 0) return []
+  return [{ kind: 'kv', label: 'advisor', value: `${calls} 回（費用が usage に載るかは未確認。金額には含めていません）`, tone: 'plain' }]
 }
 
 const concernHeading = (concerns: readonly Concern[]): string => {
@@ -128,9 +162,13 @@ export function buildPaneRows(review: ReviewState): PaneRow[] {
     { kind: 'heading', text: 'モデル × effort（コスト比）' },
     ...groupByModelEffort(records).map(group => groupRow(group, estimateUsd)),
     { kind: 'blank' },
+    ...topTurnRows(records),
     { kind: 'heading', text: 'コスト' },
     ...costRows(review, estimateUsd, unpricedTurns),
+    ...advisorRows(records),
     { kind: 'blank' },
+    ...buildNotes(review).map((text): PaneRow => ({ kind: 'note', text })),
+    { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },
   ]
 }

@@ -57,6 +57,14 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
             <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.tokenText}`}</Text>
           </Box>
         )
+      case 'turn':
+        return (
+          <Text wrap="truncate-end">
+            <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
+            <Text bold>{`  ${row.costText}`}</Text>
+            {dim(`  ${row.label} · ${row.detail}`)}
+          </Text>
+        )
       case 'kv':
         return (
           <Text>

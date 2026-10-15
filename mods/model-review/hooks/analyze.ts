@@ -2,6 +2,7 @@
 import type { TokenCounts, TurnRecord } from '../types'
 import { formatUsd } from './format'
 import { normalizeModelId } from './pricing'
+import { findSwitches } from './switches'
 
 export const RANK_UNRANKED = -1
 export const RANK_HAIKU = 0
@@ -35,7 +36,7 @@ export type ModelGroup = {
   readonly costUsd: number | null
 }
 
-export type ConcernKind = 'overspec' | 'underspec' | 'delegation'
+export type ConcernKind = 'overspec' | 'underspec' | 'delegation' | 'switch'
 
 export type Concern = {
   readonly kind: ConcernKind
@@ -202,6 +203,11 @@ function delegationConcern(records: readonly TurnRecord[]): Concern | null {
   ])
 }
 
+function switchConcern(records: readonly TurnRecord[]): Concern | null {
+  const summary = findSwitches(records)
+  return concernOf('switch', summary.count, summary.examples, summary.costUsd)
+}
+
 /** 妥当性の指摘。該当しない種類は含めない。 */
 export function findConcerns(records: readonly TurnRecord[]): readonly Concern[] {
   const underspec = underspecTurns(records)
@@ -209,6 +215,7 @@ export function findConcerns(records: readonly TurnRecord[]): readonly Concern[]
     overspecConcern(records),
     concernOf('underspec', underspec.length, underspec.map(underspecLine)),
     delegationConcern(records),
+    switchConcern(records),
   ]
   return concerns.filter((concern): concern is Concern => concern !== null)
 }
