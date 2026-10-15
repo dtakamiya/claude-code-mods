@@ -41,7 +41,9 @@ test('メインループのターンは開始・step・ツール・終了の順�
     editCount: 1,
     durationMs: 4_200,
     reason: 'answer',
+    costUpperUsd: 3,
     haikuCostUsd: 0.75,
+    sonnetCostUsd: 3,
     firstStepCacheWrite: 0,
     firstStepPromptTokens: 1_000_000,
     advisorCalls: 0,
@@ -191,4 +193,46 @@ test('応答がなく終了時の usage だけあるターンも Haiku 換算を
 
   // Assert
   expect(finished.record.haikuCostUsd?.toFixed(6)).toBe('0.750000')
+})
+
+test('Sonnet 換算は同じ usage を Sonnet 単価で計算し、単価不明の応答を含むと null にする', () => {
+  // Arrange: Opus 5.5 は入力 $4 / 出力 $20。同じ usage を Sonnet 5.5（$2 / $10）にすると半額。
+  const opusUsage = { ...sonnetUsage, model: 'claude-opus-5-5' }
+  const unknownUsage = { ...sonnetUsage, model: 'claude-unknown-9' }
+
+  // Act
+  const known = finishTurn(
+    recordStep(beginTurn({}, { turnId: 't5' }), { turnId: 't5', model: opusUsage.model, usage: opusUsage }),
+    { turnId: 't5', usage: opusUsage, durationMs: 1, reason: 'answer' },
+  )
+  const unknown = finishTurn(
+    recordStep(beginTurn({}, { turnId: 't6' }), { turnId: 't6', model: unknownUsage.model, usage: unknownUsage }),
+    { turnId: 't6', usage: unknownUsage, durationMs: 1, reason: 'answer' },
+  )
+
+  // Assert
+  expect(known.record.costUsd).toBe(6)
+  expect(known.record.sonnetCostUsd).toBe(3)
+  expect(unknown.record.sonnetCostUsd).toBeNull()
+})
+
+test('上限側の推定は書込を 1 時間単価にして足し、単価不明の応答を含むと null にする', () => {
+  // Arrange: Sonnet 5.5 の書込 1,000,000 tokens。5 分 $2.5、1 時間 $4。
+  const written = { ...sonnetUsage, input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 }
+  const unknown = { ...written, model: 'claude-unknown-9' }
+
+  // Act
+  const known = finishTurn(
+    recordStep(beginTurn({}, { turnId: 't7' }), { turnId: 't7', model: written.model, usage: written }),
+    { turnId: 't7', usage: written, durationMs: 1, reason: 'answer' },
+  )
+  const unpriced = finishTurn(
+    recordStep(beginTurn({}, { turnId: 't8' }), { turnId: 't8', model: unknown.model, usage: unknown }),
+    { turnId: 't8', usage: unknown, durationMs: 1, reason: 'answer' },
+  )
+
+  // Assert
+  expect(known.record.costUsd).toBe(2.5)
+  expect(known.record.costUpperUsd).toBe(4)
+  expect(unpriced.record.costUpperUsd).toBeNull()
 })

@@ -118,3 +118,21 @@ test('キャッシュ再構築コストは、単価不明のモデルでは null
   expect(cacheRebuildCostUsd('claude-unlisted-9', 1_000)).toBeNull()
   expect(cacheRebuildCostUsd('claude-opus-5-5', 0)).toBe(0)
 })
+
+test('書込を 1 時間単価にした上限は、書込トークンの分だけ 5 分単価より高い', () => {
+  // Arrange: Sonnet 5.5 の書込 1,000,000 tokens。5 分 $2.5、1 時間 $4。
+  const written = usage({ model: 'claude-sonnet-5-5', input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 1_000_000 })
+
+  // Act
+  const low = priceUsage(written)
+  const high = priceUsage(written, '1h')
+
+  // Assert
+  expect(low).toBe(2.5)
+  expect(high).toBe(4)
+})
+
+test('書込のない応答は、5 分でも 1 時間でも同じ額になる', () => {
+  const plain = usage({ model: 'claude-opus-5-5', input_tokens: 1_000_000, output_tokens: 0 })
+  expect(priceUsage(plain, '1h')).toBe(priceUsage(plain))
+})

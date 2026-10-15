@@ -184,6 +184,22 @@ test('書込が読込を上回るターンが 3 回続くと、キャッシュ�
   expect(notes.some(text => text.includes('3 回連続'))).toBe(true)
 })
 
+test('実コストが 1 時間単価の上限内なら、TTL 単価差の注記は出さず、推定は幅で表示する', () => {
+  // Arrange: 下限 $3、上限 $4.2。実 $4（上限内）、書込 100,000 tokens。
+  const rows = rowsOf([turn({ toolCount: 5, costUsd: 3, costUpperUsd: 4.2, tokens: { input: 0, output: 10, cacheRead: 0, cacheWrite: 100_000 } })], {
+    baseline: 10,
+    current: 14,
+  })
+
+  // Act
+  const notes = noteTexts(rows)
+  const cost = rows.find(row => row.kind === 'kv' && row.label === 'コスト')
+
+  // Assert
+  expect(notes.some(text => text.includes('1 時間単価にした上限'))).toBe(false)
+  expect(cost).toMatchObject({ value: expect.stringContaining('$3.0000〜$4.2000') })
+})
+
 test('実コストが推定を大きく上回り書込が多いとき、TTL 単価差の可能性を注記する', () => {
   // Arrange: 推定 $3、実 $4（+33%）、書込 100,000 tokens。
   const rows = rowsOf([turn({ toolCount: 5, costUsd: 3, tokens: { input: 0, output: 10, cacheRead: 0, cacheWrite: 100_000 } })], {
@@ -195,7 +211,7 @@ test('実コストが推定を大きく上回り書込が多いとき、TTL 単�
   const notes = noteTexts(rows)
 
   // Assert
-  expect(notes.some(text => text.includes('1 時間 TTL'))).toBe(true)
+  expect(notes.some(text => text.includes('1 時間単価にした上限'))).toBe(true)
 })
 
 test('単価不明のターンが 3 割以上なら、単価表が古い可能性を取得日つきで注記する', () => {

@@ -1,7 +1,7 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { TurnRecord } from '../types'
-import { HAIKU_REFERENCE_MODEL, priceUsage, type TokenUsageLike } from './pricing'
+import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
 export const UNKNOWN_MODEL = 'unknown'
@@ -15,10 +15,14 @@ export type LoopDraft = {
   readonly stepCount: number
   /** 単価が分かっている応答の推定コストの合計。 */
   readonly pricedCostUsd: number
+  /** 書込を 1 時間単価で計算した推定コストの合計（上限側）。 */
+  readonly pricedUpperCostUsd: number
   /** 単価不明のモデルで応答した step があるか。 */
   readonly hasUnpricedStep: boolean
   /** 同じ応答を Haiku 単価で計算した推定コストの合計（応答ごとに単価段を判定）。 */
   readonly haikuPricedCostUsd: number
+  /** 同じ応答を Sonnet 単価で計算した推定コストの合計。 */
+  readonly sonnetPricedCostUsd: number
   /** 最初の応答のキャッシュ書込トークン数。 */
   readonly firstStepCacheWrite: number
   /** 最初の応答のプロンプト長（入力 + 読込 + 書込）。 */
@@ -67,8 +71,10 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   effort: null,
   stepCount: 0,
   pricedCostUsd: 0,
+  pricedUpperCostUsd: 0,
   hasUnpricedStep: false,
   haikuPricedCostUsd: 0,
+  sonnetPricedCostUsd: 0,
   firstStepCacheWrite: 0,
   firstStepPromptTokens: 0,
   advisorCalls: 0,
@@ -97,7 +103,9 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
   const prev = draftOf(drafts, step.agentId, step.turnId)
   const usage = step.usage ?? null
   const priced = usage ? priceUsage(usage) : null
+  const pricedUpper = usage ? priceUsage(usage, '1h') : null
   const pricedAsHaiku = usage ? priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL }) : null
+  const pricedAsSonnet = usage ? priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL }) : null
   const next: LoopDraft = {
     ...prev,
     turnId: step.turnId,
@@ -105,8 +113,10 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
     effort: step.effort === undefined ? null : String(step.effort),
     stepCount: prev.stepCount + 1,
     pricedCostUsd: prev.pricedCostUsd + (priced ?? 0),
+    pricedUpperCostUsd: prev.pricedUpperCostUsd + (pricedUpper ?? 0),
     hasUnpricedStep: prev.hasUnpricedStep || (usage !== null && priced === null),
     haikuPricedCostUsd: prev.haikuPricedCostUsd + (pricedAsHaiku ?? 0),
+    sonnetPricedCostUsd: prev.sonnetPricedCostUsd + (pricedAsSonnet ?? 0),
     firstStepCacheWrite: prev.stepCount === 0 ? (usage?.cache_creation_input_tokens ?? 0) : prev.firstStepCacheWrite,
     firstStepPromptTokens: prev.stepCount === 0 ? promptTokensOf(usage) : prev.firstStepPromptTokens,
     advisorCalls: prev.advisorCalls + (step.advisorCalls ?? 0),
@@ -142,12 +152,28 @@ function costOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | n
   return priceUsage(usage)
 }
 
+/** costOf と同じ規則で、キャッシュ書込を 1 時間単価にした推定コスト（上限側）。 */
+function upperCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+  if (draft.hasUnpricedStep) return null
+  if (draft.stepCount > 0) return draft.pricedUpperCostUsd
+  if (!usage) return 0
+  return priceUsage(usage, '1h')
+}
+
 /** costOf と同じ規則で、Haiku 単価に置き換えた推定コスト。 */
 function haikuCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0) return draft.haikuPricedCostUsd
   if (!usage) return 0
   return priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL })
+}
+
+/** costOf と同じ規則で、Sonnet 単価に置き換えた推定コスト。 */
+function sonnetCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+  if (draft.hasUnpricedStep) return null
+  if (draft.stepCount > 0) return draft.sonnetPricedCostUsd
+  if (!usage) return 0
+  return priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL })
 }
 
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
@@ -160,11 +186,13 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     effort: draft.effort,
     tokens: tokenCountsOf(end.usage),
     costUsd: costOf(draft, end.usage),
+    costUpperUsd: upperCostOf(draft, end.usage),
     toolCount: draft.toolCount,
     editCount: draft.editCount,
     durationMs: end.durationMs,
     reason: end.reason,
     haikuCostUsd: haikuCostOf(draft, end.usage),
+    sonnetCostUsd: sonnetCostOf(draft, end.usage),
     firstStepCacheWrite: draft.firstStepCacheWrite,
     firstStepPromptTokens: draft.firstStepPromptTokens,
     advisorCalls: draft.advisorCalls,

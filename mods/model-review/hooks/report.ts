@@ -1,13 +1,14 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
-import { formatInt, formatUsd } from './format'
+import { formatInt, formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
   LIGHT_MAX_TOOL_CALLS,
+  estimateRange,
   estimateTotal,
   findConcerns,
   groupByModelEffort,
@@ -38,7 +39,7 @@ export const hitRateText = (tokens: ModelGroup['tokens']): string | null => {
 
 export const NO_TURNS_LINE ='記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
 
-export { formatInt, formatUsd }
+export { formatInt, formatUsd, formatUsdRange }
 
 function groupLine(group: ModelGroup): string {
   const { tokens } = group
@@ -57,7 +58,8 @@ function groupLine(group: ModelGroup): string {
 
 function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
   const estimate = estimateTotal(records)
-  const estimateLine = `合計推定コスト: ${formatUsd(estimate.costUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
+  const { lowUsd, highUsd } = estimateRange(records)
+  const estimateLine = `合計推定コスト: ${formatUsdRange(lowUsd, highUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) {
     return [estimateLine, 'セッション実コスト: 取得できません（コストの記録がない環境）']
