@@ -3,7 +3,7 @@ import type { TokenCounts, TurnRecord } from '../types'
 
 /** 書込が読込を上回るターンがこの回数以上続いたら、プレフィックスが変わり続けている可能性として注記する。 */
 export const CACHE_REBUILD_STREAK = 3
-/** 実コストが推定をこの割合より多く上回るとき、TTL 単価差（1 時間書込は 5 分書込の 1.6 倍）を疑う。 */
+/** 実コストが推定をこの割合より多く上回るとき、推定の見落としを疑う。 */
 export const CACHE_TTL_DIFF_RATIO = 0.2
 /** TTL 単価差を疑うために必要な、キャッシュ書込の合計トークン数。 */
 export const CACHE_TTL_MIN_WRITE_TOKENS = 50_000
@@ -34,7 +34,7 @@ export type TtlCheck = {
   readonly cacheWriteTokens: number
 }
 
-/** 推定が 5 分書込単価の概算で、実際は 1 時間書込（サブスクのメイン会話）だった可能性があるか。 */
+/** 実コストが推定を大きく上回るか。推定には、書込を 1 時間単価にした上限（notes.ts）を渡す。TTL 以外（fast mode・advisor・ターン外の要求・単価表の古さ）の可能性もある。 */
 export function ttlUnderestimateSuspected(check: TtlCheck): boolean {
   if (check.estimateUsd <= 0 || check.cacheWriteTokens < CACHE_TTL_MIN_WRITE_TOKENS) return false
   return (check.actualUsd - check.estimateUsd) / check.estimateUsd > CACHE_TTL_DIFF_RATIO
