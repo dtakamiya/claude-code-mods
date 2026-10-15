@@ -1,4 +1,4 @@
-// 単価表。出典: https://platform.claude.com/docs/en/about-claude/pricing （2026-10-15 取得）。
+// 単価表。出典: https://platform.claude.com/docs/en/about-claude/pricing （PRICE_TABLE_FETCHED_AT に取得）。
 // 単位は USD / 100 万トークン（MTok）。$ には触れない純粋な表。単価が変わったらここだけを直す。
 // キャッシュ書き込みは 5 分単価で概算する（TurnUsage は TTL 別の内訳を持たないため）。
 
@@ -22,6 +22,11 @@ export type TokenUsageLike = {
   readonly cache_read_input_tokens: number
   readonly cache_creation_input_tokens: number
 }
+
+/** 単価表を取得した日。ペインの注記で共用する。単価を直したらここも更新する。 */
+export const PRICE_TABLE_FETCHED_AT = '2026-10-15'
+/** 「Haiku なら」の差額を出すときの基準モデル。 */
+export const HAIKU_REFERENCE_MODEL = 'claude-haiku-5-5'
 
 const TOKENS_PER_MTOK = 1_000_000
 const UNBOUNDED = Number.POSITIVE_INFINITY
@@ -107,4 +112,19 @@ export function priceUsage(usage: TokenUsageLike): number | null {
     usage.cache_read_input_tokens * tierRates.cacheRead +
     usage.cache_creation_input_tokens * tierRates.cacheWrite
   return cost / TOKENS_PER_MTOK
+}
+
+/**
+ * キャッシュを読めていれば払わなかった額の推定（USD）。書込トークンを、書込単価と読込単価の差で評価する。
+ * 単価不明のモデルは null。
+ * 単価段はプロンプト全体の長さで決まる（priceUsage と同じ）。省略時は書込トークンだけで判定する。
+ */
+export function cacheRebuildCostUsd(
+  model: string,
+  cacheWriteTokens: number,
+  promptTokens: number = cacheWriteTokens,
+): number | null {
+  const tierRates = ratesFor(model, Math.max(promptTokens, cacheWriteTokens))
+  if (!tierRates) return null
+  return (cacheWriteTokens * (tierRates.cacheWrite - tierRates.cacheRead)) / TOKENS_PER_MTOK
 }

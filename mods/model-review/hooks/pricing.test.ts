@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 
-import { normalizeModelId, priceUsage, type TokenUsageLike } from './pricing'
+import { HAIKU_REFERENCE_MODEL, cacheRebuildCostUsd, normalizeModelId, priceUsage, type TokenUsageLike } from './pricing'
 
 // 架空データのみ。
 const usage = (overrides: Partial<TokenUsageLike>): TokenUsageLike => ({
@@ -78,4 +78,43 @@ test('Haiku 5.5 はプロンプトが 10 万 tokens を超えると高い単価�
 
   // Assert: 入力 0.0500005 + 出力 2.5
   expect(cost?.toFixed(7)).toBe('2.5500005')
+})
+
+test('Haiku 基準のモデル ID は単価表にあり、同じ usage を差し替えて計算できる', () => {
+  // Arrange
+  // Haiku 5.5 は 10 万 tokens 以下の低い単価表（入力 $0.1 / MTok）。
+  const opus = usage({ model: 'claude-opus-5-5', input_tokens: 100_000 })
+
+  // Act
+  const asHaiku = priceUsage({ ...opus, model: HAIKU_REFERENCE_MODEL })
+
+  // Assert
+  expect(asHaiku?.toFixed(6)).toBe('0.010000')
+})
+
+test('キャッシュ再構築コストは、書込単価と読込単価の差にトークン数を掛けた額', () => {
+  // Arrange: Opus 5.5 は書込 $5 / 読込 $0.2（MTok）。100 万 tokens で差は $4.8。
+
+  // Act
+  const cost = cacheRebuildCostUsd('claude-opus-5-5', 1_000_000)
+
+  // Assert
+  expect(cost?.toFixed(6)).toBe('4.800000')
+})
+
+test('キャッシュ再構築コストの単価段は、書込だけでなくプロンプト全体の長さで判定する', () => {
+  // Arrange: Haiku 5.5 の書込 70,000 tokens。プロンプト全体が 135,000 なら高い単価段（書込 $0.625 / 読込 $0.05）。
+
+  // Act
+  const byWriteOnly = cacheRebuildCostUsd('claude-haiku-5-5', 70_000)
+  const byPrompt = cacheRebuildCostUsd('claude-haiku-5-5', 70_000, 135_000)
+
+  // Assert: 低い段は 70,000 × (0.125 − 0.01) = 0.00805、高い段は 70,000 × (0.625 − 0.05) = 0.04025。
+  expect(byWriteOnly?.toFixed(5)).toBe('0.00805')
+  expect(byPrompt?.toFixed(5)).toBe('0.04025')
+})
+
+test('キャッシュ再構築コストは、単価不明のモデルでは null、書込 0 では 0', () => {
+  expect(cacheRebuildCostUsd('claude-unlisted-9', 1_000)).toBeNull()
+  expect(cacheRebuildCostUsd('claude-opus-5-5', 0)).toBe(0)
 })

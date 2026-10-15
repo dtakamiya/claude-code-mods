@@ -91,3 +91,21 @@ test('数値は桁区切りで表示する', () => {
   expect(formatUsd(null)).toBe('単価不明')
   expect(formatUsd(0.5)).toBe('$0.5000')
 })
+
+test('コマンド出力にも、ヒット率・高コストターン・切替・注記が出る', () => {
+  // Arrange
+  const turns = [
+    turn({ turnId: 'a', toolCount: 5, tokens: { input: 100, output: 5, cacheRead: 800, cacheWrite: 100 } }),
+    turn({ turnId: 'b', toolCount: 5, model: 'claude-opus-5-5', costUsd: 2, firstStepCacheWrite: 100_000, advisorCalls: 1 }),
+  ]
+
+  // Act
+  const text = buildReportLines(withTurns(turns, null, null)).join('\n')
+
+  // Assert
+  expect(text).toContain('ヒット 80%')
+  expect(text).toContain('■ 高コストターン')
+  expect(text).toContain('【モデル・effort の切替】')
+  expect(text).toContain('advisor 1 回')
+  expect(text).toContain('fast mode')
+})

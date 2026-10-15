@@ -60,3 +60,18 @@
 | `WARN_COMPACT_SHARE` = 0.15（窓の 15%） | 自動圧縮が有効なとき、圧縮点までの残りがこの割合以下で「注意」 | 窓 20 万なら残り 3 万以下。由来はコード・文書に無い（設計書 §4.2 の提案値） | 3 万は 1 回の大きな読込を吸収できる目安か。`nearCompactShare` と同じ検証（圧縮が走った時点との対応）で見直す | 実測なし = 仮置き |
 | `WARN_FALLBACK_PERCENT` = 60（%） | 自動圧縮が無効なとき、使用率がこの値以上で「注意」 | `fallbackPercent`（80）より手前に段階を足しただけ | `fallbackPercent` と同じ検証 | 実測なし = 仮置き |
 | `WIDE_BODY_COLUMNS` = 68（桁）／ミニバー倍率 16・上限 8・名前幅 18 | 幅 68 桁以上で所見を 1 行に連結。内訳の見た目の寸法 | 目視していない。設計書 §7 の「好み・仮説」 | だいすけの目視（T6）で調整 | 実測なし = 仮置き |
+
+## model-review（0.4.0）の仮置き値
+
+いずれも実測の裏付けなし（仮置き）。`mods/model-review/hooks/` の名前付き定数。
+
+| 値 | 場所 | 使われ方 | 根拠の強さ |
+|---|---|---|---|
+| `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Haiku 換算の差額がこれ未満の軽作業は、モデル起因の過剰にしない（effort 起因は差額で絞らない） | 実測なし = 仮置き |
+| `UNDERSPEC_ERROR_STREAK` = 2 | analyze.ts | Sonnet / low のメインループでエラー・中断が連続 2 回目から不足 | 実測なし = 仮置き |
+| `CACHE_REBUILD_STREAK` = 3 | cache.ts | 書込 > 読込のターンが 3 回連続で注記 | 実測なし = 仮置き |
+| `CACHE_TTL_DIFF_RATIO` = 0.2 / `CACHE_TTL_MIN_WRITE_TOKENS` = 50,000 | cache.ts | 実コストが推定を 20% 超上回り、書込 5 万 tokens 以上で TTL 単価差を注記 | 実測なし = 仮置き |
+| `UNPRICED_STALE_RATIO` = 0.3 | notes.ts | 単価不明が 3 割以上で単価表の陳腐化を注記 | 実測なし = 仮置き |
+| `CACHE_SAFE_EFFORT_MODELS` | switches.ts | effort 変更でキャッシュが維持されるモデル。出所は公式 prompt caching ドキュメント（取得 2026-10-15） | 公式記載 |
+
+未確認: advisor の費用が usage に載るか、fast mode の割増が取れるか（型ファイルに該当フィールドなし）。

@@ -30,24 +30,24 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
     switch (row.kind) {
       case 'title':
         return (
-          <Text>
+          <Text wrap="truncate-end">
             <Text bold>{`${row.turns} ターン`}</Text>
             {dim(`  ·  サブエージェント ${row.subagents}  ·  推定 `)}
             <Text bold>{row.costText}</Text>
           </Text>
         )
       case 'heading':
-        return <Text bold>{`▎${row.text}`}</Text>
+        return <Text bold wrap="truncate-end">{`▎${row.text}`}</Text>
       case 'group':
         return (
           <Box flexDirection="column">
-            <Text>
+            <Text wrap="truncate-end">
               <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
               <Text>{'  '}</Text>
               <Text color="subtle">{`effort ${row.effort}`}</Text>
               {dim(`  ${row.turns} ターン`)}
             </Text>
-            <Text>
+            <Text wrap="truncate-end">
               <Text>{'  '}</Text>
               <Text color={TIER_COLOR[row.tier]}>{FILLED_GLYPH.repeat(row.filled)}</Text>
               {dim(EMPTY_GLYPH.repeat(BAR_WIDTH - row.filled))}
@@ -57,16 +57,24 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
             <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.tokenText}`}</Text>
           </Box>
         )
+      case 'turn':
+        return (
+          <Text wrap="truncate-end">
+            <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
+            <Text bold>{`  ${row.costText}`}</Text>
+            {dim(`  ${row.label} · ${row.detail}`)}
+          </Text>
+        )
       case 'kv':
         return (
-          <Text>
+          <Text wrap="wrap">
             {dim(`${row.label}  `)}
             <Text color={TONE_COLOR[row.tone]}>{row.value}</Text>
           </Text>
         )
       case 'badge':
         return (
-          <Text>
+          <Text wrap="wrap">
             <Text bold inverse color={TONE_COLOR[row.tone]}>{` ${row.label} `}</Text>
             <Text>{` ${row.text}`}</Text>
           </Text>
@@ -81,9 +89,9 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
           </Text>
         )
       case 'note':
-        return <Text color="inactive" dimColor>{row.text}</Text>
+        return <Text color="inactive" dimColor wrap="wrap">{row.text}</Text>
       case 'message':
-        return <Text dimColor>{row.text}</Text>
+        return <Text dimColor wrap="wrap">{row.text}</Text>
       default:
         return <Text>{' '}</Text>
     }

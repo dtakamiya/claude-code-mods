@@ -11,6 +11,7 @@ const sonnetUsage = {
   cache_creation_input_tokens: 0,
 }
 // Sonnet 5.5: 入力 $2 / 出力 $10（MTok）。上の usage は 2 + 1 = $3。
+// 同じ usage を Haiku 5.5 で計算すると、プロンプトが 10 万 tokens 超の高い単価表（入力 $0.5 / 出力 $2.5）で 0.5 + 0.25 = $0.75。
 
 test('メインループのターンは開始・step・ツール・終了の順に 1 件の記録になる', () => {
   // Arrange
@@ -40,6 +41,10 @@ test('メインループのターンは開始・step・ツール・終了の順�
     editCount: 1,
     durationMs: 4_200,
     reason: 'answer',
+    haikuCostUsd: 0.75,
+    firstStepCacheWrite: 0,
+    firstStepPromptTokens: 1_000_000,
+    advisorCalls: 0,
   })
   expect(finished.drafts).toEqual({})
 })
@@ -134,4 +139,56 @@ test('step が複数あるターンは応答ごとの単価を合計し、モデ
   // Assert: Sonnet 3 + Haiku 50,000 × $0.10/MTok = 0.005
   expect(finished.record.model).toBe('claude-haiku-5-5')
   expect(finished.record.costUsd?.toFixed(6)).toBe('3.005000')
+})
+
+test('Haiku 換算は応答ごとに単価段を判定して足す（ターン合計では判定しない）', () => {
+  // Arrange: 6 万 tokens の応答を 2 回。合計 12 万は高い単価段だが、応答ごとなら低い単価段（入力 $0.1 / MTok）。
+  const stepUsage = { ...sonnetUsage, input_tokens: 60_000, output_tokens: 0 }
+  let drafts = beginTurn({}, { turnId: 't5' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't5', model: 'claude-sonnet-5-5', usage: stepUsage })
+  drafts = recordStep(drafts, { turnId: 't5', model: 'claude-sonnet-5-5', usage: stepUsage })
+  const finished = finishTurn(drafts, { turnId: 't5', durationMs: 1, reason: 'answer' })
+
+  // Assert: 60,000 × $0.1/MTok × 2 = 0.012
+  expect(finished.record.haikuCostUsd?.toFixed(6)).toBe('0.012000')
+})
+
+test('単価不明の応答を含むターンは Haiku 換算も null にする', () => {
+  // Arrange
+  const unknownUsage = { ...sonnetUsage, model: 'claude-unlisted-9' }
+  let drafts = beginTurn({}, { turnId: 't6' })
+  drafts = recordStep(drafts, { turnId: 't6', model: 'claude-unlisted-9', usage: unknownUsage })
+
+  // Act
+  const finished = finishTurn(drafts, { turnId: 't6', usage: unknownUsage, durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.haikuCostUsd).toBeNull()
+})
+
+test('最初の応答のキャッシュ書込だけを firstStepCacheWrite に残し、advisor の回数は足し合わせる', () => {
+  // Arrange
+  const first = { ...sonnetUsage, cache_creation_input_tokens: 40_000 }
+  const later = { ...sonnetUsage, cache_creation_input_tokens: 5_000 }
+  let drafts = beginTurn({}, { turnId: 't7' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't7', model: 'claude-sonnet-5-5', usage: first, advisorCalls: 1 })
+  drafts = recordStep(drafts, { turnId: 't7', model: 'claude-sonnet-5-5', usage: later, advisorCalls: 2 })
+  const finished = finishTurn(drafts, { turnId: 't7', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.firstStepCacheWrite).toBe(40_000)
+  expect(finished.record.firstStepPromptTokens).toBe(1_040_000)
+  expect(finished.record.advisorCalls).toBe(3)
+})
+
+test('応答がなく終了時の usage だけあるターンも Haiku 換算を計算する', () => {
+  // Act
+  const finished = finishTurn({}, { turnId: 'late', usage: sonnetUsage, durationMs: 9, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.haikuCostUsd?.toFixed(6)).toBe('0.750000')
 })

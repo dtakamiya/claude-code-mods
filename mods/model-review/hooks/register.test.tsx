@@ -145,3 +145,57 @@ test('turn.step のモデルと effort が記録に載り、/model-review の表
   expect(ran.text).toContain('claude-haiku-5-5  effort low')
   expect(ran.text).toContain('推定 $0.0050')
 })
+
+test('ターン実行中は、完了前でもペインに「実行中」の行が出て、完了後は記録に切り替わる', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await $.command.run(COMMAND_RUN)
+  const mountPane = () =>
+    $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+
+  // Act: ツールを 1 回呼んだところ（ターン未完了）。
+  await $.turn.start({ text: '', turnId: 'turn-live' } as never)
+  await $.tool.call({ tool: 'Read', tool_use_id: 'use-live', file_path: '/x' } as never)
+  const running = await mountPane()
+
+  // Assert
+  expect(await running.find({ type: 'Text', text: /実行中/ })).toBeDefined()
+  await running.unmount()
+
+  // Act: ターンを完了する。
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'turn-live', reason: 'answer', usage: SONNET_USAGE } as never)
+  const done = await mountPane()
+
+  // Assert
+  expect(await done.find({ type: 'Text', text: /1 ターン/ })).toBeDefined()
+  await done.unmount()
+})
+
+test('turn.step の結果に advisor があれば、/model-review に回数が出る', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 0, false)
+  on('turn.step', async function* () {
+    return {
+      turnId: 'turn-3',
+      index: 0,
+      answer: '',
+      toolUses: [],
+      serverToolUses: [{ id: 's1', name: 'advisor', input: {} }],
+      stopReason: 'end_turn',
+      usage: SONNET_USAGE,
+    } as never
+  })
+  await $.session.start(SESSION_START)
+  await $.turn.start({ text: '', turnId: 'turn-3' } as never)
+
+  // Act
+  const stream = $.turn.step({ turnId: 'turn-3', index: 0, model: 'claude-sonnet-5-5', effort: 'high', messageCount: 1 } as never)
+  for await (const chunk of stream) void chunk
+  await stream.result
+  await $.turn.complete({ answer: '', durationMs: 10, isAborted: false, turnId: 'turn-3', reason: 'answer', usage: SONNET_USAGE } as never)
+  const ran = await $.command.run(COMMAND_RUN)
+
+  // Assert
+  expect(ran.text).toContain('advisor 1 回')
+})
