@@ -9,6 +9,7 @@ Claude Code の **Mods**（関数フック型プラグイン）を作って配�
 | `context-doctor` | コンテキストの内訳を分析し、課題点と改善点を出す（読み取り専用） | `/ctx` |
 | `session-recap` | ツール別の呼び出し回数とエラー報告件数を一覧にする（読み取り専用・tool 名の集計のみ、input は出力しない） | `/recap` |
 | `repeat-call-notice` | 1 ターンで同じツールを同じ入力で N 回以上呼んだら、ターン終了時にトーストで知らせる（読み取り専用・tool 名と回数のみ、input は出力しない。N=3 は仮置き） | トースト |
+| `model-review` | 現在のセッションのモデル・effort・トークン・推定コストを表示し、モデル選択の妥当性を参考として示す（読み取り専用・ヒューリスティック。Mod 読み込み後のターンだけが対象） | `/model-review` |
 
 ## 公開範囲（private リポジトリ）
 
@@ -26,7 +27,7 @@ Claude Code の **Mods**（関数フック型プラグイン）を作って配�
 
 ## 動作確認済みバージョン
 
-Claude Code 2.1.296（`validate` / `test` / tsc 通過。UI の目視確認は未実施）。Mods API は early access のため、バージョンが変わったら再検証する。
+Claude Code 2.1.300（`validate` / `test` / tsc 通過。UI の目視確認は未実施）。Mods API は early access のため、バージョンが変わったら再検証する。
 
 ## 安全性
 
