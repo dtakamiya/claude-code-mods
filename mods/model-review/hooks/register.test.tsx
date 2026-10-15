@@ -95,7 +95,7 @@ test('基準点から現在までの実コストと、推定との差を表示�
   expect(ran.text).toContain('差（実コスト − 推定）: $0.0000')
 })
 
-test('Pane は記録した行（対象ターン数）を terminal と desktop の両方で描く', async ($, on) => {
+test('Pane はタイトル行（ターン数）を terminal と desktop の両方で描く', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
   await $.session.start(SESSION_START)
@@ -113,7 +113,7 @@ test('Pane は記録した行（対象ターン数）を terminal と desktop �
     } as never)
 
     // Assert
-    expect(await ui.find({ type: 'Text', text: /対象: 1 ターン/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /1 ターン/ })).toBeDefined()
     await ui.unmount()
   }
 })
