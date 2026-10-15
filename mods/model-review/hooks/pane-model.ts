@@ -21,6 +21,8 @@ import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
 
 export const BAR_WIDTH = 14
+/** 状況に応じた警告（buildNotes）のバッジ。常に出す免責・判定基準（dim の注記）と見分ける。 */
+export const ALERT_LABEL = '注意'
 const MODEL_ID_PREFIX = 'claude-'
 const NO_EFFORT_LABEL = '-'
 
@@ -32,7 +34,7 @@ export type PaneRow =
   | { kind: 'blank' }
   | { kind: 'title'; turns: number; subagents: number; costText: string }
   | { kind: 'heading'; text: string }
-  | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; filled: number; percentText: string; costText: string; tokenText: string }
+  | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; filled: number; percentText: string; costText: string; tokenText: string; cacheText: string }
   | { kind: 'turn'; label: string; model: string; tier: Tier; costText: string; detail: string }
   | { kind: 'kv'; label: string; value: string; tone: Tone }
   | { kind: 'badge'; label: string; tone: Tone; text: string }
@@ -87,7 +89,8 @@ function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
     filled: filledCells(share),
     percentText: percentText(share),
     costText: formatUsd(group.costUsd),
-    tokenText: `${hit === null ? '' : `${hit} · `}入力 ${formatInt(tokens.input)} · 出力 ${formatInt(tokens.output)} · キャッシュ 読 ${formatInt(tokens.cacheRead)} / 書 ${formatInt(tokens.cacheWrite)}`,
+    tokenText: `${hit === null ? '' : `${hit} · `}入力 ${formatInt(tokens.input)} · 出力 ${formatInt(tokens.output)}`,
+    cacheText: `キャッシュ 読 ${formatInt(tokens.cacheRead)} / 書 ${formatInt(tokens.cacheWrite)}`,
   }
 }
 
@@ -193,13 +196,14 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow
   const live = liveRows(drafts)
   if (records.length === 0) return live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
   const { costUsd: estimateUsd, unpricedTurns } = estimateTotal(records)
+  const range = estimateRange(records)
   const concerns = findConcerns(records)
   return [
     {
       kind: 'title',
       turns: records.length,
       subagents: records.filter(record => record.agentId !== null).length,
-      costText: formatUsd(unpricedTurns === records.length ? null : estimateUsd),
+      costText: unpricedTurns === records.length ? formatUsd(null) : formatUsdRange(range.lowUsd, range.highUsd),
     },
     { kind: 'blank' },
     ...live,
@@ -216,7 +220,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow
     ...costRows(review, estimateUsd, unpricedTurns),
     ...advisorRows(records),
     { kind: 'blank' },
-    ...buildNotes(review).map((text): PaneRow => ({ kind: 'note', text })),
+    ...buildNotes(review).map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
     { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },
   ]

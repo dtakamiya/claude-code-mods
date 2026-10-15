@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
-import { BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
+import { ALERT_LABEL, BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
 // 架空データのみ。
@@ -113,7 +113,8 @@ test('指摘がなければ OK 行、軽作業に重い設定ならバッジを�
 })
 
 const rowsOf = (turns: TurnRecord[], cost?: ReviewState['sessionCostUsd']): PaneRow[] => buildPaneRows(review(turns, cost))
-const noteTexts = (rows: PaneRow[]): string[] => rows.flatMap(row => (row.kind === 'note' ? [row.text] : []))
+const noteTexts = (rows: PaneRow[]): string[] =>
+  rows.flatMap(row => (row.kind === 'note' || (row.kind === 'badge' && row.label === ALERT_LABEL) ? [row.text] : []))
 
 test('グループ行のトークン表示の先頭にキャッシュヒット率を出す', () => {
   // Arrange: 読込 800 ÷（入力 100 + 読込 800 + 書込 100）= 80%。
@@ -310,4 +311,41 @@ test('ループ別の集計は、メインとサブエージェントの両方�
   // Assert
   expect(headings(both)).toContain('ループ別（キャッシュ効率）')
   expect(headings(mainOnly)).not.toContain('ループ別（キャッシュ効率）')
+})
+
+test('タイトルの推定は、上限のあるターンがあれば幅で表示する', () => {
+  // Arrange: 下限 $3、上限 $4.2。
+  const [title] = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })]))
+
+  // Assert
+  expect(title).toMatchObject({ kind: 'title', costText: '$3.0000〜$4.2000' })
+})
+
+test('状況に応じた警告は「注意」バッジにし、常に出す免責は dim の注記のまま残す', () => {
+  // Arrange: 切替（モデル変更）で警告が出る記録。
+  const rows = rowsOf([
+    turn({ turnId: 't1' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
+  ])
+
+  // Act
+  const alerts = rows.filter(row => row.kind === 'badge' && row.label === ALERT_LABEL)
+  const notes = rows.filter(row => row.kind === 'note')
+
+  // Assert
+  expect(alerts.length).toBeGreaterThan(0)
+  expect(notes.some(row => row.kind === 'note' && row.text.includes('推定に含まれないもの'))).toBe(true)
+  expect(notes.some(row => row.kind === 'note' && row.text.includes('切替の推定'))).toBe(false)
+})
+
+test('グループ行はトークンとキャッシュを別の行に分ける', () => {
+  // Arrange
+  const rows = rowsOf([turn({ tokens: { input: 100, output: 5, cacheRead: 800, cacheWrite: 100 } })])
+
+  // Act
+  const group = rows.find(row => row.kind === 'group')
+
+  // Assert
+  expect(group?.kind === 'group' ? group.cacheText : '').toBe('キャッシュ 読 800 / 書 100')
+  expect(group?.kind === 'group' ? group.tokenText : '').not.toContain('キャッシュ')
 })
