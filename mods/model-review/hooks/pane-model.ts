@@ -144,7 +144,7 @@ const concernHeading = (concerns: readonly Concern[]): string => {
   return total === 0 ? '妥当性（参考）' : `妥当性（参考）· 指摘 ${total} 件`
 }
 
-const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー・中断`
+const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
 
 const isStarted = (draft: LoopDraft): boolean => draft.stepCount > 0 || draft.toolCount > 0
 
