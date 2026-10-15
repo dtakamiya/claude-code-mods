@@ -4,6 +4,7 @@ import type { Register } from 'claude-code'
 import { PaneBody } from './pane'
 import { EMPTY_REVIEW, appendTurn, withBaseline, withCurrent } from './state'
 import { beginTurn, finishTurn, recordStep, recordTool, type Drafts } from './recorder'
+import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 
 const PANE_ID = 'model-review'
@@ -78,7 +79,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
-    const lines = buildReportLines(await read($, reviewAtom))
-    return <PaneBody ui={$.ui.resolve(e)} lines={lines} />
+    const rows = buildPaneRows(await read($, reviewAtom))
+    return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }
