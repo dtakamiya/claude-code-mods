@@ -105,7 +105,7 @@ test('妥当性の指摘があれば、種類と件数を見出しに出す', ()
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('【過剰】 軽作業に重いモデル / effort · 3 件')
+  expect(text).toContain('【過剰】 軽作業に重いモデル / effort · 3 / 3 件')
   expect(text).toContain('claude-opus-5-5 / effort medium: 軽作業 3 件')
   expect(text).toContain('判定基準（参考）')
 })

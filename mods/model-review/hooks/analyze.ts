@@ -50,6 +50,8 @@ export type Concern = {
   readonly examples: readonly string[]
   /** 金額の目安（USD）。過剰は Haiku 換算の差額の上限。分からなければ null。 */
   readonly amountUsd: number | null
+  /** 件数の母数（全ターン数）。割合で読める種類にだけ付ける。 */
+  readonly outOf?: number
 }
 
 const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -251,7 +253,9 @@ function overspecGroups(overspec: readonly TurnRecord[]): readonly OverspecGroup
 function overspecGroupLine(group: OverspecGroup): string {
   const sonnet = group.sonnetUsd === null ? '' : ` · Sonnet なら約 ${formatUsd(group.sonnetUsd)} 減`
   const haiku = group.haikuUsd === null ? '' : ` · Haiku なら最大約 ${formatUsd(group.haikuUsd)} 減（上限）`
-  return `[${group.loop}] ${group.model} / effort ${group.effort}: 軽作業 ${group.turns.length} 件（ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下）${sonnet}${haiku}`
+  const latest = group.turns[group.turns.length - 1]
+  const latestText = latest === undefined ? '' : ` · 直近 ターン ${latest.turnId}`
+  return `[${group.loop}] ${group.model} / effort ${group.effort}: 軽作業 ${group.turns.length} 件（ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下）${sonnet}${haiku}${latestText}`
 }
 
 function overspecConcern(records: readonly TurnRecord[]): Concern | null {
@@ -294,17 +298,22 @@ function switchConcern(records: readonly TurnRecord[]): Concern | null {
   return concernOf('switch', summary.count, summary.examples, summary.costUsd)
 }
 
+/** 「N 件」を全ターンに対する割合で読む種類。 */
+const RATIO_CONCERNS: ReadonlySet<ConcernKind> = new Set(['overspec', 'underspec', 'subagent'])
+
 /** 妥当性の指摘。該当しない種類は含めない。 */
 export function findConcerns(records: readonly TurnRecord[]): readonly Concern[] {
   const underspec = underspecTurns(records)
   const concerns = [
     overspecConcern(records),
-    concernOf('underspec', underspec.length, underspec.map(underspecLine)),
+    concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine)),
     delegationConcern(records),
     subagentConcern(records),
     switchConcern(records),
   ]
-  return concerns.filter((concern): concern is Concern => concern !== null)
+  return concerns
+    .filter((concern): concern is Concern => concern !== null)
+    .map(concern => (RATIO_CONCERNS.has(concern.kind) ? { ...concern, outOf: records.length } : concern))
 }
 
 /** コストの高いターン（単価不明は除く）。降順で上位 limit 件。元の配列は変えない。 */

@@ -19,7 +19,7 @@ import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summa
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
 import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
-import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatDuration, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
+import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, countText, formatDuration, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
 
 export const BAR_WIDTH = 14
 /** 状況に応じた警告（buildNotes）のバッジ。常に出す免責・判定基準（dim の注記）と見分ける。 */
@@ -116,7 +116,7 @@ function concernRows(concerns: readonly Concern[]): PaneRow[] {
     const amountLabel = CONCERN_AMOUNT_LABEL[concern.kind]
     const amount = concern.amountUsd === null || amountLabel === null ? '' : ` · ${amountLabel} ${formatUsd(concern.amountUsd)}`
     return [
-      { kind: 'badge', label, tone: CONCERN_TONE[concern.kind], text: `${summary} · ${concern.count} 件${amount}` },
+      { kind: 'badge', label, tone: CONCERN_TONE[concern.kind], text: `${summary} · ${countText(concern)}${amount}` },
       ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
     ]
   })

@@ -72,6 +72,10 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   ]
 }
 
+/** 件数の表記。母数があれば「116 / 200 件」。 */
+export const countText = (concern: Concern): string =>
+  concern.outOf === undefined ? `${concern.count} 件` : `${concern.count} / ${concern.outOf} 件`
+
 function amountSuffix(concern: Concern): string {
   const label = CONCERN_AMOUNT_LABEL[concern.kind]
   return concern.amountUsd === null || label === null ? '' : ` · ${label} ${formatUsd(concern.amountUsd)}`
@@ -80,7 +84,7 @@ function amountSuffix(concern: Concern): string {
 function concernLines(concerns: readonly Concern[]): string[] {
   if (concerns.length === 0) return [`  ${NO_CONCERNS_TEXT}`]
   return concerns.flatMap(concern => [
-    `  【${CONCERN_TEXT[concern.kind].label}】 ${CONCERN_TEXT[concern.kind].summary} · ${concern.count} 件${amountSuffix(concern)}`,
+    `  【${CONCERN_TEXT[concern.kind].label}】 ${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${amountSuffix(concern)}`,
     ...concern.examples.map(example => `    ・${example}`),
   ])
 }

@@ -441,3 +441,42 @@ test('不足の境界: ツール 10 回と 120 秒ちょうどで指摘し、9 �
   expect(hitCount).toBe(2)
   expect(missConcern).toBeUndefined()
 })
+
+test('過剰・不足・サブの件数には全ターン数を母数として付け、切替・委譲には付けない', () => {
+  // Arrange: 過剰 3 件 + 通常 7 件。
+  const records = [
+    ...repeat(3, index => turn({ turnId: `o${index}`, model: 'claude-opus-5-5', effort: 'medium' })),
+    ...repeat(7, index => turn({ turnId: `n${index}`, toolCount: 5 })),
+  ]
+
+  // Act
+  const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
+
+  // Assert
+  expect(overspec).toMatchObject({ count: 3, outOf: 10 })
+  const withSwitch = findConcerns([turn({ turnId: 'a' }), turn({ turnId: 'b', model: 'claude-opus-5-5', toolCount: 5 })])
+  expect(withSwitch.find(concern => concern.kind === 'switch')?.outOf).toBeUndefined()
+})
+
+test('過剰の例には、そのグループの直近のターン番号を出す', () => {
+  // Arrange
+  const records = repeat(4, index => turn({ turnId: `t${index}`, model: 'claude-opus-5-5', effort: 'medium' }))
+
+  // Act
+  const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
+
+  // Assert
+  expect(overspec?.examples[0]).toContain('直近 ターン t3')
+})
+
+test('不足の例は新しいターンから順に並べ、直近の 3 件が残る', () => {
+  // Arrange
+  const records = repeat(5, index => turn({ turnId: `h${index}`, model: 'claude-haiku-5-5', effort: 'low', toolCount: 12 }))
+
+  // Act
+  const underspec = findConcerns(records).find(concern => concern.kind === 'underspec')
+
+  // Assert
+  expect(underspec?.count).toBe(5)
+  expect(underspec?.examples.map(line => line.match(/ターン (h\d)/)?.[1])).toEqual(['h4', 'h3', 'h2'])
+})
