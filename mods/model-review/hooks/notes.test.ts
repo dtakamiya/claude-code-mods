@@ -50,3 +50,42 @@ test('記録がなければ、経過日数の注記も含めて空', () => {
   const empty: ReviewState = { turns: [], sessionCostUsd: { baseline: null, current: null } }
   expect(buildNotes(empty, fetchedMs + 365 * MS_PER_DAY)).toEqual([])
 })
+
+const SONNET_MODEL = 'claude-sonnet-5-5'
+const OPUS_MODEL = 'claude-opus-5-5'
+const SWITCH_NOTE_MARK = '切替の推定'
+/** total ターンのうち、index が switchAt 未満は Sonnet、以降は Opus の記録。index 0 始まり。 */
+const recordsSwitchingAt = (total: number, switchAt: number): TurnRecord[] =>
+  Array.from({ length: total }, (_, index) => ({
+    ...turn,
+    turnId: `t${index}`,
+    model: index < switchAt ? SONNET_MODEL : OPUS_MODEL,
+  }))
+const switchNotesOf = (turns: TurnRecord[]): string[] =>
+  buildNotes({ turns, sessionCostUsd: { baseline: null, current: null } }).filter(text => text.includes(SWITCH_NOTE_MARK))
+
+test('切替が直近 10 ターンの中にあれば、切替の注記を出す', () => {
+  // Arrange: 15 ターン中、index 5 から Opus。直近 10 ターン（index 5〜14）に切替がある。
+  // Act
+  const notes = switchNotesOf(recordsSwitchingAt(15, 5))
+
+  // Assert
+  expect(notes).toHaveLength(1)
+})
+
+test('直近 10 ターンより前の切替だけなら、切替の注記は出さない', () => {
+  // Arrange: 16 ターン中、index 5 で切替。直近 10 ターン（index 6〜15）に切替はない。
+  // Act
+  const notes = switchNotesOf(recordsSwitchingAt(16, 5))
+
+  // Assert
+  expect(notes).toEqual([])
+})
+
+test('直近ターンでの切替は、切替の注記を出す', () => {
+  // Act
+  const notes = switchNotesOf(recordsSwitchingAt(20, 19))
+
+  // Assert
+  expect(notes).toHaveLength(1)
+})

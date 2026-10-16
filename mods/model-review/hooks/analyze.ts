@@ -54,7 +54,7 @@ export type Concern = {
   readonly kind: ConcernKind
   readonly count: number
   readonly examples: readonly string[]
-  /** 金額の目安（USD）。過剰は Haiku 換算の差額の上限。分からなければ null。 */
+  /** 金額の目安（USD）。過剰は Sonnet 換算の差額。分からなければ null。 */
   readonly amountUsd: number | null
   /** 件数の母数（全ターン数）。割合で読める種類にだけ付ける。 */
   readonly outOf?: number

@@ -23,13 +23,13 @@ const review = (turns: TurnRecord[], cost = { baseline: null, current: null } as
   sessionCostUsd: cost,
 })
 
-test('記録がなければ案内の 1 行だけを返す', () => {
+test('記録がなければ、先頭に結論「まだ記録がありません」と案内の 1 行を返す', () => {
   // Act
   const rows = buildPaneRows(review([]))
 
   // Assert
-  expect(rows).toHaveLength(1)
-  expect(rows[0]?.kind).toBe('message')
+  expect(rows.map(row => row.kind)).toEqual(['conclusion', 'message'])
+  expect(rows[0]).toEqual({ kind: 'conclusion', text: '結論: まだ記録がありません', tone: 'plain' })
 })
 
 test('先頭はターン数・サブエージェント数・推定コストのタイトル行', () => {
@@ -37,7 +37,7 @@ test('先頭はターン数・サブエージェント数・推定コストの�
   const turns = [turn({}), turn({ turnId: 't2', agentId: 'a1', model: 'claude-haiku-5-5', costUsd: 1 })]
 
   // Act
-  const [title] = buildPaneRows(review(turns))
+  const title = buildPaneRows(review(turns)).find(row => row.kind === 'title')
 
   // Assert
   expect(title).toEqual({ kind: 'title', turns: 2, subagents: 1, costText: '$4.0000' })
@@ -267,13 +267,12 @@ test('実行中のターンがあれば、完了前でも「実行中」の行�
   expect(rows.some(row => row.kind === 'message')).toBe(false)
 })
 
-test('実行中のターンがなく記録もなければ、従来どおり案内の 1 行だけを返す', () => {
+test('実行中のターンがなく記録もなければ、結論と案内の 1 行だけを返す', () => {
   // Act
   const rows = buildPaneRows(review([]), beginTurn({}, { turnId: 'idle' }))
 
   // Assert
-  expect(rows).toHaveLength(1)
-  expect(rows[0]?.kind).toBe('message')
+  expect(rows.map(row => row.kind)).toEqual(['conclusion', 'message'])
 })
 
 test('単価不明の割合がちょうど 3 割なら単価表の注記を出し、それ未満なら出さない', () => {
@@ -318,7 +317,7 @@ test('ループ別の集計は、メインとサブエージェントの両方�
 
 test('タイトルの推定は、上限のあるターンがあれば幅で表示する', () => {
   // Arrange: 下限 $3、上限 $4.2。
-  const [title] = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })]))
+  const title = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })])).find(row => row.kind === 'title')
 
   // Assert
   expect(title).toMatchObject({ kind: 'title', costText: '$3.0000〜$4.2000' })
@@ -351,4 +350,74 @@ test('グループ行はトークンとキャッシュを別の行に分ける',
   // Assert
   expect(group?.kind === 'group' ? group.cacheText : '').toBe('キャッシュ 読 800 / 書 100')
   expect(group?.kind === 'group' ? group.tokenText : '').not.toContain('キャッシュ')
+})
+
+// 過剰（軽作業に Opus）の指摘を 1 件ずつ作るターン。Sonnet 換算の差額は 0.25 ドル。
+const lightOpus = (turnId: string): TurnRecord =>
+  turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', toolCount: 0, costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 })
+const glossaryRows = (rows: PaneRow[]): string[] => noteTexts(rows).filter(text => text.startsWith('用語'))
+
+test('先頭の結論は、指摘の件数を種類別に出す', () => {
+  // Act
+  const [conclusion] = rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')])
+
+  // Assert
+  expect(conclusion).toEqual({ kind: 'conclusion', text: '結論: 見直し候補 3 件（過剰 3）', tone: 'plain' })
+})
+
+test('指摘がなければ先頭の結論は「目立った指摘なし」', () => {
+  // Act
+  const [conclusion] = rowsOf([turn({ toolCount: 5 })])
+
+  // Assert
+  expect(conclusion).toEqual({ kind: 'conclusion', text: '結論: 目立った指摘なし', tone: 'success' })
+})
+
+test('用語行は、画面に出ている行の用語だけを末尾にまとめる', () => {
+  // Arrange: 実コストあり（読み込み後・差）、過剰あり（Sonnet 換算）、プロンプトありでヒット率も出る。
+  const rows = rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')], { baseline: 10, current: 14 })
+
+  // Act
+  const glossary = glossaryRows(rows)
+
+  // Assert
+  expect(glossary).toHaveLength(1)
+  expect(glossary[0]).toContain('ヒット率: ')
+  expect(glossary[0]).toContain('読み込み後: ')
+  expect(glossary[0]).toContain('Sonnet 換算: ')
+  expect(glossary[0]).toContain('差（実コスト − 推定）: + は推定より実額が大きい')
+})
+
+test('用語行は、実コストも過剰もなければヒット率だけを説明する', () => {
+  // Act
+  const [glossary] = glossaryRows(rowsOf([turn({})]))
+
+  // Assert
+  expect(glossary).toContain('ヒット率: ')
+  expect(glossary).not.toContain('読み込み後')
+  expect(glossary).not.toContain('差（実コスト')
+  expect(glossary).not.toContain('Sonnet 換算')
+})
+
+test('該当する行がなければ用語行を出さない', () => {
+  // Arrange: プロンプトのトークンが 0 なのでヒット率は出ず、実コストも過剰もない。
+  const rows = rowsOf([turn({ tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })])
+
+  // Act
+  const glossary = glossaryRows(rows)
+
+  // Assert
+  expect(glossary).toEqual([])
+})
+
+test('用語の説明は 1 つ 40 字以内に収める', () => {
+  // Arrange: 用語が 4 つとも出る組み合わせ。
+  const [glossary] = glossaryRows(rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')], { baseline: 10, current: 14 }))
+
+  // Act
+  const items = (glossary ?? '').replace(/^用語\s+/, '').split(' / ')
+
+  // Assert
+  expect(items).toHaveLength(4)
+  expect(Math.max(...items.map(item => Array.from(item).length))).toBeLessThanOrEqual(40)
 })

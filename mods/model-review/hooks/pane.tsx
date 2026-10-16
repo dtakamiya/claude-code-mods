@@ -36,6 +36,8 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
             <Text bold>{row.costText}</Text>
           </Text>
         )
+      case 'conclusion':
+        return <Text bold wrap="wrap" color={TONE_COLOR[row.tone]}>{row.text}</Text>
       case 'heading':
         return <Text bold wrap="truncate-end">{`▎${row.text}`}</Text>
       case 'group':

@@ -101,6 +101,29 @@ test('基準点から現在までの実コストと、推定との差を表示�
   expect(ran.text).toContain('差（実コスト − 推定）: $0.0000')
 })
 
+test('Pane は先頭の結論行を terminal と desktop の両方で描く', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_RUN)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    // Act
+    const ui = await $.ui.mount({
+      plugin: 'model-review',
+      surface,
+      component: 'Pane',
+      requestId: 'model-review',
+      props: PANE_PROPS,
+    } as never)
+
+    // Assert
+    expect(await ui.find({ type: 'Text', text: /結論/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
 test('Pane はタイトル行（ターン数）を terminal と desktop の両方で描く', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
