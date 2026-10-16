@@ -10,6 +10,8 @@ import {
   modelRank,
   topCostTurns,
   MIN_OVERSPEC_SAVINGS_USD,
+  MIN_OVERSPEC_TURNS,
+  MAIN_DELEGATION_MIN_TOOL_CALLS,
   UNDERSPEC_ERROR_STREAK,
   RANK_HAIKU,
   estimateRange,
@@ -18,6 +20,9 @@ import {
 } from './analyze'
 
 // 架空データのみ。既定値は「重い」側に寄らない軽い 1 ターン。
+const repeat = (count: number, make: (index: number) => TurnRecord): TurnRecord[] =>
+  Array.from({ length: count }, (_, index) => make(index))
+
 const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
   turnId: 'turn-x',
   agentId: null,
@@ -85,22 +90,62 @@ test('モデル名から階層を判定し、未知のモデルは階層なし�
   expect(modelRank('claude-unlisted-9')).toBe(-1)
 })
 
-test('軽作業を上位モデルで実行したターンを過剰の可能性として指摘する', () => {
-  // Arrange: ツール 2 回・出力 100 tokens・編集なし。
-  const records = [turn({ turnId: 'light-1', model: 'claude-opus-5-5', effort: 'medium', toolCount: 2 })]
+test('Opus の軽作業が 3 件以上あれば過剰の可能性として指摘し、同じ設定は 1 行にまとめる', () => {
+  // Arrange
+  const records = repeat(MIN_OVERSPEC_TURNS, index => turn({ turnId: `light-${index}`, model: 'claude-opus-5-5', effort: 'medium', toolCount: 2 }))
 
   // Act
-  const [concern] = findConcerns(records)
+  const concern = findConcerns(records).find(candidate => candidate.kind === 'overspec')
 
   // Assert
-  expect(concern).toMatchObject({ kind: 'overspec', count: 1 })
-  expect(concern?.examples[0]).toContain('light-1')
-  expect(concern?.examples[0]).toContain('claude-opus-5-5')
+  expect(concern).toMatchObject({ kind: 'overspec', count: 3 })
+  expect(concern?.examples).toHaveLength(1)
+  expect(concern?.examples[0]).toContain('claude-opus-5-5 / effort medium: 軽作業 3 件')
+})
+
+test('過剰は 1〜2 件では指摘しない（1 ターンの軽さは切替の根拠にならない）', () => {
+  // Arrange
+  const records = repeat(MIN_OVERSPEC_TURNS - 1, () => turn({ model: 'claude-opus-5-5', effort: 'xhigh' }))
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'overspec')).toBeUndefined()
+})
+
+test('Sonnet / Haiku の軽作業は、effort が高くなければモデル起因の過剰にしない', () => {
+  // Arrange
+  const records = [
+    ...repeat(5, () => turn({ model: 'claude-sonnet-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02 })),
+    ...repeat(5, () => turn({ model: 'claude-haiku-5-5', effort: 'medium' })),
+  ]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'overspec')).toBeUndefined()
+})
+
+test('中断・拒否のターンは出力が少なくても軽作業とは見なさない', () => {
+  // Arrange
+  const records = [
+    turn({ model: 'claude-opus-5-5', effort: 'medium', reason: 'aborted' }),
+    turn({ model: 'claude-opus-5-5', effort: 'medium', reason: 'refusal' }),
+    turn({ model: 'claude-opus-5-5', effort: 'medium', reason: 'aborted' }),
+  ]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'overspec')).toBeUndefined()
 })
 
 test('軽作業でも effort が xhigh なら、モデルが Haiku でも過剰の可能性として指摘する', () => {
   // Arrange
-  const records = [turn({ model: 'claude-haiku-5-5', effort: 'xhigh', toolCount: 0 })]
+  const records = repeat(MIN_OVERSPEC_TURNS, () => turn({ model: 'claude-haiku-5-5', effort: 'xhigh', toolCount: 0 }))
 
   // Act
   const concerns = findConcerns(records)
@@ -136,7 +181,7 @@ test('Haiku を低 effort で使い、ツールが多いターンを不足の可
   expect(underspec?.examples[0]).toContain('heavy-1')
 })
 
-test('Haiku を低 effort で使ったエラー終了のターンも不足の可能性として指摘する', () => {
+test('Haiku を低 effort で使ったエラー終了だけでは、不足として指摘しない（API 側の原因もありうる）', () => {
   // Arrange
   const records = [turn({ model: 'claude-haiku-5-5', effort: 'low', reason: 'error' })]
 
@@ -144,13 +189,13 @@ test('Haiku を低 effort で使ったエラー終了のターンも不足の可
   const concerns = findConcerns(records)
 
   // Assert
-  expect(concerns.map(concern => concern.kind)).toEqual(['underspec'])
+  expect(concerns.find(concern => concern.kind === 'underspec')).toBeUndefined()
 })
 
-test('メインループが非 Haiku でツールを多く呼び、Haiku の委譲がなければ指揮者モデル運用を確認する', () => {
-  // Arrange: メインのツール合計 10 回（閾値ちょうど）、Haiku のサブエージェントなし。
+test('メインループが非 Haiku でツールを 30 回以上呼び、サブエージェントを使っていなければ委譲を確認する', () => {
+  // Arrange: メインのツール合計が閾値ちょうど。
   const records = [
-    turn({ turnId: 'm1', toolCount: 6, editCount: 2 }),
+    turn({ turnId: 'm1', toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS - 4, editCount: 2 }),
     turn({ turnId: 'm2', toolCount: 4 }),
   ]
 
@@ -159,14 +204,22 @@ test('メインループが非 Haiku でツールを多く呼び、Haiku の委�
 
   // Assert
   expect(delegation).toMatchObject({ count: 1 })
-  expect(delegation?.examples[0]).toContain('10 回')
+  expect(delegation?.examples[0]).toContain('30 回')
 })
 
-test('Haiku のサブエージェントがあれば、メインのツールが多くても委譲の指摘はしない', () => {
+test('閾値未満のツール回数では、委譲の指摘はしない', () => {
+  // Arrange
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS - 1 })]
+
+  // Act / Assert
+  expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toBeUndefined()
+})
+
+test('サブエージェントを使っていれば、メインのツールが多くても委譲の指摘はしない', () => {
   // Arrange
   const records = [
-    turn({ turnId: 'm1', toolCount: 20 }),
-    turn({ turnId: 's1', agentId: 'agent-1', model: 'claude-haiku-5-5', effort: 'medium', toolCount: 3 }),
+    turn({ turnId: 'm1', toolCount: 40 }),
+    turn({ turnId: 's1', agentId: 'agent-1', model: 'claude-sonnet-5-5', effort: 'medium', toolCount: 3 }),
   ]
 
   // Act
@@ -176,6 +229,32 @@ test('Haiku のサブエージェントがあれば、メインのツールが�
   expect(concerns.find(concern => concern.kind === 'delegation')).toBeUndefined()
 })
 
+test('サブエージェントが推定コストの半分以上を占めれば、割合とヒット率つきで指摘する', () => {
+  // Arrange: メイン 1 ターン $1、サブエージェント 3 ターン $3（ヒット 0%）。
+  const records = [
+    turn({ turnId: 'm', costUsd: 1 }),
+    ...repeat(3, index => turn({ turnId: `s${index}`, agentId: 'a', costUsd: 1, tokens: { input: 1_000, output: 10, cacheRead: 0, cacheWrite: 5_000 } })),
+  ]
+
+  // Act
+  const concern = findConcerns(records).find(candidate => candidate.kind === 'subagent')
+
+  // Assert
+  expect(concern).toMatchObject({ count: 3, amountUsd: 3 })
+  expect(concern?.examples[0]).toContain('75%')
+  expect(concern?.examples[0]).toContain('キャッシュヒット 0%')
+})
+
+test('サブエージェントが少数、またはコストの半分未満なら、サブエージェントの指摘はしない', () => {
+  // Arrange
+  const few = [turn({ costUsd: 1 }), turn({ agentId: 'a', costUsd: 5 }), turn({ agentId: 'a', costUsd: 5 })]
+  const small = [turn({ costUsd: 10 }), ...repeat(3, () => turn({ agentId: 'a', costUsd: 1 }))]
+
+  // Act / Assert
+  expect(findConcerns(few).find(concern => concern.kind === 'subagent')).toBeUndefined()
+  expect(findConcerns(small).find(concern => concern.kind === 'subagent')).toBeUndefined()
+})
+
 test('記録がないときは集計も指摘も空になる', () => {
   // Act / Assert
   expect(groupByModelEffort([])).toEqual([])
@@ -183,9 +262,11 @@ test('記録がないときは集計も指摘も空になる', () => {
   expect(estimateTotal([])).toEqual({ costUsd: 0, unpricedTurns: 0 })
 })
 
-test('Haiku 換算の差額が小さい軽作業は、モデル起因の過剰として指摘しない', () => {
+test('Sonnet 換算の差額が小さい Opus の軽作業は、モデル起因の過剰として指摘しない', () => {
   // Arrange: 差額 0.0005 は下限未満。
-  const records = [turn({ model: 'claude-sonnet-5-5', effort: 'medium', toolCount: 1, costUsd: 0.02, haikuCostUsd: 0.0195 })]
+  const records = repeat(MIN_OVERSPEC_TURNS, () =>
+    turn({ model: 'claude-opus-5-5', effort: 'medium', toolCount: 1, costUsd: 0.02, sonnetCostUsd: 0.0195, haikuCostUsd: 0.01 }),
+  )
 
   // Act
   const concerns = findConcerns(records)
@@ -194,56 +275,55 @@ test('Haiku 換算の差額が小さい軽作業は、モデル起因の過剰�
   expect(concerns.find(concern => concern.kind === 'overspec')).toBeUndefined()
 })
 
-test('過剰の指摘は差額の大きい順に並び、合計の差額と例の文面に Haiku 換算の差額が入る', () => {
+test('過剰の例は差額の大きいグループ順に並び、合計は Sonnet 換算、例の文面には Haiku の上限も入る', () => {
   // Arrange
-  const records = [
-    turn({ turnId: 'small', model: 'claude-sonnet-5-5', effort: 'medium', costUsd: 0.05, haikuCostUsd: 0.01 }),
-    turn({ turnId: 'big', model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02 }),
-  ]
+  const big = (index: number) => turn({ turnId: `big${index}`, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25, haikuCostUsd: 0.02 })
+  const small = (index: number) => turn({ turnId: `s${index}`, model: 'claude-opus-5-5', effort: 'high', costUsd: 0.1, sonnetCostUsd: 0.05, haikuCostUsd: 0.01 })
+  const records = [...repeat(3, small), ...repeat(2, big)]
 
   // Act
   const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
 
-  // Assert: 差額 0.48 と 0.04。
-  expect(overspec?.examples[0]).toContain('big')
-  expect(overspec?.examples[0]).toContain('Haiku なら約 $0.4800 減')
-  expect(overspec?.examples[0]).not.toContain('Sonnet なら')
-  expect(overspec?.examples[1]).toContain('small')
-  expect(overspec?.amountUsd?.toFixed(4)).toBe('0.5200')
+  // Assert: big: Sonnet 0.5 / Haiku 0.96、small: Sonnet 0.15 / Haiku 0.27。
+  expect(overspec?.examples[0]).toContain('effort medium: 軽作業 2 件')
+  expect(overspec?.examples[0]).toContain('Sonnet なら約 $0.5000 減')
+  expect(overspec?.examples[0]).toContain('Haiku なら最大約 $0.9600 減（上限）')
+  expect(overspec?.examples[1]).toContain('effort high: 軽作業 3 件')
+  expect(overspec?.amountUsd?.toFixed(4)).toBe('0.6500')
 })
 
-test('Haiku の高 effort は Haiku 換算の差額が 0 でも、effort 起因の過剰として残る', () => {
+test('Haiku の高 effort は差額が 0 でも、effort 起因の過剰として残る（金額は付けない）', () => {
   // Arrange
-  const records = [turn({ model: 'claude-haiku-5-5', effort: 'max', toolCount: 0, costUsd: 0.01, haikuCostUsd: 0.01 })]
+  const records = repeat(MIN_OVERSPEC_TURNS, () => turn({ model: 'claude-haiku-5-5', effort: 'max', toolCount: 0, costUsd: 0.01, haikuCostUsd: 0.01 }))
 
   // Act
   const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
 
   // Assert
-  expect(overspec).toMatchObject({ count: 1, amountUsd: null })
+  expect(overspec).toMatchObject({ count: 3, amountUsd: null })
 })
 
-test('Haiku 換算の差額が下限未満の Sonnet でも、effort が xhigh なら過剰として残る', () => {
+test('差額が下限未満の Sonnet でも、effort が xhigh なら過剰として残る', () => {
   // Arrange
-  const records = [turn({ model: 'claude-sonnet-5-5', effort: 'xhigh', toolCount: 0, costUsd: 0.001, haikuCostUsd: 0.0009 })]
+  const records = repeat(MIN_OVERSPEC_TURNS, () => turn({ model: 'claude-sonnet-5-5', effort: 'xhigh', toolCount: 0, costUsd: 0.001, haikuCostUsd: 0.0009 }))
 
   // Act
   const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
 
   // Assert
-  expect(overspec?.count).toBe(1)
+  expect(overspec?.count).toBe(3)
   expect(MIN_OVERSPEC_SAVINGS_USD).toBeGreaterThan(0.001 - 0.0009)
 })
 
-test('Haiku 換算がない古い記録（0.3.0）は、差額を判定せず従来どおり過剰として指摘する', () => {
-  // Arrange: haikuCostUsd を持たない。
-  const records = [turn({ model: 'claude-opus-5-5', effort: 'medium', toolCount: 0 })]
+test('Sonnet 換算がない古い記録は、差額を判定せず過剰として指摘する（金額は付けない）', () => {
+  // Arrange: sonnetCostUsd を持たない。
+  const records = repeat(MIN_OVERSPEC_TURNS, () => turn({ model: 'claude-opus-5-5', effort: 'medium', toolCount: 0 }))
 
   // Act
   const overspec = findConcerns(records).find(concern => concern.kind === 'overspec')
 
   // Assert
-  expect(overspec).toMatchObject({ count: 1, amountUsd: null })
+  expect(overspec).toMatchObject({ count: 3, amountUsd: null })
 })
 
 test('Sonnet の low effort でエラーが連続したターンを、不足の可能性として指摘する', () => {
@@ -305,19 +385,18 @@ test('メインループのモデル切替は、再構築コストの推定つ�
   expect(concern?.amountUsd?.toFixed(4)).toBe('0.4800')
 })
 
-test('Opus の軽作業には Sonnet 換算の差額も出し、Sonnet・古い記録には出さない', () => {
+test('Opus の軽作業の例には Sonnet 換算と Haiku の上限を出し、Sonnet の高 effort には差額を出さない', () => {
   // Arrange
-  const opus = turn({ turnId: 'o', model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 })
-  const sonnet = turn({ turnId: 's', model: 'claude-sonnet-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.5 })
-  const legacy = turn({ turnId: 'l', model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02 })
+  const opus = repeat(3, () => turn({ model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 }))
+  const sonnet = repeat(3, () => turn({ model: 'claude-sonnet-5-5', effort: 'xhigh', costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.5 }))
 
   // Act
-  const lines = [opus, sonnet, legacy].map(record => findConcerns([record]).find(c => c.kind === 'overspec')?.examples[0])
+  const lines = [opus, sonnet].map(records => findConcerns(records).find(c => c.kind === 'overspec')?.examples[0])
 
   // Assert
-  expect(lines[0]).toContain('Sonnet なら約 $0.2500 減 · Haiku なら約 $0.4800 減（上限）')
+  expect(lines[0]).toContain('Sonnet なら約 $0.7500 減 · Haiku なら最大約 $1.4400 減（上限）')
   expect(lines[1]).not.toContain('Sonnet なら')
-  expect(lines[2]).not.toContain('Sonnet なら')
+  expect(lines[1]).not.toContain('Haiku なら')
 })
 
 test('推定の幅は、上限のある記録は上限で、古い記録・単価不明は下限のまま・除外で足す', () => {

@@ -39,7 +39,10 @@ function ttlNote(review: ReviewState, upperUsd: number): readonly string[] {
 
 function staleNote(records: readonly TurnRecord[], unpricedTurns: number): readonly string[] {
   if (unpricedTurns / records.length < UNPRICED_STALE_RATIO) return []
-  return [`単価不明のターンが ${unpricedTurns} / ${records.length} 件あります。単価表が古い可能性があります（pricing.ts の取得日: ${PRICE_TABLE_FETCHED_AT}）`]
+  const models = [...new Set(records.filter(record => record.costUsd === null).map(record => record.model))]
+  return [
+    `単価不明のターンが ${unpricedTurns} / ${records.length} 件あります（モデル: ${models.join('、')}）。単価表が古い可能性があります（gateway・独自のモデル名のこともあります）。pricing.ts に単価を足すと推定に含まれます（取得日: ${PRICE_TABLE_FETCHED_AT}）`,
+  ]
 }
 
 const MS_PER_DAY = 86_400_000

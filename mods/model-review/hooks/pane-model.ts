@@ -19,7 +19,7 @@ import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summa
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
 import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
-import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
+import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatDuration, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
 
 export const BAR_WIDTH = 14
 /** 状況に応じた警告（buildNotes）のバッジ。常に出す免責・判定基準（dim の注記）と見分ける。 */
@@ -48,6 +48,7 @@ const CONCERN_TONE: Readonly<Record<ConcernKind, Tone>> = {
   overspec: 'warning',
   underspec: 'error',
   delegation: 'suggestion',
+  subagent: 'warning',
   switch: 'warning',
 }
 
@@ -94,7 +95,10 @@ function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
 function costRows(review: ReviewState, estimateUsd: number, unpricedTurns: number): PaneRow[] {
   const unpriced = unpricedTurns > 0 ? ` （単価不明 ${unpricedTurns} ターンを除く）` : ''
   const { lowUsd, highUsd } = estimateRange(review.turns)
-  const estimate = `${formatUsdRange(lowUsd, highUsd)}${unpriced}`
+  const estimate =
+    unpricedTurns === review.turns.length
+      ? `算出できません（全 ${unpricedTurns} ターンが単価不明）`
+      : `${formatUsdRange(lowUsd, highUsd)}${unpriced}`
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) {
     return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimate} / 実コスト 取得できません`, tone: 'plain' }]
@@ -129,7 +133,7 @@ function topTurnRows(records: ReviewState['turns']): PaneRow[] {
       model: shortModel(record.model),
       tier: tierOf(record.model),
       costText: formatUsd(record.costUsd),
-      detail: `ツール ${record.toolCount} 回 · ${record.durationMs} ms`,
+      detail: `ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`,
     })),
     { kind: 'blank' },
   ]

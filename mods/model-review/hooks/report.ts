@@ -1,7 +1,7 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
-import { formatInt, formatUsd, formatUsdRange } from './format'
+import { formatDuration, formatInt, formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
@@ -22,9 +22,10 @@ import {
 
 /** 指摘の金額の前に付ける語。金額の意味が種類ごとに違う。 */
 export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | null>> = {
-  overspec: '最大',
+  overspec: 'Sonnet 換算',
   underspec: null,
   delegation: null,
+  subagent: '推定',
   switch: '推定',
 }
 
@@ -35,7 +36,7 @@ export const hitRateText = (tokens: ModelGroup['tokens']): string | null => {
 
 export const NO_TURNS_LINE ='記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
 
-export { formatInt, formatUsd, formatUsdRange }
+export { formatDuration, formatInt, formatUsd, formatUsdRange }
 
 function groupLine(group: ModelGroup): string {
   const { tokens } = group
@@ -55,7 +56,10 @@ function groupLine(group: ModelGroup): string {
 function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
   const estimate = estimateTotal(records)
   const { lowUsd, highUsd } = estimateRange(records)
-  const estimateLine = `合計推定コスト: ${formatUsdRange(lowUsd, highUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
+  const estimateLine =
+    estimate.unpricedTurns === records.length
+      ? `合計推定コスト: 算出できません（全 ${records.length} ターンが単価不明）`
+      : `合計推定コスト: ${formatUsdRange(lowUsd, highUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) {
     return [estimateLine, 'セッション実コスト: 取得できません（コストの記録がない環境）']
@@ -84,8 +88,13 @@ function concernLines(concerns: readonly Concern[]): string[] {
 function topTurnLines(records: readonly TurnRecord[]): string[] {
   return topCostTurns(records).map(
     record =>
-      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${record.agentId === null ? 'メイン' : 'サブエージェント'}）${record.model}  ツール ${record.toolCount} 回 · ${record.durationMs} ms`,
+      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${record.agentId === null ? 'メイン' : 'サブエージェント'}）${record.model}  ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`,
   )
+}
+
+function topTurnSection(records: readonly TurnRecord[]): string[] {
+  const lines = topTurnLines(records)
+  return lines.length === 0 ? [] : [`■ ${HEADING.topTurns}`, ...lines, '']
 }
 
 function advisorLines(records: readonly TurnRecord[]): string[] {
@@ -129,9 +138,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number): string[] 
     `■ ${HEADING.groups}`,
     ...groupByModelEffort(records).map(groupLine),
     '',
-    `■ ${HEADING.topTurns}`,
-    ...topTurnLines(records),
-    '',
+    ...topTurnSection(records),
     ...loopLines(records),
     ...whatIfLines(records),
     `■ ${HEADING.cost}`,

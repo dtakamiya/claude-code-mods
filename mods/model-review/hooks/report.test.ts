@@ -70,19 +70,43 @@ test('単価不明のモデルは推定コストを「単価不明」と表示�
   // Assert
   expect(text).toContain('claude-unlisted-9  effort high')
   expect(text).toContain('推定 単価不明')
-  expect(text).toContain('単価不明 1 ターンを除く')
+  expect(text).toContain('合計推定コスト: 算出できません（全 1 ターンが単価不明）')
+  expect(text).toContain('モデル: claude-unlisted-9')
 })
 
-test('妥当性の指摘があれば、種類と件数を見出しに出す', () => {
-  // Arrange: 軽作業を Opus で実行。
-  const review = withTurns([turn({ turnId: 'light', model: 'claude-opus-5-5', effort: 'medium' })], null, null)
+test('単価不明が一部のときは、除いた件数つきで合計を出す', () => {
+  // Arrange
+  const review = withTurns([turn({ turnId: 'a', model: 'claude-unlisted-9', costUsd: null }), turn({ turnId: 'b' })], null, null)
 
   // Act
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('【過剰】 軽作業に重いモデル / effort · 1 件')
-  expect(text).toContain('ターン light')
+  expect(text).toContain('単価不明 1 ターンを除く')
+})
+
+test('単価がわかるターンがなければ、高コストターンの見出しは出さない', () => {
+  // Arrange
+  const review = withTurns([turn({ model: 'claude-unlisted-9', costUsd: null })], null, null)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+
+  // Assert
+  expect(text).not.toContain('高コストターン')
+})
+
+test('妥当性の指摘があれば、種類と件数を見出しに出す', () => {
+  // Arrange: 軽作業を Opus で 3 回実行（同じ設定は 1 行にまとまる）。
+  const light = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'medium' })
+  const review = withTurns([light('l1'), light('l2'), light('l3')], null, null)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+
+  // Assert
+  expect(text).toContain('【過剰】 軽作業に重いモデル / effort · 3 件')
+  expect(text).toContain('claude-opus-5-5 / effort medium: 軽作業 3 件')
   expect(text).toContain('判定基準（参考）')
 })
 

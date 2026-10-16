@@ -91,7 +91,8 @@ test('グループごとにコスト割合を出し、1% 未満はバーを埋�
 
 test('妥当性セクションは内訳より上にあり、見出しに指摘件数が出る', () => {
   // Act
-  const rows = buildPaneRows(review([turn({ model: 'claude-opus-5-5', effort: 'max' })]))
+  const heavy = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
+  const rows = buildPaneRows(review([heavy('a'), heavy('b'), heavy('c')]))
 
   // Assert
   const headings = rows.flatMap(row => (row.kind === 'heading' ? [row.text] : []))
@@ -101,11 +102,11 @@ test('妥当性セクションは内訳より上にあり、見出しに指摘�
 
 test('指摘がなければ OK 行、軽作業に重い設定ならバッジを出す', () => {
   // Arrange
-  const heavyForLight = turn({ model: 'claude-opus-5-5', effort: 'max' })
+  const heavyForLight = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
 
   // Act
   const clean = buildPaneRows(review([turn({ toolCount: 5 })]))
-  const flagged = buildPaneRows(review([heavyForLight]))
+  const flagged = buildPaneRows(review([heavyForLight('a'), heavyForLight('b'), heavyForLight('c')]))
 
   // Assert
   expect(clean).toContainEqual({ kind: 'ok', text: '指摘なし' })
@@ -162,15 +163,17 @@ test('モデル切替があれば切替バッジに推定コストと件数を�
   expect(noteTexts(rows).some(text => text.includes('切替の推定'))).toBe(true)
 })
 
-test('過剰のバッジには Haiku 換算の差額の上限を出す', () => {
+test('過剰のバッジには Sonnet 換算の差額を出す', () => {
   // Arrange
-  const rows = rowsOf([turn({ model: 'claude-opus-5-5', effort: 'medium', toolCount: 0, costUsd: 0.5, haikuCostUsd: 0.02 })])
+  const light = (turnId: string) =>
+    turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', toolCount: 0, costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 })
+  const rows = rowsOf([light('a'), light('b'), light('c')])
 
   // Act
   const badge = rows.find(row => row.kind === 'badge' && row.label === '過剰')
 
   // Assert
-  expect(badge?.kind === 'badge' ? badge.text : '').toContain('最大 $0.4800')
+  expect(badge?.kind === 'badge' ? badge.text : '').toContain('Sonnet 換算 $0.7500')
 })
 
 test('書込が読込を上回るターンが 3 回続くと、キャッシュ再構築の注記を出す', () => {

@@ -1,6 +1,7 @@
 // 集計と妥当性の判定。$ に触れない純粋関数。判定は参考（LLM は使わず、閾値は下の名前付き定数）。
 import type { TokenCounts, TurnRecord } from '../types'
-import { formatUsd } from './format'
+import { cacheHitRate } from './cache'
+import { formatDuration, formatInt, formatUsd } from './format'
 import { normalizeModelId } from './pricing'
 import { findSwitches } from './switches'
 
@@ -15,8 +16,13 @@ export const LIGHT_MAX_OUTPUT_TOKENS = 1_000
 /** 「重い」ターン: ツール呼び出しがこの回数以上、またはこの時間（ms）以上。 */
 export const HEAVY_TOOL_CALLS = 10
 export const LONG_TURN_MS = 120_000
-/** メインループが非 Haiku でこの回数以上ツールを呼び、Haiku のサブエージェントがなければ指摘する。 */
-export const MAIN_DELEGATION_MIN_TOOL_CALLS = 10
+/** メインループが非 Haiku でこの回数以上ツールを呼び、サブエージェントを一度も使っていなければ指摘する（仮置き）。 */
+export const MAIN_DELEGATION_MIN_TOOL_CALLS = 30
+/** 過剰は、該当ターンがこの数以上あるときだけ指摘する。1〜2 ターンの軽さは切替の根拠にならない（仮置き）。 */
+export const MIN_OVERSPEC_TURNS = 3
+/** サブエージェントが推定コストのこの割合以上を占め、かつ MIN_SUBAGENT_TURNS 以上あるとき指摘する（仮置き）。 */
+export const SUBAGENT_COST_SHARE = 0.5
+export const MIN_SUBAGENT_TURNS = 3
 export const HIGH_EFFORTS: ReadonlySet<string> = new Set(['xhigh', 'max'])
 export const LOW_EFFORT = 'low'
 export const EXAMPLE_LIMIT = 3
@@ -36,7 +42,7 @@ export type ModelGroup = {
   readonly costUsd: number | null
 }
 
-export type ConcernKind = 'overspec' | 'underspec' | 'delegation' | 'switch'
+export type ConcernKind = 'overspec' | 'underspec' | 'delegation' | 'subagent' | 'switch'
 
 export type Concern = {
   readonly kind: ConcernKind
@@ -118,7 +124,9 @@ export function estimateTotal(records: readonly TurnRecord[]): { costUsd: number
   )
 }
 
+/** 中断・拒否のターンは出力が途中で切れているだけなので、軽作業とは見なさない。 */
 const isLightTurn = (record: TurnRecord): boolean =>
+  record.reason === 'answer' &&
   record.toolCount <= LIGHT_MAX_TOOL_CALLS &&
   record.editCount === 0 &&
   record.tokens.output <= LIGHT_MAX_OUTPUT_TOKENS
@@ -137,10 +145,10 @@ const sonnetSavingsUsd = (record: TurnRecord): number | null => {
   return Math.max(0, record.costUsd - sonnet)
 }
 
-/** モデル起因: Haiku より上位で、差額が下限以上（差額が分からないときは従来どおり指摘する）。 */
+/** モデル起因: Opus 系の軽作業で、Sonnet 換算の差額が下限以上（差額が分からないときは指摘する）。Sonnet・Haiku はモデルでは指摘しない。 */
 const isModelOverspec = (record: TurnRecord): boolean => {
-  if (!isLightTurn(record) || modelRank(record.model) <= RANK_HAIKU) return false
-  const savings = haikuSavingsUsd(record)
+  if (!isLightTurn(record) || modelRank(record.model) !== RANK_OPUS) return false
+  const savings = sonnetSavingsUsd(record)
   return savings === null || savings >= MIN_OVERSPEC_SAVINGS_USD
 }
 
@@ -153,8 +161,12 @@ const isOverspecTurn = (record: TurnRecord): boolean => isModelOverspec(record) 
 /** 失敗はエラー終了のみ。ユーザーの中断（aborted）はモデルの不足とは言えないので含めない。 */
 const isFailureTurn = (record: TurnRecord): boolean => record.reason === 'error'
 
+const isHeavyTurn = (record: TurnRecord): boolean =>
+  record.toolCount >= HEAVY_TOOL_CALLS || record.durationMs >= LONG_TURN_MS
+
+/** 重いターンだけを根拠にする。エラー終了は API 側の原因もありうるので、Haiku では単独の根拠にしない。 */
 const isHaikuUnderspecTurn = (record: TurnRecord): boolean =>
-  (record.toolCount >= HEAVY_TOOL_CALLS || record.durationMs >= LONG_TURN_MS || isFailureTurn(record)) &&
+  isHeavyTurn(record) &&
   modelRank(record.model) === RANK_HAIKU &&
   record.effort === LOW_EFFORT
 
@@ -182,17 +194,10 @@ const underspecTurns = (records: readonly TurnRecord[]): readonly TurnRecord[] =
 
 const loopLabel = (record: TurnRecord): string => (record.agentId === null ? 'メイン' : 'サブエージェント')
 
-const overspecLine = (record: TurnRecord): string => {
-  const savings = isModelOverspec(record) ? haikuSavingsUsd(record) : null
-  const sonnetSavings = isModelOverspec(record) ? sonnetSavingsUsd(record) : null
-  const sonnetText = sonnetSavings === null ? '' : ` · Sonnet なら約 ${formatUsd(sonnetSavings)} 減`
-  const haikuText = savings === null ? '' : ` · Haiku なら約 ${formatUsd(savings)} 減（上限）`
-  const savingsText = `${sonnetText}${haikuText}`
-  return `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回・出力 ${record.tokens.output} tokens の軽作業を ${record.model} / effort ${record.effort ?? '-'} で実行${savingsText}`
-}
-
 const underspecLine = (record: TurnRecord): string =>
-  `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回・${record.durationMs} ms・終了理由 ${record.reason} を ${record.model} / effort low で実行`
+  isHeavyTurn(record)
+    ? `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回・${formatDuration(record.durationMs)} を ${record.model} / effort low で実行（終了理由 ${record.reason}）`
+    : `[${loopLabel(record)}] ターン ${record.turnId}: エラー終了が連続（${record.model} / effort low）。API 側の原因の可能性もあります`
 
 function concernOf(
   kind: ConcernKind,
@@ -204,28 +209,84 @@ function concernOf(
   return { kind, count, examples: lines.slice(0, EXAMPLE_LIMIT), amountUsd }
 }
 
-/** 差額の大きい順（差額が分からないものは後ろ）。元の配列は変えない。 */
-const bySavingsDesc = (records: readonly TurnRecord[]): readonly TurnRecord[] =>
-  [...records].sort((a, b) => (haikuSavingsUsd(b) ?? -1) - (haikuSavingsUsd(a) ?? -1))
+const sumKnown = (values: readonly (number | null)[]): number | null => {
+  const known = values.flatMap(value => value ?? [])
+  return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0)
+}
+
+type OverspecGroup = {
+  readonly loop: string
+  readonly model: string
+  readonly effort: string
+  readonly turns: readonly TurnRecord[]
+  readonly sonnetUsd: number | null
+  readonly haikuUsd: number | null
+}
+
+/** ループ × モデル × effort ごとにまとめる。差額は、モデル起因のターンだけで足す。 */
+function overspecGroups(overspec: readonly TurnRecord[]): readonly OverspecGroup[] {
+  const byKey = overspec.reduce<Readonly<Record<string, readonly TurnRecord[]>>>((acc, record) => {
+    const key = [loopLabel(record), record.model, record.effort ?? '-'].join('\u0000')
+    return { ...acc, [key]: [...(acc[key] ?? []), record] }
+  }, {})
+  return Object.values(byKey)
+    .flatMap((turns): OverspecGroup[] => {
+      const [first] = turns
+      if (first === undefined) return []
+      const modelTurns = turns.filter(isModelOverspec)
+      return [
+        {
+          loop: loopLabel(first),
+          model: first.model,
+          effort: first.effort ?? '-',
+          turns,
+          sonnetUsd: sumKnown(modelTurns.map(sonnetSavingsUsd)),
+          haikuUsd: sumKnown(modelTurns.map(haikuSavingsUsd)),
+        },
+      ]
+    })
+    .sort((a, b) => (b.haikuUsd ?? -1) - (a.haikuUsd ?? -1) || b.turns.length - a.turns.length)
+}
+
+function overspecGroupLine(group: OverspecGroup): string {
+  const sonnet = group.sonnetUsd === null ? '' : ` · Sonnet なら約 ${formatUsd(group.sonnetUsd)} 減`
+  const haiku = group.haikuUsd === null ? '' : ` · Haiku なら最大約 ${formatUsd(group.haikuUsd)} 減（上限）`
+  return `[${group.loop}] ${group.model} / effort ${group.effort}: 軽作業 ${group.turns.length} 件（ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下）${sonnet}${haiku}`
+}
 
 function overspecConcern(records: readonly TurnRecord[]): Concern | null {
-  const overspec = bySavingsDesc(records.filter(isOverspecTurn))
-  const known = overspec.filter(isModelOverspec).flatMap(record => haikuSavingsUsd(record) ?? [])
-  const amountUsd = known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0)
-  return concernOf('overspec', overspec.length, overspec.map(overspecLine), amountUsd)
+  const overspec = records.filter(isOverspecTurn)
+  if (overspec.length < MIN_OVERSPEC_TURNS) return null
+  const amountUsd = sumKnown(overspec.filter(isModelOverspec).map(sonnetSavingsUsd))
+  return concernOf('overspec', overspec.length, overspecGroups(overspec).map(overspecGroupLine), amountUsd)
 }
 
 function delegationConcern(records: readonly TurnRecord[]): Concern | null {
   const mainNonHaikuTools = records
     .filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
     .reduce((sum, record) => sum + record.toolCount, 0)
-  const hasHaikuSubagent = records.some(
-    record => record.agentId !== null && modelRank(record.model) === RANK_HAIKU,
-  )
-  if (mainNonHaikuTools < MAIN_DELEGATION_MIN_TOOL_CALLS || hasHaikuSubagent) return null
+  const usesSubagents = records.some(record => record.agentId !== null)
+  if (mainNonHaikuTools < MAIN_DELEGATION_MIN_TOOL_CALLS || usesSubagents) return null
   return concernOf('delegation', 1, [
-    `メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、Haiku のサブエージェントへの委譲がない`,
+    `メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、サブエージェントを使っていない`,
   ])
+}
+
+/** サブエージェントがコストの大半を占め、親のキャッシュを読めていないとき。 */
+function subagentConcern(records: readonly TurnRecord[]): Concern | null {
+  const subs = records.filter(record => record.agentId !== null)
+  if (subs.length < MIN_SUBAGENT_TURNS) return null
+  const total = estimateTotal(records).costUsd
+  const subCost = estimateTotal(subs).costUsd
+  if (total <= 0 || subCost / total < SUBAGENT_COST_SHARE) return null
+  const hit = cacheHitRate(subs.reduce((sum, record) => addTokens(sum, record.tokens), ZERO_TOKENS))
+  const hitText = hit === null ? '' : ` · キャッシュヒット ${Math.round(hit * 100)}%`
+  return concernOf(
+    'subagent',
+    subs.length,
+    [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`],
+    subCost,
+  )
 }
 
 function switchConcern(records: readonly TurnRecord[]): Concern | null {
@@ -240,6 +301,7 @@ export function findConcerns(records: readonly TurnRecord[]): readonly Concern[]
     overspecConcern(records),
     concernOf('underspec', underspec.length, underspec.map(underspecLine)),
     delegationConcern(records),
+    subagentConcern(records),
     switchConcern(records),
   ]
   return concerns.filter((concern): concern is Concern => concern !== null)
