@@ -30,6 +30,8 @@ export const EXAMPLE_LIMIT = 3
 export const MIN_OVERSPEC_SAVINGS_USD = 0.01
 /** Sonnet の low effort で、エラーがこの回数以上連続したら不足として指摘する（仮置き）。 */
 export const UNDERSPEC_ERROR_STREAK = 2
+/** 不足は、該当（重いターン・エラーの連続エピソード）がこの数以上あるときだけ指摘する。1 件の偶発を根拠にしない（仮置き）。 */
+export const MIN_UNDERSPEC_TURNS = 2
 export const TOP_COST_TURN_LIMIT = 3
 
 export type ModelGroup = {
@@ -147,11 +149,11 @@ const sonnetSavingsUsd = (record: TurnRecord): number | null => {
   return Math.max(0, record.costUsd - sonnet)
 }
 
-/** モデル起因: Opus 系の軽作業で、Sonnet 換算の差額が下限以上（差額が分からないときは指摘する）。Sonnet・Haiku はモデルでは指摘しない。 */
+/** モデル起因: Opus 系の軽作業で、Sonnet 換算の差額が下限以上。差額が分からないときは指摘しない。Sonnet・Haiku はモデルでは指摘しない。 */
 const isModelOverspec = (record: TurnRecord): boolean => {
   if (!isLightTurn(record) || modelRank(record.model) !== RANK_OPUS) return false
   const savings = sonnetSavingsUsd(record)
-  return savings === null || savings >= MIN_OVERSPEC_SAVINGS_USD
+  return savings !== null && savings >= MIN_OVERSPEC_SAVINGS_USD
 }
 
 /** effort 起因: モデルによらず、差額では絞らない。 */
@@ -172,26 +174,33 @@ const isHaikuUnderspecTurn = (record: TurnRecord): boolean =>
   modelRank(record.model) === RANK_HAIKU &&
   record.effort === LOW_EFFORT
 
-/** メインループで Sonnet / low の失敗が連続しているターン（連続 UNDERSPEC_ERROR_STREAK 回目以降）。 */
-function sonnetLowFailureStreakTurns(records: readonly TurnRecord[]): ReadonlySet<TurnRecord> {
-  const scan = records
+/** メインループで Sonnet / low の失敗になったターン。 */
+const isSonnetLowFailure = (record: TurnRecord): boolean =>
+  isFailureTurn(record) && modelRank(record.model) === RANK_SONNET && record.effort === LOW_EFFORT
+
+/** メインループで Sonnet / low の失敗が連続した塊（エピソード）を、新しい順ではなく発生順に切り出す。 */
+function sonnetLowFailureRuns(records: readonly TurnRecord[]): readonly (readonly TurnRecord[])[] {
+  const { runs, current } = records
     .filter(record => record.agentId === null)
-    .reduce<{ readonly streak: number; readonly hits: readonly TurnRecord[] }>(
-      (acc, record) => {
-        const failed =
-          isFailureTurn(record) && modelRank(record.model) === RANK_SONNET && record.effort === LOW_EFFORT
-        const streak = failed ? acc.streak + 1 : 0
-        const isHit = failed && streak >= UNDERSPEC_ERROR_STREAK
-        return { streak, hits: isHit ? [...acc.hits, record] : acc.hits }
-      },
-      { streak: 0, hits: [] },
+    .reduce<{ readonly runs: readonly (readonly TurnRecord[])[]; readonly current: readonly TurnRecord[] }>(
+      (acc, record) =>
+        isSonnetLowFailure(record)
+          ? { runs: acc.runs, current: [...acc.current, record] }
+          : { runs: acc.current.length === 0 ? acc.runs : [...acc.runs, acc.current], current: [] },
+      { runs: [], current: [] },
     )
-  return new Set(scan.hits)
+  return current.length === 0 ? runs : [...runs, current]
 }
 
+/** 連続 UNDERSPEC_ERROR_STREAK 回以上のエピソードは 1 件とし、その最後のターンで代表する。 */
+const sonnetLowFailureEpisodes = (records: readonly TurnRecord[]): readonly TurnRecord[] =>
+  sonnetLowFailureRuns(records)
+    .filter(run => run.length >= UNDERSPEC_ERROR_STREAK)
+    .flatMap(run => run.slice(-1))
+
 const underspecTurns = (records: readonly TurnRecord[]): readonly TurnRecord[] => {
-  const streakTurns = sonnetLowFailureStreakTurns(records)
-  return records.filter(record => isHaikuUnderspecTurn(record) || streakTurns.has(record))
+  const episodes = new Set(sonnetLowFailureEpisodes(records))
+  return records.filter(record => isHaikuUnderspecTurn(record) || episodes.has(record))
 }
 
 const loopLabel = (record: TurnRecord): string => (record.agentId === null ? 'メイン' : 'サブエージェント')
@@ -293,6 +302,13 @@ function subagentConcern(records: readonly TurnRecord[]): Concern | null {
   )
 }
 
+/** 不足: 件数が MIN_UNDERSPEC_TURNS 未満なら指摘しない。例は新しいターンから順に並べる。 */
+function underspecConcern(records: readonly TurnRecord[]): Concern | null {
+  const underspec = underspecTurns(records)
+  if (underspec.length < MIN_UNDERSPEC_TURNS) return null
+  return concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine))
+}
+
 function switchConcern(records: readonly TurnRecord[]): Concern | null {
   const summary = findSwitches(records)
   return concernOf('switch', summary.count, summary.examples, summary.costUsd)
@@ -303,10 +319,9 @@ const RATIO_CONCERNS: ReadonlySet<ConcernKind> = new Set(['overspec', 'underspec
 
 /** 妥当性の指摘。該当しない種類は含めない。 */
 export function findConcerns(records: readonly TurnRecord[]): readonly Concern[] {
-  const underspec = underspecTurns(records)
   const concerns = [
     overspecConcern(records),
-    concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine)),
+    underspecConcern(records),
     delegationConcern(records),
     subagentConcern(records),
     switchConcern(records),

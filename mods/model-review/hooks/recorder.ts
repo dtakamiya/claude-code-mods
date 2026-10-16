@@ -1,11 +1,13 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { TurnRecord } from '../types'
-import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, type TokenUsageLike } from './pricing'
+import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, type CacheWriteTtl, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
 export const UNKNOWN_MODEL = 'unknown'
 export const EDIT_TOOLS: ReadonlySet<string> = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
+/** 応答・ツール呼び出しが止まってからこの時間を過ぎた未完了の下書きは、実行中の表示から外す（turn.complete が来ないまま中断されたターン用）。 */
+export const LIVE_DRAFT_LIFETIME_MS = 10 * 60 * 1000
 
 export type LoopDraft = {
   readonly turnId: string
@@ -30,6 +32,8 @@ export type LoopDraft = {
   readonly advisorCalls: number
   readonly toolCount: number
   readonly editCount: number
+  /** 最後に開始・応答・ツール呼び出しがあった時刻（ms）。取れなかったときは null。 */
+  readonly lastActivityMs: number | null
 }
 
 export type Drafts = Readonly<Record<string, LoopDraft>>
@@ -62,6 +66,18 @@ export type FinishedTurn = {
   readonly record: TurnRecord
 }
 
+/**
+ * 外部から届いた usage を検証した値。トークン数は有限な非負数、model は文字列。
+ * model が文字列でなければ null にし、単価不明として扱う。
+ */
+export type SafeUsage = {
+  readonly model: string | null
+  readonly input_tokens: number
+  readonly output_tokens: number
+  readonly cache_read_input_tokens: number
+  readonly cache_creation_input_tokens: number
+}
+
 const loopKey = (agentId: string | undefined): string => agentId ?? MAIN_LOOP_KEY
 
 const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
@@ -80,6 +96,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   advisorCalls: 0,
   toolCount: 0,
   editCount: 0,
+  lastActivityMs: null,
 })
 
 const draftOf = (drafts: Drafts, agentId: string | undefined, turnId: string): LoopDraft =>
@@ -92,20 +109,42 @@ const withDraft = (drafts: Drafts, agentId: string | undefined, draft: LoopDraft
 
 const ZERO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const
 
-export function beginTurn(drafts: Drafts, turn: { readonly turnId: string; readonly agentId?: string }): Drafts {
-  return withDraft(drafts, turn.agentId, emptyDraft(turn.turnId, turn.agentId ?? null))
+/** 同じループに残っていた未完了の下書きは置き換える（中断されたターンの残りを引きずらない）。 */
+export function beginTurn(drafts: Drafts, turn: { readonly turnId: string; readonly agentId?: string }, nowMs?: number): Drafts {
+  const started = { ...emptyDraft(turn.turnId, turn.agentId ?? null), lastActivityMs: nowMs ?? null }
+  return withDraft(drafts, turn.agentId, started)
 }
 
-const promptTokensOf = (usage: TokenUsageLike | null): number =>
+/** 数値として使えるのは有限な非負数だけ。それ以外（欠損・NaN・負数）は 0 とする。 */
+const tokenCountOf = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0)
+
+/** usage の値を検証する。オブジェクトでなければ usage なしとして null を返す。 */
+export function sanitizeUsage(raw: unknown): SafeUsage | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const fields = raw as Readonly<Record<keyof TokenUsageLike, unknown>>
+  return {
+    model: typeof fields.model === 'string' ? fields.model : null,
+    input_tokens: tokenCountOf(fields.input_tokens),
+    output_tokens: tokenCountOf(fields.output_tokens),
+    cache_read_input_tokens: tokenCountOf(fields.cache_read_input_tokens),
+    cache_creation_input_tokens: tokenCountOf(fields.cache_creation_input_tokens),
+  }
+}
+
+/** model が不明（null）なら単価不明として null。それ以外は指定した単価（既定は 5 分単価）で計算する。 */
+const priceAs = (usage: SafeUsage, model: string | null, writeTtl: CacheWriteTtl = '5m'): number | null =>
+  model === null ? null : priceUsage({ ...usage, model }, writeTtl)
+
+const promptTokensOf = (usage: SafeUsage | null): number =>
   usage === null ? 0 : usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
 
-export function recordStep(drafts: Drafts, step: StepInput): Drafts {
+export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Drafts {
   const prev = draftOf(drafts, step.agentId, step.turnId)
-  const usage = step.usage ?? null
-  const priced = usage ? priceUsage(usage) : null
-  const pricedUpper = usage ? priceUsage(usage, '1h') : null
-  const pricedAsHaiku = usage ? priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL }) : null
-  const pricedAsSonnet = usage ? priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL }) : null
+  const usage = sanitizeUsage(step.usage)
+  const priced = usage ? priceAs(usage, usage.model) : null
+  const pricedUpper = usage ? priceAs(usage, usage.model, '1h') : null
+  const pricedAsHaiku = usage ? priceAs(usage, HAIKU_REFERENCE_MODEL) : null
+  const pricedAsSonnet = usage ? priceAs(usage, SONNET_REFERENCE_MODEL) : null
   const next: LoopDraft = {
     ...prev,
     turnId: step.turnId,
@@ -120,21 +159,33 @@ export function recordStep(drafts: Drafts, step: StepInput): Drafts {
     firstStepCacheWrite: prev.stepCount === 0 ? (usage?.cache_creation_input_tokens ?? 0) : prev.firstStepCacheWrite,
     firstStepPromptTokens: prev.stepCount === 0 ? promptTokensOf(usage) : prev.firstStepPromptTokens,
     advisorCalls: prev.advisorCalls + (step.advisorCalls ?? 0),
+    lastActivityMs: nowMs ?? prev.lastActivityMs,
   }
   return withDraft(drafts, step.agentId, next)
 }
 
-export function recordTool(drafts: Drafts, call: ToolInput): Drafts {
+export function recordTool(drafts: Drafts, call: ToolInput, nowMs?: number): Drafts {
   const prev = draftOf(drafts, call.agentId, '')
   const next: LoopDraft = {
     ...prev,
     toolCount: prev.toolCount + 1,
     editCount: prev.editCount + (EDIT_TOOLS.has(call.tool) ? 1 : 0),
+    lastActivityMs: nowMs ?? prev.lastActivityMs,
   }
   return withDraft(drafts, call.agentId, next)
 }
 
-function tokenCountsOf(usage: TokenUsageLike | undefined): TurnRecord['tokens'] {
+/**
+ * 表示用に、寿命を過ぎた未完了の下書きを外したコピーを返す。元の下書きは変えないので、動きが再開すれば戻る。
+ * 最後の動きの時刻が不明な下書きは外さない。
+ */
+export function liveDrafts(drafts: Drafts, nowMs: number): Drafts {
+  const isLive = (draft: LoopDraft): boolean =>
+    draft.lastActivityMs === null || nowMs - draft.lastActivityMs <= LIVE_DRAFT_LIFETIME_MS
+  return Object.fromEntries(Object.entries(drafts).filter(([, draft]) => isLive(draft)))
+}
+
+function tokenCountsOf(usage: SafeUsage | null): TurnRecord['tokens'] {
   if (!usage) return ZERO_TOKENS
   return {
     input: usage.input_tokens,
@@ -145,35 +196,35 @@ function tokenCountsOf(usage: TokenUsageLike | undefined): TurnRecord['tokens'] 
 }
 
 /** 応答ごとに計算した合計を優先する。step が一つもないターンだけ、ターン全体の usage で計算する。 */
-function costOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+function costOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0) return draft.pricedCostUsd
   if (!usage) return 0
-  return priceUsage(usage)
+  return priceAs(usage, usage.model)
 }
 
 /** costOf と同じ規則で、キャッシュ書込を 1 時間単価にした推定コスト（上限側）。 */
-function upperCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+function upperCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0) return draft.pricedUpperCostUsd
   if (!usage) return 0
-  return priceUsage(usage, '1h')
+  return priceAs(usage, usage.model, '1h')
 }
 
 /** costOf と同じ規則で、Haiku 単価に置き換えた推定コスト。 */
-function haikuCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+function haikuCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0) return draft.haikuPricedCostUsd
   if (!usage) return 0
-  return priceUsage({ ...usage, model: HAIKU_REFERENCE_MODEL })
+  return priceAs(usage, HAIKU_REFERENCE_MODEL)
 }
 
 /** costOf と同じ規則で、Sonnet 単価に置き換えた推定コスト。 */
-function sonnetCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): number | null {
+function sonnetCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0) return draft.sonnetPricedCostUsd
   if (!usage) return 0
-  return priceUsage({ ...usage, model: SONNET_REFERENCE_MODEL })
+  return priceAs(usage, SONNET_REFERENCE_MODEL)
 }
 
 /**
@@ -182,7 +233,7 @@ function sonnetCostOf(draft: LoopDraft, usage: TokenUsageLike | undefined): numb
  */
 function firstStepOf(
   draft: LoopDraft,
-  usage: TokenUsageLike | undefined,
+  usage: SafeUsage | null,
 ): { readonly cacheWrite: number | undefined; readonly promptTokens: number | undefined } {
   if (draft.stepCount > 0) return { cacheWrite: draft.firstStepCacheWrite, promptTokens: draft.firstStepPromptTokens }
   if (!usage) return { cacheWrite: undefined, promptTokens: undefined }
@@ -192,21 +243,22 @@ function firstStepOf(
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
   const key = loopKey(end.agentId)
   const draft = draftOf(drafts, end.agentId, end.turnId)
-  const first = firstStepOf(draft, end.usage)
+  const usage = sanitizeUsage(end.usage)
+  const first = firstStepOf(draft, usage)
   const record: TurnRecord = {
     turnId: end.turnId,
     agentId: end.agentId ?? null,
-    model: end.usage?.model ?? draft.model ?? UNKNOWN_MODEL,
+    model: usage?.model ?? draft.model ?? UNKNOWN_MODEL,
     effort: draft.effort,
-    tokens: tokenCountsOf(end.usage),
-    costUsd: costOf(draft, end.usage),
-    costUpperUsd: upperCostOf(draft, end.usage),
+    tokens: tokenCountsOf(usage),
+    costUsd: costOf(draft, usage),
+    costUpperUsd: upperCostOf(draft, usage),
     toolCount: draft.toolCount,
     editCount: draft.editCount,
     durationMs: end.durationMs,
     reason: end.reason,
-    haikuCostUsd: haikuCostOf(draft, end.usage),
-    sonnetCostUsd: sonnetCostOf(draft, end.usage),
+    haikuCostUsd: haikuCostOf(draft, usage),
+    sonnetCostUsd: sonnetCostOf(draft, usage),
     firstStepCacheWrite: first.cacheWrite,
     firstStepPromptTokens: first.promptTokens,
     advisorCalls: draft.advisorCalls,

@@ -1,6 +1,18 @@
 import { test, expect } from 'claude-code/testing'
 
-import { UNKNOWN_MODEL, beginTurn, finishTurn, recordStep, recordTool, type Drafts } from './recorder'
+import { EMPTY_REVIEW } from './state'
+import { buildPaneRows } from './pane-model'
+import {
+  LIVE_DRAFT_LIFETIME_MS,
+  MAIN_LOOP_KEY,
+  UNKNOWN_MODEL,
+  beginTurn,
+  finishTurn,
+  liveDrafts,
+  recordStep,
+  recordTool,
+  type Drafts,
+} from './recorder'
 
 // 架空データのみ。
 const sonnetUsage = {
@@ -250,4 +262,106 @@ test('上限側の推定は書込を 1 時間単価にして足し、単価不�
   expect(known.record.costUsd).toBe(2.5)
   expect(known.record.costUpperUsd).toBe(4)
   expect(unpriced.record.costUpperUsd).toBeNull()
+})
+
+test('欠損・非有限・負のトークン数は 0 として扱い、コストを NaN にしない', () => {
+  // Arrange: 出力 100,000 tokens（Sonnet 5.5 で $1）だけが有効な応答。
+  const malformed = {
+    model: 'claude-sonnet-5-5',
+    input_tokens: Number.NaN,
+    output_tokens: 100_000,
+    cache_read_input_tokens: -5,
+    cache_creation_input_tokens: undefined,
+  } as never
+  let drafts = beginTurn({}, { turnId: 't9' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't9', model: 'claude-sonnet-5-5', usage: malformed })
+  const finished = finishTurn(drafts, { turnId: 't9', usage: malformed, durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.tokens).toEqual({ input: 0, output: 100_000, cacheRead: 0, cacheWrite: 0 })
+  expect(finished.record.costUsd).toBe(1)
+  expect(finished.record.firstStepPromptTokens).toBe(0)
+})
+
+test('model が文字列でない usage は単価不明として扱い、例外にしない', () => {
+  // Arrange
+  const numericModel = { ...sonnetUsage, model: 42 } as never
+  let drafts = beginTurn({}, { turnId: 't10' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't10', model: 'claude-sonnet-5-5', usage: numericModel })
+  const finished = finishTurn(drafts, { turnId: 't10', usage: numericModel, durationMs: 1, reason: 'answer' })
+  const endOnly = finishTurn({}, { turnId: 't11', usage: numericModel, durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.costUsd).toBeNull()
+  expect(finished.record.haikuCostUsd).toBeNull()
+  expect(finished.record.model).toBe('claude-sonnet-5-5')
+  expect(endOnly.record.costUsd).toBeNull()
+  expect(endOnly.record.model).toBe(UNKNOWN_MODEL)
+})
+
+test('usage がオブジェクトでなければ、usage のないターンとして記録する', () => {
+  // Act
+  const finished = finishTurn({}, { turnId: 't12', usage: 'broken' as never, durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record).toMatchObject({
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    costUsd: 0,
+    firstStepPromptTokens: undefined,
+  })
+})
+
+test('動きが止まった未完了のターンは、寿命を過ぎると実行中の一覧から外れる', () => {
+  // Arrange
+  const started = recordTool(beginTurn({}, { turnId: 't13' }, 1_000), { tool: 'Read' }, 1_000)
+
+  // Act
+  const within = liveDrafts(started, 1_000 + LIVE_DRAFT_LIFETIME_MS)
+  const expired = liveDrafts(started, 1_000 + LIVE_DRAFT_LIFETIME_MS + 1)
+
+  // Assert
+  expect(Object.keys(within)).toEqual([MAIN_LOOP_KEY])
+  expect(expired).toEqual({})
+})
+
+test('ツールや応答の動きがあれば、未完了のターンの寿命は延びる', () => {
+  // Arrange
+  let drafts = beginTurn({}, { turnId: 't14' }, 0)
+
+  // Act
+  drafts = recordTool(drafts, { tool: 'Read' }, LIVE_DRAFT_LIFETIME_MS)
+
+  // Assert
+  expect(Object.keys(liveDrafts(drafts, LIVE_DRAFT_LIFETIME_MS * 2))).toEqual([MAIN_LOOP_KEY])
+  expect(liveDrafts(drafts, LIVE_DRAFT_LIFETIME_MS * 2 + 1)).toEqual({})
+})
+
+test('新しい turn.start は、同じループに残っていた未完了の下書きを置き換える', () => {
+  // Arrange: 中断された（turn.complete の来なかった）ターンのツール呼び出し。
+  let drafts = recordTool(beginTurn({}, { turnId: 'aborted' }), { tool: 'Bash' })
+
+  // Act
+  drafts = beginTurn(drafts, { turnId: 'next' })
+
+  // Assert
+  expect(drafts[MAIN_LOOP_KEY]).toMatchObject({ turnId: 'next', toolCount: 0 })
+})
+
+test('中断されたターンは、寿命を過ぎるとペインの「実行中」の行に出なくなる', () => {
+  // Arrange: turn.complete が来ないまま止まったターンの、ツール 1 回の下書き。
+  const stuck = recordTool(beginTurn({}, { turnId: 't15' }, 1_000), { tool: 'Read' }, 1_000)
+  const isRunningRow = (rows: ReturnType<typeof buildPaneRows>): boolean =>
+    rows.some(row => row.kind === 'kv' && row.label === '実行中')
+
+  // Act
+  const withinLifetime = buildPaneRows(EMPTY_REVIEW, liveDrafts(stuck, 1_000 + LIVE_DRAFT_LIFETIME_MS), 1_000 + LIVE_DRAFT_LIFETIME_MS)
+  const afterLifetime = buildPaneRows(EMPTY_REVIEW, liveDrafts(stuck, 1_000 + LIVE_DRAFT_LIFETIME_MS + 1), 1_000 + LIVE_DRAFT_LIFETIME_MS + 1)
+
+  // Assert
+  expect(isRunningRow(withinLifetime)).toBe(true)
+  expect(isRunningRow(afterLifetime)).toBe(false)
 })
