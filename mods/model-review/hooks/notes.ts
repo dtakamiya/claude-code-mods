@@ -56,8 +56,13 @@ function priceAgeNote(nowMs: number | undefined): readonly string[] {
   return [`単価表の取得から ${ageDays} 日経っています（取得日: ${PRICE_TABLE_FETCHED_AT}）。価格表の改定がないか確認してください`]
 }
 
+/** 切替の注記を出すのは、直近この件数のターンの中に切替があるときだけ（仮置き。ペインで見て決め直す）。 */
+export const SWITCH_NOTE_RECENT_TURNS = 10
+
 function switchNote(records: readonly TurnRecord[]): readonly string[] {
-  if (findSwitches(records).count === 0) return []
+  // 窓より前だけの記録で数えた切替を引く。窓の先頭の切替は、直前のターンを含めて数えられる。
+  const earlier = records.slice(0, -SWITCH_NOTE_RECENT_TURNS)
+  if (findSwitches(records).count <= findSwitches(earlier).count) return []
   return ['切替の推定は、切替直後の最初の応答のキャッシュ書込から算出しています。長い中断によるキャッシュ切れとは区別できません。Bedrock・Vertex・gateway 経由では effort 変更でもキャッシュは維持されません']
 }
 

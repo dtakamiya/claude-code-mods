@@ -1,70 +1,63 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
+// 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
 import type { ReviewState, TurnRecord } from '../types'
-import { cacheHitRate } from './cache'
-import { formatDuration, formatInt, formatUsd, formatUsdRange } from './format'
-import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
+import { formatUsd, formatUsdRange } from './format'
+import { ALWAYS_NOTE, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
-import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
-import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
+import { WHATIF_NOTE } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
   LIGHT_MAX_TOOL_CALLS,
-  estimateRange,
-  estimateTotal,
   findConcerns,
   groupByModelEffort,
   topCostTurns,
   type Concern,
   type ModelGroup,
 } from './analyze'
+import {
+  NO_TURNS_LINE,
+  actualCostUsd,
+  advisorCallText,
+  allUnpricedText,
+  concernDetailText,
+  describeSwitchOptions,
+  estimateFacts,
+  groupFacts,
+  loopView,
+  subagentCount,
+  toolDetailText,
+  turnOriginLabel,
+  unpricedExclusionText,
+} from './summary'
 
-/** 指摘の金額の前に付ける語。金額の意味が種類ごとに違う。 */
-export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | null>> = {
-  overspec: 'Sonnet 換算',
-  underspec: null,
-  delegation: null,
-  subagent: '推定',
-  switch: '推定',
-}
-
-export const hitRateText = (tokens: ModelGroup['tokens']): string | null => {
-  const rate = cacheHitRate(tokens)
-  return rate === null ? null : `ヒット ${Math.round(rate * 100)}%`
-}
-
-export const NO_TURNS_LINE ='記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
-
-export { formatDuration, formatInt, formatUsd, formatUsdRange }
+export { formatInt, formatUsd } from './format'
+export { NO_TURNS_LINE } from './summary'
 
 function groupLine(group: ModelGroup): string {
-  const { tokens } = group
-  const hit = hitRateText(tokens)
+  const facts = groupFacts(group)
   return [
-    `${group.model}  effort ${group.effort ?? '-'}`,
+    `${group.model}  effort ${facts.effort}`,
     `ターン ${group.turns}`,
-    ...(hit === null ? [] : [hit]),
-    `入力 ${formatInt(tokens.input)}`,
-    `出力 ${formatInt(tokens.output)}`,
-    `キャッシュ読 ${formatInt(tokens.cacheRead)}`,
-    `書 ${formatInt(tokens.cacheWrite)}`,
-    `推定 ${formatUsd(group.costUsd)}`,
+    ...(facts.hit === null ? [] : [facts.hit]),
+    `入力 ${facts.input}`,
+    `出力 ${facts.output}`,
+    `キャッシュ読 ${facts.cacheRead}`,
+    `書 ${facts.cacheWrite}`,
+    `推定 ${facts.costText}`,
   ].join('  ')
 }
 
 function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
-  const estimate = estimateTotal(records)
-  const { lowUsd, highUsd } = estimateRange(records)
-  const estimateLine =
-    estimate.unpricedTurns === records.length
-      ? `合計推定コスト: 算出できません（全 ${records.length} ターンが単価不明）`
-      : `合計推定コスト: ${formatUsdRange(lowUsd, highUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
-  const { baseline, current } = review.sessionCostUsd
-  if (baseline === null || current === null) {
+  const estimate = estimateFacts(records)
+  const estimateLine = estimate.allUnpriced
+    ? `合計推定コスト: ${allUnpricedText(records.length)}`
+    : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpricedExclusionText(estimate.unpricedTurns)}`
+  const actual = actualCostUsd(review)
+  if (actual === null) {
     return [estimateLine, 'セッション実コスト: 取得できません（コストの記録がない環境）']
   }
-  const actual = current - baseline
   return [
     estimateLine,
     `セッション実コスト（読み込み後）: ${formatUsd(actual)}`,
@@ -72,19 +65,10 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   ]
 }
 
-/** 件数の表記。母数があれば「116 / 200 件」。 */
-export const countText = (concern: Concern): string =>
-  concern.outOf === undefined ? `${concern.count} 件` : `${concern.count} / ${concern.outOf} 件`
-
-function amountSuffix(concern: Concern): string {
-  const label = CONCERN_AMOUNT_LABEL[concern.kind]
-  return concern.amountUsd === null || label === null ? '' : ` · ${label} ${formatUsd(concern.amountUsd)}`
-}
-
 function concernLines(concerns: readonly Concern[]): string[] {
   if (concerns.length === 0) return [`  ${NO_CONCERNS_TEXT}`]
   return concerns.flatMap(concern => [
-    `  【${CONCERN_TEXT[concern.kind].label}】 ${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${amountSuffix(concern)}`,
+    `  【${CONCERN_TEXT[concern.kind].label}】 ${concernDetailText(concern)}`,
     ...concern.examples.map(example => `    ・${example}`),
   ])
 }
@@ -92,7 +76,7 @@ function concernLines(concerns: readonly Concern[]): string[] {
 function topTurnLines(records: readonly TurnRecord[]): string[] {
   return topCostTurns(records).map(
     record =>
-      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${record.agentId === null ? 'メイン' : 'サブエージェント'}）${record.model}  ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`,
+      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${turnOriginLabel(record)}）${record.model}  ${toolDetailText(record)}`,
   )
 }
 
@@ -102,25 +86,25 @@ function topTurnSection(records: readonly TurnRecord[]): string[] {
 }
 
 function advisorLines(records: readonly TurnRecord[]): string[] {
-  const calls = advisorCallTotal(records)
-  return calls === 0 ? [] : [`advisor ${calls} 回（費用が usage に載るかは未確認。金額には含めていません）`]
+  const text = advisorCallText(records)
+  return text === null ? [] : [`advisor ${text}`]
 }
 
 function loopLines(records: readonly TurnRecord[]): string[] {
-  const summaries = summarizeLoops(records)
-  if (summaries.length < 2) return []
+  const view = loopView(records)
+  if (view === null) return []
   return [
     `■ ${HEADING.loops}`,
-    ...summaries.map(summary => `  ${loopLabel(summary.kind)}  ${describeLoop(summary)}`),
-    ...(subagentHitRateLow(summaries) ? [`  ${SUBAGENT_CACHE_NOTE}`] : []),
+    ...view.rows.map(row => `  ${row.label}  ${row.detail}`),
+    ...(view.subagentNote === null ? [] : [`  ${view.subagentNote}`]),
     '',
   ]
 }
 
 function whatIfLines(records: readonly TurnRecord[]): string[] {
-  const options = estimateSwitchOptions(records)
+  const options = describeSwitchOptions(records)
   if (options.length === 0) return []
-  return [`■ ${HEADING.whatIf}`, ...options.map(option => `  ${describeOption(option)}`), `  ${WHATIF_NOTE}`, '']
+  return [`■ ${HEADING.whatIf}`, ...options.map(text => `  ${text}`), `  ${WHATIF_NOTE}`, '']
 }
 
 const CRITERIA_LINES = [
@@ -132,9 +116,8 @@ const CRITERIA_LINES = [
 export function buildReportLines(review: ReviewState, nowMs?: number): string[] {
   const records = review.turns
   if (records.length === 0) return [NO_TURNS_LINE]
-  const subagentCount = records.filter(record => record.agentId !== null).length
   return [
-    `対象: ${records.length} ターン（サブエージェント ${subagentCount} 件）。Mod 読み込み前のターンは含みません。`,
+    `対象: ${records.length} ターン（サブエージェント ${subagentCount(records)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,
     ...concernLines(findConcerns(records)),

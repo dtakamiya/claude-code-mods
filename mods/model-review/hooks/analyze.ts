@@ -30,7 +30,7 @@ export const MIN_SUBAGENT_TURNS = 3
 export const HIGH_EFFORTS: ReadonlySet<string> = new Set(['xhigh', 'max'])
 export const LOW_EFFORT = 'low'
 export const EXAMPLE_LIMIT = 3
-/** 「Haiku なら」の差額がこれ未満の軽作業は、モデル起因の過剰として指摘しない（仮置き）。 */
+/** 「Sonnet 換算」の差額がこれ未満の軽作業は、モデル起因の過剰として指摘しない（仮置き）。 */
 export const MIN_OVERSPEC_SAVINGS_USD = 0.01
 /** Sonnet の low effort で、エラーがこの回数以上連続したら不足として指摘する（仮置き）。 */
 export const UNDERSPEC_ERROR_STREAK = 2
@@ -54,7 +54,7 @@ export type Concern = {
   readonly kind: ConcernKind
   readonly count: number
   readonly examples: readonly string[]
-  /** 金額の目安（USD）。過剰は Haiku 換算の差額の上限。分からなければ null。 */
+  /** 金額の目安（USD）。過剰は Sonnet 換算の差額。分からなければ null。 */
   readonly amountUsd: number | null
   /** 件数の母数（全ターン数）。割合で読める種類にだけ付ける。 */
   readonly outOf?: number
