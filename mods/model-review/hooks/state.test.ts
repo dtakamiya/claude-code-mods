@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
-import { EMPTY_REVIEW, appendTurn, withBaseline, withCurrent } from './state'
+import { EMPTY_REVIEW, appendTurn, withBaseline, withCostSample, withCurrent } from './state'
 
 // 架空データのみ。
 const record: TurnRecord = {
@@ -50,4 +50,27 @@ test('ターンの追記と現在のコストの更新は元の状態を書き�
   expect(after.sessionCostUsd.current).toBe(2.25)
   expect(before.turns).toEqual([])
   expect(before.sessionCostUsd.current).toBeNull()
+})
+
+test('起動時に基準点が取れなかったときは、後に取れたコストを基準点にし、現在値も更新する', () => {
+  // Arrange: 起動時は累計コストが取れず、基準点も現在値も null のまま。
+  const unset = withBaseline(EMPTY_REVIEW, null)
+
+  // Act
+  const sampled = withCostSample(unset, 4.2)
+
+  // Assert
+  expect(sampled.sessionCostUsd).toEqual({ baseline: 4.2, current: 4.2 })
+  expect(unset.sessionCostUsd).toEqual({ baseline: null, current: null })
+})
+
+test('基準点が設定済みなら、後のコストの取得は基準点を変えず、現在値だけ更新する', () => {
+  // Arrange
+  const started = withBaseline(EMPTY_REVIEW, 1.5)
+
+  // Act
+  const sampled = withCostSample(started, 2.5)
+
+  // Assert
+  expect(sampled.sessionCostUsd).toEqual({ baseline: 1.5, current: 2.5 })
 })

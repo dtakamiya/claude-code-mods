@@ -19,3 +19,8 @@ export function withBaseline(state: ReviewState, costUsd: number | null): Review
 export function withCurrent(state: ReviewState, costUsd: number): ReviewState {
   return { ...state, sessionCostUsd: { ...state.sessionCostUsd, current: costUsd } }
 }
+
+/** 累計コストを取れた時点で書く。起動時に取れなかった基準点は、ここで初めて設定される。 */
+export function withCostSample(state: ReviewState, costUsd: number): ReviewState {
+  return withCurrent(withBaseline(state, costUsd), costUsd)
+}

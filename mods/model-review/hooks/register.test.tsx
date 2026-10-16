@@ -27,11 +27,17 @@ const PANE_PROPS = {
   view: {},
 }
 
-/** 本体の hook の下で答える engine の既定値。`usd` は呼ばれた時点の累計コスト（テストが書き換える）。 */
-function answerEngine(on: On, usd: () => number, isPlaced: boolean) {
+/**
+ * 本体の hook の下で答える engine の既定値。`usd` は呼ばれた時点の累計コスト（テストが書き換える）。
+ * undefined を返すと cost を載せない（起動時に取れない環境）。
+ */
+function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean) {
   on('session.start', () => ({ cwd: SESSION_CWD }))
   on('command.register', () => ({ value: {} as never }))
-  on('session.usage', () => ({ value: { cost: { usd: usd() } } as unknown as SessionUsage }))
+  on('session.usage', () => {
+    const current = usd()
+    return { value: { cost: current === undefined ? undefined : { usd: current } } as unknown as SessionUsage }
+  })
   on('ui.open', () => ({ value: isPlaced ? { isPlaced: true } : { isPlaced: false, reason: 'narrow' } }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
@@ -198,4 +204,46 @@ test('turn.step の結果に advisor があれば、/model-review に回数が�
 
   // Assert
   expect(ran.text).toContain('advisor 1 回')
+})
+
+test('usage の取得に失敗しても session.start は次のハンドラに進み、/model-review は実コストを取得できない扱いで答える', async ($, on) => {
+  // Arrange
+  answerEngine(
+    on,
+    () => {
+      throw new Error('usage unavailable')
+    },
+    false,
+  )
+
+  // Act
+  const started = await $.session.start(SESSION_START)
+  await runMainTurn($)
+  const ran = await $.command.run(COMMAND_RUN)
+
+  // Assert
+  expect(started).toEqual({ cwd: SESSION_CWD })
+  expect(ran.text).toContain('セッション実コスト: 取得できません')
+})
+
+test('起動時に基準額が取れなくても、後に取れた時点を基準にし、以後の実コストはその時点からの差になる', async ($, on) => {
+  // Arrange: 起動時は累計コストが取れない。
+  let usd: number | undefined
+  answerEngine(on, () => usd, false)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+
+  // Act: 最初に取れた累計 13 が基準点になるので、実コストは 0。
+  usd = 13
+  const first = await $.command.run(COMMAND_RUN)
+
+  // Assert
+  expect(first.text).toContain('セッション実コスト（読み込み後）: $0.0000')
+
+  // Act: 累計 16 になったら、基準点からの 3 が実コスト。
+  usd = 16
+  const second = await $.command.run(COMMAND_RUN)
+
+  // Assert
+  expect(second.text).toContain('セッション実コスト（読み込み後）: $3.0000')
 })

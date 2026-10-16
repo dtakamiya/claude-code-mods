@@ -98,7 +98,8 @@ test('単価がわかるターンがなければ、高コストターンの見�
 
 test('妥当性の指摘があれば、種類と件数を見出しに出す', () => {
   // Arrange: 軽作業を Opus で 3 回実行（同じ設定は 1 行にまとまる）。
-  const light = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'medium' })
+  const light = (turnId: string) =>
+    turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 })
   const review = withTurns([light('l1'), light('l2'), light('l3')], null, null)
 
   // Act

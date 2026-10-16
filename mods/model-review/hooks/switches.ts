@@ -3,7 +3,7 @@
 // 長い中断によるキャッシュ切れ（TTL）とは区別できないので、金額はあくまで推定。
 import type { TurnRecord } from '../types'
 import { formatUsd } from './format'
-import { cacheRebuildCostUsd, normalizeModelId } from './pricing'
+import { cacheRebuildCostUsd, normalizeModelId, ratesFor } from './pricing'
 import { UNKNOWN_MODEL } from './recorder'
 
 /** API キー・サブスク経由で、effort を変えてもキャッシュが維持されるモデル（公式ドキュメントの記載）。 */
@@ -37,10 +37,16 @@ const isThirdPartyId = (model: string): boolean => THIRD_PARTY_MARKERS.some(mark
 const keepsCacheOnEffortChange = (model: string): boolean =>
   !isThirdPartyId(model) && CACHE_SAFE_EFFORT_MODELS.has(normalizeModelId(model))
 
+/** 単価表にあるモデルか。単価表にないモデル（ゲートウェイ名など）はキャッシュの扱いを判断できない。 */
+const isPricedModel = (model: string): boolean => ratesFor(model, 0) !== null
+
+/** 同じモデルの effort 変更が、キャッシュを切らす切替として数えられるか。 */
+const effortChangeCountsAsSwitch = (model: string): boolean => isPricedModel(model) && !keepsCacheOnEffortChange(model)
+
 function switchKind(prev: TurnRecord, current: TurnRecord): SwitchKind | null {
   if (prev.model === UNKNOWN_MODEL || current.model === UNKNOWN_MODEL) return null
   if (normalizeModelId(prev.model) !== normalizeModelId(current.model)) return 'model'
-  if (prev.effort === current.effort || keepsCacheOnEffortChange(current.model)) return null
+  if (prev.effort === current.effort || !effortChangeCountsAsSwitch(current.model)) return null
   return 'effort'
 }
 
