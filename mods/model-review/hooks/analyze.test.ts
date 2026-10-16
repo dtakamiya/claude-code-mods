@@ -18,6 +18,9 @@ import {
   estimateRange,
   RANK_OPUS,
   RANK_SONNET,
+  DELEGATION_WINDOW_TURNS,
+  LONG_TURN_MS,
+  MIN_TOOLS_FOR_DURATION_HEAVY,
 } from './analyze'
 
 // 架空データのみ。既定値は「重い」側に寄らない軽い 1 ターン。
@@ -230,6 +233,42 @@ test('閾値未満のツール回数では、委譲の指摘はしない', () =>
   expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toBeUndefined()
 })
 
+test('委譲は直近 DELEGATION_WINDOW_TURNS ターンの窓だけで見て、窓の外の古いサブエージェントでは指摘を消さない', () => {
+  // Arrange: サブエージェントは窓の外（先頭）。窓内のメインのツール合計は閾値以上。
+  const records = [
+    turn({ turnId: 'old-sub', agentId: 'agent-1', model: 'claude-sonnet-5-5', effort: 'medium' }),
+    ...repeat(DELEGATION_WINDOW_TURNS, index => turn({ turnId: `m${index}`, toolCount: 2 })),
+  ]
+
+  // Act
+  const delegation = findConcerns(records).find(concern => concern.kind === 'delegation')
+
+  // Assert
+  expect(delegation).toMatchObject({ count: 1 })
+})
+
+test('委譲の判定に使うツール回数は窓の中のターンだけを足す', () => {
+  // Arrange: 窓の外のメインは 50 回だが、窓の中は 20 回で閾値未満。
+  const records = [
+    ...repeat(5, index => turn({ turnId: `old${index}`, toolCount: 10 })),
+    ...repeat(DELEGATION_WINDOW_TURNS, index => turn({ turnId: `w${index}`, toolCount: 1 })),
+  ]
+
+  // Act / Assert
+  expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toBeUndefined()
+})
+
+test('窓の中にサブエージェントのターンがあれば、窓の中のメインのツールが多くても委譲の指摘はしない', () => {
+  // Arrange: 窓の一番新しい位置にサブエージェントを置く。
+  const records = [
+    ...repeat(DELEGATION_WINDOW_TURNS - 1, index => turn({ turnId: `m${index}`, toolCount: 2 })),
+    turn({ turnId: 's1', agentId: 'agent-1', model: 'claude-sonnet-5-5', effort: 'medium', toolCount: 3 }),
+  ]
+
+  // Act / Assert
+  expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toBeUndefined()
+})
+
 test('サブエージェントを使っていれば、メインのツールが多くても委譲の指摘はしない', () => {
   // Arrange
   const records = [
@@ -258,6 +297,22 @@ test('サブエージェントが推定コストの半分以上を占めれば�
   expect(concern).toMatchObject({ count: 3, amountUsd: 3 })
   expect(concern?.examples[0]).toContain('75%')
   expect(concern?.examples[0]).toContain('キャッシュヒット 0%')
+})
+
+test('サブエージェント指摘の母数は単価ありのターン数にし、比率の計算と同じ基準に揃える', () => {
+  // Arrange: 単価不明のメインターンを 1 件含む。比率は 3 / 4 = 75%。
+  const records = [
+    turn({ turnId: 'm', costUsd: 1 }),
+    ...repeat(3, index => turn({ turnId: `s${index}`, agentId: 'a', costUsd: 1 })),
+    turn({ turnId: 'unpriced', costUsd: null }),
+  ]
+
+  // Act
+  const concern = findConcerns(records).find(candidate => candidate.kind === 'subagent')
+
+  // Assert
+  expect(concern).toMatchObject({ count: 3, outOf: 4 })
+  expect(concern?.examples[0]).toContain('75%')
 })
 
 test('サブエージェントが少数、またはコストの半分未満なら、サブエージェントの指摘はしない', () => {
@@ -471,8 +526,14 @@ test('不足の境界: ツール 10 回と 120 秒ちょうどで指摘し、9 �
   // Arrange
   const haiku = (turnId: string, overrides: Partial<TurnRecord>) =>
     turn({ turnId, model: 'claude-haiku-5-5', effort: 'low', ...overrides })
-  const hit = [haiku('tools-10', { toolCount: 10 }), haiku('time-120', { toolCount: 1, durationMs: 120_000 })]
-  const miss = [haiku('tools-9', { toolCount: 9 }), haiku('time-under', { toolCount: 1, durationMs: 119_999 })]
+  const hit = [
+    haiku('tools-10', { toolCount: 10 }),
+    haiku('time-120', { toolCount: MIN_TOOLS_FOR_DURATION_HEAVY, durationMs: 120_000 }),
+  ]
+  const miss = [
+    haiku('tools-9', { toolCount: 9 }),
+    haiku('time-under', { toolCount: MIN_TOOLS_FOR_DURATION_HEAVY, durationMs: 119_999 }),
+  ]
 
   // Act
   const hitCount = findConcerns(hit).find(concern => concern.kind === 'underspec')?.count
@@ -481,6 +542,32 @@ test('不足の境界: ツール 10 回と 120 秒ちょうどで指摘し、9 �
   // Assert
   expect(hitCount).toBe(2)
   expect(missConcern).toBeUndefined()
+})
+
+test('ツールが少なく時間だけ長いターンは、Haiku の低 effort でも不足として重い作業にしない（承認待ちの誤検出）', () => {
+  // Arrange: 時間は閾値ちょうどだが、ツールは MIN_TOOLS_FOR_DURATION_HEAVY 未満。
+  const idle = (turnId: string) =>
+    turn({ turnId, model: 'claude-haiku-5-5', effort: 'low', toolCount: MIN_TOOLS_FOR_DURATION_HEAVY - 1, durationMs: LONG_TURN_MS })
+  const records = [idle('idle-1'), idle('idle-2')]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(concerns.find(concern => concern.kind === 'underspec')).toBeUndefined()
+})
+
+test('ツールが MIN_TOOLS_FOR_DURATION_HEAVY 回以上で、時間が閾値以上なら重い作業として不足に数える', () => {
+  // Arrange
+  const busy = (turnId: string) =>
+    turn({ turnId, model: 'claude-haiku-5-5', effort: 'low', toolCount: MIN_TOOLS_FOR_DURATION_HEAVY, durationMs: LONG_TURN_MS })
+  const records = [busy('busy-1'), busy('busy-2')]
+
+  // Act
+  const underspec = findConcerns(records).find(concern => concern.kind === 'underspec')
+
+  // Assert
+  expect(underspec?.count).toBe(2)
 })
 
 test('過剰・不足・サブの件数には全ターン数を母数として付け、切替・委譲には付けない', () => {

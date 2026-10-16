@@ -61,6 +61,20 @@ test('キャッシュが維持されないモデルでの effort 変更は切替
   expect(summary.examples[0]).toContain('effort high → low')
 })
 
+test('単価表にないモデル（ゲートウェイ名など）の effort 変更は、キャッシュ維持の一覧外でも切替に数えない', () => {
+  // Arrange
+  const records = [
+    turn({ model: 'gateway-model-9', effort: 'high' }),
+    turn({ turnId: 't2', model: 'gateway-model-9', effort: 'low', firstStepCacheWrite: 10_000 }),
+  ]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.count).toBe(0)
+})
+
 test('Bedrock・Vertex の表記では、維持対象のモデルでも effort 変更を切替に数える', () => {
   // Arrange
   const records = [

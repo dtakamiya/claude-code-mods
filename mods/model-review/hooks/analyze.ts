@@ -18,6 +18,10 @@ export const HEAVY_TOOL_CALLS = 10
 export const LONG_TURN_MS = 120_000
 /** メインループが非 Haiku でこの回数以上ツールを呼び、サブエージェントを一度も使っていなければ指摘する（仮置き）。 */
 export const MAIN_DELEGATION_MIN_TOOL_CALLS = 30
+/** 委譲の判定は、記録の末尾（新しい順）からこの数のターンだけを窓として見る。古いサブエージェントの利用で指摘を消さないため（仮置き）。 */
+export const DELEGATION_WINDOW_TURNS = 20
+/** 時間による重い判定は、ツールがこの回数以上使われたターンにだけ適用する。承認待ちなど、ツールを使わない長い停止を重い作業と誤認しないため（仮置き）。 */
+export const MIN_TOOLS_FOR_DURATION_HEAVY = 3
 /** 過剰は、該当ターンがこの数以上あるときだけ指摘する。1〜2 ターンの軽さは切替の根拠にならない（仮置き）。 */
 export const MIN_OVERSPEC_TURNS = 3
 /** サブエージェントが推定コストのこの割合以上を占め、かつ MIN_SUBAGENT_TURNS 以上あるとき指摘する（仮置き）。 */
@@ -166,7 +170,8 @@ const isOverspecTurn = (record: TurnRecord): boolean => isModelOverspec(record) 
 const isFailureTurn = (record: TurnRecord): boolean => record.reason === 'error'
 
 const isHeavyTurn = (record: TurnRecord): boolean =>
-  record.toolCount >= HEAVY_TOOL_CALLS || record.durationMs >= LONG_TURN_MS
+  record.toolCount >= HEAVY_TOOL_CALLS ||
+  (record.toolCount >= MIN_TOOLS_FOR_DURATION_HEAVY && record.durationMs >= LONG_TURN_MS)
 
 /** 重いターンだけを根拠にする。エラー終了は API 側の原因もありうるので、Haiku では単独の根拠にしない。 */
 const isHaikuUnderspecTurn = (record: TurnRecord): boolean =>
@@ -274,20 +279,23 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
   return concernOf('overspec', overspec.length, overspecGroups(overspec).map(overspecGroupLine), amountUsd)
 }
 
+/** 直近 DELEGATION_WINDOW_TURNS ターンの窓だけで、メインの非 Haiku ツール回数とサブエージェントの有無を見る。 */
 function delegationConcern(records: readonly TurnRecord[]): Concern | null {
-  const mainNonHaikuTools = records
+  const recent = records.slice(-DELEGATION_WINDOW_TURNS)
+  const mainNonHaikuTools = recent
     .filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
     .reduce((sum, record) => sum + record.toolCount, 0)
-  const usesSubagents = records.some(record => record.agentId !== null)
+  const usesSubagents = recent.some(record => record.agentId !== null)
   if (mainNonHaikuTools < MAIN_DELEGATION_MIN_TOOL_CALLS || usesSubagents) return null
   return concernOf('delegation', 1, [
-    `メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、サブエージェントを使っていない`,
+    `直近 ${DELEGATION_WINDOW_TURNS} ターンで、メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、サブエージェントを使っていない`,
   ])
 }
 
 /** サブエージェントがコストの大半を占め、親のキャッシュを読めていないとき。 */
 function subagentConcern(records: readonly TurnRecord[]): Concern | null {
-  const subs = records.filter(record => record.agentId !== null)
+  // 単価不明のターンは比率の母数に入らないので、件数にも数えない（count が outOf を超えないように）。
+  const subs = records.filter(record => record.agentId !== null && record.costUsd !== null)
   if (subs.length < MIN_SUBAGENT_TURNS) return null
   const total = estimateTotal(records).costUsd
   const subCost = estimateTotal(subs).costUsd
@@ -314,8 +322,12 @@ function switchConcern(records: readonly TurnRecord[]): Concern | null {
   return concernOf('switch', summary.count, summary.examples, summary.costUsd)
 }
 
-/** 「N 件」を全ターンに対する割合で読む種類。 */
+/** 「N 件」を割合で読む種類。 */
 const RATIO_CONCERNS: ReadonlySet<ConcernKind> = new Set(['overspec', 'underspec', 'subagent'])
+
+/** 割合の母数。サブエージェントは比率と同じく単価ありのターンだけを数え、それ以外は全ターン。 */
+const ratioBase = (kind: ConcernKind, records: readonly TurnRecord[]): number =>
+  kind === 'subagent' ? records.filter(record => record.costUsd !== null).length : records.length
 
 /** 妥当性の指摘。該当しない種類は含めない。 */
 export function findConcerns(records: readonly TurnRecord[]): readonly Concern[] {
@@ -328,7 +340,9 @@ export function findConcerns(records: readonly TurnRecord[]): readonly Concern[]
   ]
   return concerns
     .filter((concern): concern is Concern => concern !== null)
-    .map(concern => (RATIO_CONCERNS.has(concern.kind) ? { ...concern, outOf: records.length } : concern))
+    .map(concern =>
+      RATIO_CONCERNS.has(concern.kind) ? { ...concern, outOf: ratioBase(concern.kind, records) } : concern,
+    )
 }
 
 /** コストの高いターン（単価不明は除く）。降順で上位 limit 件。元の配列は変えない。 */
