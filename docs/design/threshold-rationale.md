@@ -61,7 +61,7 @@
 | `WARN_FALLBACK_PERCENT` = 60（%） | 自動圧縮が無効なとき、使用率がこの値以上で「注意」 | `fallbackPercent`（80）より手前に段階を足しただけ | `fallbackPercent` と同じ検証 | 実測なし = 仮置き |
 | `WIDE_BODY_COLUMNS` = 68（桁）／ミニバー倍率 16・上限 8・名前幅 18 | 幅 68 桁以上で所見を 1 行に連結。内訳の見た目の寸法 | 目視していない。設計書 §7 の「好み・仮説」 | だいすけの目視（T6）で調整 | 実測なし = 仮置き |
 
-## model-review（0.4.0）の仮置き値
+## model-review（0.13.0 時点）の仮置き値
 
 いずれも実測の裏付けなし（仮置き）。`mods/model-review/hooks/` の名前付き定数。
 
@@ -70,11 +70,16 @@
 | `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Opus 系の軽作業で、Sonnet 換算の差額がこれ未満ならモデル起因の過剰にしない（0.11.0 で Haiku 換算から変更。Sonnet・Haiku はモデルでは指摘せず、effort 起因だけ指摘する） | 実測なし = 仮置き |
 | `MIN_OVERSPEC_TURNS` = 3 | analyze.ts | 過剰は該当ターンが 3 件以上のときだけ指摘（1〜2 ターンの軽さは切替の根拠にならない）。中断・拒否のターンは軽作業にしない | 実測なし = 仮置き |
 | `MAIN_DELEGATION_MIN_TOOL_CALLS` = 30 | analyze.ts | メインが非 Haiku でツール 30 回以上、かつサブエージェント未使用で委譲を確認（0.11.0 で 10 → 30、条件を「Haiku の委譲なし」から「サブエージェント未使用」へ） | 実測なし = 仮置き |
+| `DELEGATION_WINDOW_TURNS` = 20（ターン） | analyze.ts | 委譲の判定は記録の末尾（新しい順）からこの数のターンだけを窓として見る。古いサブエージェントの利用で指摘を消さないため（0.13.0 で追加） | 実測なし = 仮置き |
 | `SUBAGENT_COST_SHARE` = 0.5 / `MIN_SUBAGENT_TURNS` = 3 | analyze.ts | サブエージェントが推定コストの半分以上・3 ターン以上で「サブ」を指摘 | 実測なし = 仮置き |
 | `UNDERSPEC_ERROR_STREAK` = 2 | analyze.ts | Sonnet / low のメインループでエラーが連続 2 回目から不足（Haiku / low はエラー単独では不足にせず、重いターンだけ。エラーは API 側の原因もありうる） | 実測なし = 仮置き |
+| `MIN_UNDERSPEC_TURNS` = 2 | analyze.ts | 不足は該当（重いターン・エラーの連続エピソード）が 2 件以上のときだけ指摘する。1 件の偶発を根拠にしない（0.13.0 で追加） | 実測なし = 仮置き |
+| `MIN_TOOLS_FOR_DURATION_HEAVY` = 3 | analyze.ts | 時間による「重い」判定（`LONG_TURN_MS` = 120 秒以上）は、ツールが 3 回以上使われたターンにだけ適用する。承認待ちなど、ツールを使わない長い停止を重い作業と誤認しないため（0.13.0 で追加） | 実測なし = 仮置き |
 | `CACHE_REBUILD_STREAK` = 3 | cache.ts | 書込 > 読込のターンが 3 回連続で注記 | 実測なし = 仮置き |
 | `CACHE_TTL_DIFF_RATIO` = 0.2 / `CACHE_TTL_MIN_WRITE_TOKENS` = 50,000 | cache.ts | 実コストが推定を 20% 超上回り、書込 5 万 tokens 以上で TTL 単価差を注記 | 実測なし = 仮置き |
 | `UNPRICED_STALE_RATIO` = 0.3 | notes.ts | 単価不明が 3 割以上で単価表の陳腐化を注記 | 実測なし = 仮置き |
+| `SWITCH_NOTE_RECENT_TURNS` = 10（ターン） | notes.ts | 切替の注記を出すのは、直近この件数のターンの中に切替があるときだけ。ペインで見て決め直す前提（0.13.0 で追加） | 実測なし = 仮置き |
+| `LIVE_DRAFT_LIFETIME_MS` = 10 分（600,000 ms） | recorder.ts | 応答・ツール呼び出しが止まってから 10 分過ぎた未完了の下書きは、実行中の表示から外す。turn.complete が来ないまま中断されたターン用（0.13.0 で追加） | 実測なし = 仮置き |
 | `CACHE_SAFE_EFFORT_MODELS` | switches.ts | effort 変更でキャッシュが維持されるモデル。出所は公式 prompt caching ドキュメント（取得 2026-10-15） | 公式記載 |
 
 未確認: advisor の費用が usage に載るか、fast mode の割増が取れるか（型ファイルに該当フィールドなし）。
