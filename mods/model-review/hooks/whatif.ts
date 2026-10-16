@@ -33,15 +33,19 @@ const usageOf = (record: TurnRecord, model: string) => ({
   cache_creation_input_tokens: record.tokens.cacheWrite,
 })
 
-const isUsable = (record: TurnRecord): boolean =>
+/** 再構築コストを見積もれる記録。firstStepCacheWrite が無い旧記録（0.3.0 など）は不明なので基準にしない。 */
+type UsableRecord = TurnRecord & { readonly firstStepCacheWrite: number }
+
+const isUsable = (record: TurnRecord): record is UsableRecord =>
   record.agentId === null &&
   record.model !== UNKNOWN_MODEL &&
   record.costUsd !== null &&
+  typeof record.firstStepCacheWrite === 'number' &&
   (record.firstStepPromptTokens ?? 0) > 0
 
-function optionFor(record: TurnRecord, currentUsd: number, model: string): SwitchOption | null {
+function optionFor(record: UsableRecord, currentUsd: number, model: string): SwitchOption | null {
   const candidateUsd = priceUsage(usageOf(record, model))
-  const rebuildUsd = cacheRebuildCostUsd(model, record.firstStepCacheWrite ?? 0, record.firstStepPromptTokens)
+  const rebuildUsd = cacheRebuildCostUsd(model, record.firstStepCacheWrite, record.firstStepPromptTokens)
   if (candidateUsd === null || rebuildUsd === null) return null
   const perTurnDeltaUsd = candidateUsd - currentUsd
   const saving = -perTurnDeltaUsd

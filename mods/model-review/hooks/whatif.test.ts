@@ -61,6 +61,26 @@ test('基準にできるターンがない、またはモデルの単価が不�
   expect(estimateSwitchOptions([turn({ model: 'mystery-model' })])).toEqual([])
 })
 
+test('firstStepCacheWrite のない旧記録は基準にせず、直近の新しい記録で見積もる（再構築を 0 円とみなさない）', () => {
+  // Arrange: 直近は旧記録（Opus・再構築の記録なし）。その前に新しい記録（Sonnet）がある。
+  const records = [
+    turn({ turnId: 'new', model: 'claude-sonnet-5-5' }),
+    turn({ turnId: 'old', model: 'claude-opus-5-5', costUsd: 1.18, firstStepCacheWrite: undefined }),
+  ]
+
+  // Act
+  const options = estimateSwitchOptions(records)
+  const haiku = options.find(option => option.model === 'claude-haiku-5-5')
+
+  // Assert: 基準は Sonnet の記録なので、候補は Haiku と Opus。Haiku の再構築は 0.0575。
+  expect(options.map(option => option.model)).toEqual(['claude-haiku-5-5', 'claude-opus-5-5'])
+  expect(haiku?.rebuildUsd?.toFixed(6)).toBe('0.057500')
+})
+
+test('firstStepCacheWrite のない旧記録しかなければ、再構築が不明なので空を返す', () => {
+  expect(estimateSwitchOptions([turn({ firstStepCacheWrite: undefined })])).toEqual([])
+})
+
 test('文面はモデル名・再構築・差額の符号・回収ターン数を含む', () => {
   // Arrange
   const [haiku] = estimateSwitchOptions([turn()])
