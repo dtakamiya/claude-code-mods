@@ -17,3 +17,5 @@
 - Q-007（期限: 案 5 を実装候補にしたくなった時点。出所: `docs/design/ideas.md` 案 5）: 完了通知の外部送信（`$.http.fetch`）を許すか。通信を伴い、送信先 URL が秘密値になりうるため着手せず。A) 許さない（案 2 のトースト通知のみ）B) 許す（送信先は利用者設定 `userConfig` で受け、repo には入れない。送る内容は所要時間の数値のみ）。おすすめ: A（既定は読み取り専用・通信なしのガードレールを守る）。B を選ぶ場合、`$.audio.play`（音）の要否も同時に判断する。
 
 - Q-008（期限: repeat-call-notice（mod-010）の閾値 N を仮置きから変えたくなった時点。出所: `docs/design/repeat-call-notice.md` §4）: N=3 は根拠なしの仮置き。実セッションの反復の分布で裏付けるには実データ（会話記録）の読取が要り、repo に入れない運用とぶつかるため着手せず。A) だいすけが自分の環境で、ターンごとの「最大の反復回数」だけを数えて共有（入力・tool 名以外の内容は共有しない）B) 仮置きのまま。おすすめ: B（Q-002 回答と同じ。観察表示に留める）。
+
+- Q-009（期限: Claude Code のバージョンアップ時に再確認。出所: model-review のコスト推定）: advisor の費用と fast mode の割増を model-review のコスト推定に含められるか。調査結果（Claude Code 2.1.301 の API 型で 2026-10-16 に確認）: 含められない。TurnUsage は ModelUsage（4 つのトークン数）と model のみ。advisor は TurnStepServerToolUse（id/name/input/開始・終了時刻）で回数と時刻は分かるが、トークン数・費用は載らない。fast mode を示すフィールドも TurnUsage に無い（`speed` は Agent ツール出力の usage にだけあり、ターンの usage には無い）。影響: 推定コストは advisor 分と fast mode 割増を含まない過小推定になりうる。ペインの advisor 回数表示は回数のみ。状態: 型に項目が増えたら再確認する（Claude Code のバージョンアップ時）。
