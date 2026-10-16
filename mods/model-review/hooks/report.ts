@@ -1,9 +1,12 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
-import { formatInt, formatUsd, formatUsdRange } from './format'
+import { formatDuration, formatInt, formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
+import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
+import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
+import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
@@ -17,18 +20,12 @@ import {
   type ModelGroup,
 } from './analyze'
 
-const CONCERN_TITLE: Readonly<Record<Concern['kind'], string>> = {
-  overspec: '過剰の可能性',
-  underspec: '不足の可能性',
-  delegation: '指揮者モデル運用の確認',
-  switch: 'モデル・effort の切替',
-}
-
 /** 指摘の金額の前に付ける語。金額の意味が種類ごとに違う。 */
 export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | null>> = {
-  overspec: '最大',
+  overspec: 'Sonnet 換算',
   underspec: null,
   delegation: null,
+  subagent: '推定',
   switch: '推定',
 }
 
@@ -39,7 +36,7 @@ export const hitRateText = (tokens: ModelGroup['tokens']): string | null => {
 
 export const NO_TURNS_LINE ='記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
 
-export { formatInt, formatUsd, formatUsdRange }
+export { formatDuration, formatInt, formatUsd, formatUsdRange }
 
 function groupLine(group: ModelGroup): string {
   const { tokens } = group
@@ -59,7 +56,10 @@ function groupLine(group: ModelGroup): string {
 function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
   const estimate = estimateTotal(records)
   const { lowUsd, highUsd } = estimateRange(records)
-  const estimateLine = `合計推定コスト: ${formatUsdRange(lowUsd, highUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
+  const estimateLine =
+    estimate.unpricedTurns === records.length
+      ? `合計推定コスト: 算出できません（全 ${records.length} ターンが単価不明）`
+      : `合計推定コスト: ${formatUsdRange(lowUsd, highUsd)}（単価不明 ${estimate.unpricedTurns} ターンを除く）`
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) {
     return [estimateLine, 'セッション実コスト: 取得できません（コストの記録がない環境）']
@@ -72,29 +72,55 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   ]
 }
 
+/** 件数の表記。母数があれば「116 / 200 件」。 */
+export const countText = (concern: Concern): string =>
+  concern.outOf === undefined ? `${concern.count} 件` : `${concern.count} / ${concern.outOf} 件`
+
 function amountSuffix(concern: Concern): string {
   const label = CONCERN_AMOUNT_LABEL[concern.kind]
   return concern.amountUsd === null || label === null ? '' : ` · ${label} ${formatUsd(concern.amountUsd)}`
 }
 
 function concernLines(concerns: readonly Concern[]): string[] {
-  if (concerns.length === 0) return ['指摘はありません。']
+  if (concerns.length === 0) return [`  ${NO_CONCERNS_TEXT}`]
   return concerns.flatMap(concern => [
-    `【${CONCERN_TITLE[concern.kind]}】 ${concern.count} 件${amountSuffix(concern)}`,
-    ...concern.examples.map(example => `  ・${example}`),
+    `  【${CONCERN_TEXT[concern.kind].label}】 ${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${amountSuffix(concern)}`,
+    ...concern.examples.map(example => `    ・${example}`),
   ])
 }
 
 function topTurnLines(records: readonly TurnRecord[]): string[] {
   return topCostTurns(records).map(
     record =>
-      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${record.agentId === null ? 'メイン' : 'サブエージェント'}）${record.model}  ツール ${record.toolCount} 回 · ${record.durationMs} ms`,
+      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${record.agentId === null ? 'メイン' : 'サブエージェント'}）${record.model}  ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`,
   )
+}
+
+function topTurnSection(records: readonly TurnRecord[]): string[] {
+  const lines = topTurnLines(records)
+  return lines.length === 0 ? [] : [`■ ${HEADING.topTurns}`, ...lines, '']
 }
 
 function advisorLines(records: readonly TurnRecord[]): string[] {
   const calls = advisorCallTotal(records)
   return calls === 0 ? [] : [`advisor ${calls} 回（費用が usage に載るかは未確認。金額には含めていません）`]
+}
+
+function loopLines(records: readonly TurnRecord[]): string[] {
+  const summaries = summarizeLoops(records)
+  if (summaries.length < 2) return []
+  return [
+    `■ ${HEADING.loops}`,
+    ...summaries.map(summary => `  ${loopLabel(summary.kind)}  ${describeLoop(summary)}`),
+    ...(subagentHitRateLow(summaries) ? [`  ${SUBAGENT_CACHE_NOTE}`] : []),
+    '',
+  ]
+}
+
+function whatIfLines(records: readonly TurnRecord[]): string[] {
+  const options = estimateSwitchOptions(records)
+  if (options.length === 0) return []
+  return [`■ ${HEADING.whatIf}`, ...options.map(option => `  ${describeOption(option)}`), `  ${WHATIF_NOTE}`, '']
 }
 
 const CRITERIA_LINES = [
@@ -103,27 +129,27 @@ const CRITERIA_LINES = [
 ]
 
 /** ペインに表示する行。記録がなければ案内の 1 行だけを返す。 */
-export function buildReportLines(review: ReviewState): string[] {
+export function buildReportLines(review: ReviewState, nowMs?: number): string[] {
   const records = review.turns
   if (records.length === 0) return [NO_TURNS_LINE]
   const subagentCount = records.filter(record => record.agentId !== null).length
   return [
     `対象: ${records.length} ターン（サブエージェント ${subagentCount} 件）。Mod 読み込み前のターンは含みません。`,
     '',
-    '■ モデル × effort 別',
+    `■ ${HEADING.concerns}（ヒューリスティック）`,
+    ...concernLines(findConcerns(records)),
+    '',
+    `■ ${HEADING.groups}`,
     ...groupByModelEffort(records).map(groupLine),
     '',
-    '■ 高コストターン',
-    ...topTurnLines(records),
-    '',
-    '■ コスト',
+    ...topTurnSection(records),
+    ...loopLines(records),
+    ...whatIfLines(records),
+    `■ ${HEADING.cost}`,
     ...costLines(review, records),
     ...advisorLines(records),
-    ...buildNotes(review),
+    ...buildNotes(review, nowMs),
     ALWAYS_NOTE,
-    '',
-    '■ 妥当性（参考・ヒューリスティック）',
-    ...concernLines(findConcerns(records)),
     '',
     ...CRITERIA_LINES,
   ]

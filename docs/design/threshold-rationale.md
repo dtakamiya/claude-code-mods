@@ -67,8 +67,11 @@
 
 | 値 | 場所 | 使われ方 | 根拠の強さ |
 |---|---|---|---|
-| `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Haiku 換算の差額がこれ未満の軽作業は、モデル起因の過剰にしない（effort 起因は差額で絞らない） | 実測なし = 仮置き |
-| `UNDERSPEC_ERROR_STREAK` = 2 | analyze.ts | Sonnet / low のメインループでエラー・中断が連続 2 回目から不足 | 実測なし = 仮置き |
+| `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Opus 系の軽作業で、Sonnet 換算の差額がこれ未満ならモデル起因の過剰にしない（0.11.0 で Haiku 換算から変更。Sonnet・Haiku はモデルでは指摘せず、effort 起因だけ指摘する） | 実測なし = 仮置き |
+| `MIN_OVERSPEC_TURNS` = 3 | analyze.ts | 過剰は該当ターンが 3 件以上のときだけ指摘（1〜2 ターンの軽さは切替の根拠にならない）。中断・拒否のターンは軽作業にしない | 実測なし = 仮置き |
+| `MAIN_DELEGATION_MIN_TOOL_CALLS` = 30 | analyze.ts | メインが非 Haiku でツール 30 回以上、かつサブエージェント未使用で委譲を確認（0.11.0 で 10 → 30、条件を「Haiku の委譲なし」から「サブエージェント未使用」へ） | 実測なし = 仮置き |
+| `SUBAGENT_COST_SHARE` = 0.5 / `MIN_SUBAGENT_TURNS` = 3 | analyze.ts | サブエージェントが推定コストの半分以上・3 ターン以上で「サブ」を指摘 | 実測なし = 仮置き |
+| `UNDERSPEC_ERROR_STREAK` = 2 | analyze.ts | Sonnet / low のメインループでエラーが連続 2 回目から不足（Haiku / low はエラー単独では不足にせず、重いターンだけ。エラーは API 側の原因もありうる） | 実測なし = 仮置き |
 | `CACHE_REBUILD_STREAK` = 3 | cache.ts | 書込 > 読込のターンが 3 回連続で注記 | 実測なし = 仮置き |
 | `CACHE_TTL_DIFF_RATIO` = 0.2 / `CACHE_TTL_MIN_WRITE_TOKENS` = 50,000 | cache.ts | 実コストが推定を 20% 超上回り、書込 5 万 tokens 以上で TTL 単価差を注記 | 実測なし = 仮置き |
 | `UNPRICED_STALE_RATIO` = 0.3 | notes.ts | 単価不明が 3 割以上で単価表の陳腐化を注記 | 実測なし = 仮置き |

@@ -55,15 +55,18 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
               {row.percentText === '' ? null : dim(`  ${row.percentText}`)}
             </Text>
             <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.tokenText}`}</Text>
+            <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.cacheText}`}</Text>
           </Box>
         )
       case 'turn':
         return (
-          <Text wrap="truncate-end">
-            <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
-            <Text bold>{`  ${row.costText}`}</Text>
-            {dim(`  ${row.label} · ${row.detail}`)}
-          </Text>
+          <Box flexDirection="column">
+            <Text wrap="truncate-end">
+              <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
+              <Text bold>{`  ${row.costText}`}</Text>
+            </Text>
+            <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.label} · ${row.detail}`}</Text>
+          </Box>
         )
       case 'kv':
         return (
