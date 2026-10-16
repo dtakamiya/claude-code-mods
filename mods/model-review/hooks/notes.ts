@@ -2,7 +2,7 @@
 import type { ReviewState, TurnRecord } from '../types'
 import { estimateRange, estimateTotal } from './analyze'
 import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
-import { PRICE_TABLE_FETCHED_AT } from './pricing'
+import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 import { findSwitches } from './switches'
 
 /** 単価不明のターンがこの割合以上なら、単価表が古い可能性を注記する（仮置き）。 */
@@ -39,7 +39,21 @@ function ttlNote(review: ReviewState, upperUsd: number): readonly string[] {
 
 function staleNote(records: readonly TurnRecord[], unpricedTurns: number): readonly string[] {
   if (unpricedTurns / records.length < UNPRICED_STALE_RATIO) return []
-  return [`単価不明のターンが ${unpricedTurns} / ${records.length} 件あります。単価表が古い可能性があります（pricing.ts の取得日: ${PRICE_TABLE_FETCHED_AT}）`]
+  const models = [...new Set(records.filter(record => record.costUsd === null).map(record => record.model))]
+  return [
+    `単価不明のターンが ${unpricedTurns} / ${records.length} 件あります（モデル: ${models.join('、')}）。単価表が古い可能性があります（gateway・独自のモデル名のこともあります）。pricing.ts に単価を足すと推定に含まれます（取得日: ${PRICE_TABLE_FETCHED_AT}）`,
+  ]
+}
+
+const MS_PER_DAY = 86_400_000
+
+/** 取得日から日数が経ちすぎた単価表への注記。現在時刻は呼び出し側から渡す（純粋関数を保つ）。取得日を読めなければ出さない。 */
+function priceAgeNote(nowMs: number | undefined): readonly string[] {
+  const fetchedMs = Date.parse(PRICE_TABLE_FETCHED_AT)
+  if (nowMs === undefined || Number.isNaN(fetchedMs)) return []
+  const ageDays = Math.floor((nowMs - fetchedMs) / MS_PER_DAY)
+  if (ageDays <= PRICE_TABLE_STALE_DAYS) return []
+  return [`単価表の取得から ${ageDays} 日経っています（取得日: ${PRICE_TABLE_FETCHED_AT}）。価格表の改定がないか確認してください`]
 }
 
 function switchNote(records: readonly TurnRecord[]): readonly string[] {
@@ -48,7 +62,7 @@ function switchNote(records: readonly TurnRecord[]): readonly string[] {
 }
 
 /** 状況に応じた注記（常に出す 1 行を除く）。記録がなければ空。 */
-export function buildNotes(review: ReviewState): readonly string[] {
+export function buildNotes(review: ReviewState, nowMs?: number): readonly string[] {
   const records = review.turns
   if (records.length === 0) return []
   const { unpricedTurns } = estimateTotal(records)
@@ -56,6 +70,7 @@ export function buildNotes(review: ReviewState): readonly string[] {
     ...rebuildStreakNote(records),
     ...ttlNote(review, estimateRange(records).highUsd),
     ...staleNote(records, unpricedTurns),
+    ...priceAgeNote(nowMs),
     ...switchNote(records),
   ]
 }

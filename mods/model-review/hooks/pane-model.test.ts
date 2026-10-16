@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
-import { BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
+import { ALERT_LABEL, BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
 // 架空データのみ。
@@ -91,7 +91,8 @@ test('グループごとにコスト割合を出し、1% 未満はバーを埋�
 
 test('妥当性セクションは内訳より上にあり、見出しに指摘件数が出る', () => {
   // Act
-  const rows = buildPaneRows(review([turn({ model: 'claude-opus-5-5', effort: 'max' })]))
+  const heavy = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
+  const rows = buildPaneRows(review([heavy('a'), heavy('b'), heavy('c')]))
 
   // Assert
   const headings = rows.flatMap(row => (row.kind === 'heading' ? [row.text] : []))
@@ -101,11 +102,11 @@ test('妥当性セクションは内訳より上にあり、見出しに指摘�
 
 test('指摘がなければ OK 行、軽作業に重い設定ならバッジを出す', () => {
   // Arrange
-  const heavyForLight = turn({ model: 'claude-opus-5-5', effort: 'max' })
+  const heavyForLight = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
 
   // Act
   const clean = buildPaneRows(review([turn({ toolCount: 5 })]))
-  const flagged = buildPaneRows(review([heavyForLight]))
+  const flagged = buildPaneRows(review([heavyForLight('a'), heavyForLight('b'), heavyForLight('c')]))
 
   // Assert
   expect(clean).toContainEqual({ kind: 'ok', text: '指摘なし' })
@@ -113,7 +114,8 @@ test('指摘がなければ OK 行、軽作業に重い設定ならバッジを�
 })
 
 const rowsOf = (turns: TurnRecord[], cost?: ReviewState['sessionCostUsd']): PaneRow[] => buildPaneRows(review(turns, cost))
-const noteTexts = (rows: PaneRow[]): string[] => rows.flatMap(row => (row.kind === 'note' ? [row.text] : []))
+const noteTexts = (rows: PaneRow[]): string[] =>
+  rows.flatMap(row => (row.kind === 'note' || (row.kind === 'badge' && row.label === ALERT_LABEL) ? [row.text] : []))
 
 test('グループ行のトークン表示の先頭にキャッシュヒット率を出す', () => {
   // Arrange: 読込 800 ÷（入力 100 + 読込 800 + 書込 100）= 80%。
@@ -161,15 +163,17 @@ test('モデル切替があれば切替バッジに推定コストと件数を�
   expect(noteTexts(rows).some(text => text.includes('切替の推定'))).toBe(true)
 })
 
-test('過剰のバッジには Haiku 換算の差額の上限を出す', () => {
+test('過剰のバッジには Sonnet 換算の差額を出す', () => {
   // Arrange
-  const rows = rowsOf([turn({ model: 'claude-opus-5-5', effort: 'medium', toolCount: 0, costUsd: 0.5, haikuCostUsd: 0.02 })])
+  const light = (turnId: string) =>
+    turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', toolCount: 0, costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 })
+  const rows = rowsOf([light('a'), light('b'), light('c')])
 
   // Act
   const badge = rows.find(row => row.kind === 'badge' && row.label === '過剰')
 
   // Assert
-  expect(badge?.kind === 'badge' ? badge.text : '').toContain('最大 $0.4800')
+  expect(badge?.kind === 'badge' ? badge.text : '').toContain('Sonnet 換算 $0.7500')
 })
 
 test('書込が読込を上回るターンが 3 回続くと、キャッシュ再構築の注記を出す', () => {
@@ -286,4 +290,65 @@ test('単価不明の割合がちょうど 3 割なら単価表の注記を出�
   // Assert
   expect(atLimit.some(text => text.includes('単価表が古い可能性'))).toBe(true)
   expect(below.some(text => text.includes('単価表が古い可能性'))).toBe(false)
+})
+
+test('切替の見積りは、基準にできるターンがあるときだけ見出しつきで出す', () => {
+  // Arrange
+  const withBase = rowsOf([turn({ firstStepCacheWrite: 100_000, firstStepPromptTokens: 600_000 })])
+  const withoutBase = rowsOf([turn({})])
+
+  // Act
+  const headings = (rows: PaneRow[]) => rows.filter(row => row.kind === 'heading').map(row => (row as { text: string }).text)
+
+  // Assert
+  expect(headings(withBase)).toContain('いま切り替えたら（目安）')
+  expect(headings(withoutBase)).not.toContain('いま切り替えたら（目安）')
+})
+
+test('ループ別の集計は、メインとサブエージェントの両方があるときだけ見出しつきで出す', () => {
+  // Arrange
+  const both = rowsOf([turn({}), turn({ turnId: 's1', agentId: 'a1' })])
+  const mainOnly = rowsOf([turn({})])
+  const headings = (rows: PaneRow[]) => rows.filter(row => row.kind === 'heading').map(row => (row as { text: string }).text)
+
+  // Assert
+  expect(headings(both)).toContain('ループ別（キャッシュ効率）')
+  expect(headings(mainOnly)).not.toContain('ループ別（キャッシュ効率）')
+})
+
+test('タイトルの推定は、上限のあるターンがあれば幅で表示する', () => {
+  // Arrange: 下限 $3、上限 $4.2。
+  const [title] = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })]))
+
+  // Assert
+  expect(title).toMatchObject({ kind: 'title', costText: '$3.0000〜$4.2000' })
+})
+
+test('状況に応じた警告は「注意」バッジにし、常に出す免責は dim の注記のまま残す', () => {
+  // Arrange: 切替（モデル変更）で警告が出る記録。
+  const rows = rowsOf([
+    turn({ turnId: 't1' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
+  ])
+
+  // Act
+  const alerts = rows.filter(row => row.kind === 'badge' && row.label === ALERT_LABEL)
+  const notes = rows.filter(row => row.kind === 'note')
+
+  // Assert
+  expect(alerts.length).toBeGreaterThan(0)
+  expect(notes.some(row => row.kind === 'note' && row.text.includes('推定に含まれないもの'))).toBe(true)
+  expect(notes.some(row => row.kind === 'note' && row.text.includes('切替の推定'))).toBe(false)
+})
+
+test('グループ行はトークンとキャッシュを別の行に分ける', () => {
+  // Arrange
+  const rows = rowsOf([turn({ tokens: { input: 100, output: 5, cacheRead: 800, cacheWrite: 100 } })])
+
+  // Act
+  const group = rows.find(row => row.kind === 'group')
+
+  // Assert
+  expect(group?.kind === 'group' ? group.cacheText : '').toBe('キャッシュ 読 800 / 書 100')
+  expect(group?.kind === 'group' ? group.tokenText : '').not.toContain('キャッシュ')
 })

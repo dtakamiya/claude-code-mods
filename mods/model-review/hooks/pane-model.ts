@@ -15,10 +15,15 @@ import {
   type ModelGroup,
 } from './analyze'
 import type { Drafts, LoopDraft } from './recorder'
+import { SUBAGENT_CACHE_NOTE, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops } from './loops'
+import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
+import { WHATIF_NOTE, describeOption, estimateSwitchOptions } from './whatif'
 import { ALWAYS_NOTE, advisorCallTotal, buildNotes } from './notes'
-import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
+import { CONCERN_AMOUNT_LABEL, NO_TURNS_LINE, countText, formatDuration, formatInt, formatUsd, formatUsdRange, hitRateText } from './report'
 
 export const BAR_WIDTH = 14
+/** 状況に応じた警告（buildNotes）のバッジ。常に出す免責・判定基準（dim の注記）と見分ける。 */
+export const ALERT_LABEL = '注意'
 const MODEL_ID_PREFIX = 'claude-'
 const NO_EFFORT_LABEL = '-'
 
@@ -30,7 +35,7 @@ export type PaneRow =
   | { kind: 'blank' }
   | { kind: 'title'; turns: number; subagents: number; costText: string }
   | { kind: 'heading'; text: string }
-  | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; filled: number; percentText: string; costText: string; tokenText: string }
+  | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; filled: number; percentText: string; costText: string; tokenText: string; cacheText: string }
   | { kind: 'turn'; label: string; model: string; tier: Tier; costText: string; detail: string }
   | { kind: 'kv'; label: string; value: string; tone: Tone }
   | { kind: 'badge'; label: string; tone: Tone; text: string }
@@ -39,15 +44,12 @@ export type PaneRow =
   | { kind: 'note'; text: string }
 
 const TIER_OF_RANK: Readonly<Record<number, Tier>> = { 0: 'haiku', 1: 'sonnet', 2: 'opus' }
-const CONCERN_BADGE: Readonly<Record<ConcernKind, { label: string; tone: Tone; text: string }>> = {
-  overspec: { label: '過剰', tone: 'warning', text: '軽作業に重いモデル / effort' },
-  underspec: { label: '不足', tone: 'error', text: '重い作業に軽い設定' },
-  delegation: {
-    label: '委譲',
-    tone: 'suggestion',
-    text: 'Haiku サブエージェントへの委譲なし（サブエージェントは 5 分 TTL・親のキャッシュを読まない）',
-  },
-  switch: { label: '切替', tone: 'warning', text: 'モデル / effort の切替でキャッシュを再構築' },
+const CONCERN_TONE: Readonly<Record<ConcernKind, Tone>> = {
+  overspec: 'warning',
+  underspec: 'error',
+  delegation: 'suggestion',
+  subagent: 'warning',
+  switch: 'warning',
 }
 
 const tierOf = (model: string): Tier => TIER_OF_RANK[modelRank(model)] ?? 'other'
@@ -85,14 +87,18 @@ function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
     filled: filledCells(share),
     percentText: percentText(share),
     costText: formatUsd(group.costUsd),
-    tokenText: `${hit === null ? '' : `${hit} · `}入力 ${formatInt(tokens.input)} · 出力 ${formatInt(tokens.output)} · キャッシュ 読 ${formatInt(tokens.cacheRead)} / 書 ${formatInt(tokens.cacheWrite)}`,
+    tokenText: `${hit === null ? '' : `${hit} · `}入力 ${formatInt(tokens.input)} · 出力 ${formatInt(tokens.output)}`,
+    cacheText: `キャッシュ 読 ${formatInt(tokens.cacheRead)} / 書 ${formatInt(tokens.cacheWrite)}`,
   }
 }
 
 function costRows(review: ReviewState, estimateUsd: number, unpricedTurns: number): PaneRow[] {
   const unpriced = unpricedTurns > 0 ? ` （単価不明 ${unpricedTurns} ターンを除く）` : ''
   const { lowUsd, highUsd } = estimateRange(review.turns)
-  const estimate = `${formatUsdRange(lowUsd, highUsd)}${unpriced}`
+  const estimate =
+    unpricedTurns === review.turns.length
+      ? `算出できません（全 ${unpricedTurns} ターンが単価不明）`
+      : `${formatUsdRange(lowUsd, highUsd)}${unpriced}`
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) {
     return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimate} / 実コスト 取得できません`, tone: 'plain' }]
@@ -104,13 +110,13 @@ function costRows(review: ReviewState, estimateUsd: number, unpricedTurns: numbe
 }
 
 function concernRows(concerns: readonly Concern[]): PaneRow[] {
-  if (concerns.length === 0) return [{ kind: 'ok', text: '指摘なし' }]
+  if (concerns.length === 0) return [{ kind: 'ok', text: NO_CONCERNS_TEXT }]
   return concerns.flatMap((concern): PaneRow[] => {
-    const badge = CONCERN_BADGE[concern.kind]
+    const { label, summary } = CONCERN_TEXT[concern.kind]
     const amountLabel = CONCERN_AMOUNT_LABEL[concern.kind]
     const amount = concern.amountUsd === null || amountLabel === null ? '' : ` · ${amountLabel} ${formatUsd(concern.amountUsd)}`
     return [
-      { kind: 'badge', label: badge.label, tone: badge.tone, text: `${badge.text} · ${concern.count} 件${amount}` },
+      { kind: 'badge', label, tone: CONCERN_TONE[concern.kind], text: `${summary} · ${countText(concern)}${amount}` },
       ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
     ]
   })
@@ -120,15 +126,38 @@ function topTurnRows(records: ReviewState['turns']): PaneRow[] {
   const top = topCostTurns(records)
   if (top.length === 0) return []
   return [
-    { kind: 'heading', text: '高コストターン' },
+    { kind: 'heading', text: HEADING.topTurns },
     ...top.map((record): PaneRow => ({
       kind: 'turn',
       label: `${record.turnId} · ${record.agentId === null ? 'メイン' : 'サブエージェント'}`,
       model: shortModel(record.model),
       tier: tierOf(record.model),
       costText: formatUsd(record.costUsd),
-      detail: `ツール ${record.toolCount} 回 · ${record.durationMs} ms`,
+      detail: `ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`,
     })),
+    { kind: 'blank' },
+  ]
+}
+
+/** メインとサブエージェントの両方があるときだけ出す（片方だけなら、モデル × effort の集計と同じ内容になる）。 */
+function loopRows(records: ReviewState['turns']): PaneRow[] {
+  const summaries = summarizeLoops(records)
+  if (summaries.length < 2) return []
+  return [
+    { kind: 'heading', text: HEADING.loops },
+    ...summaries.map((summary): PaneRow => ({ kind: 'kv', label: loopLabel(summary.kind), value: describeLoop(summary), tone: 'plain' })),
+    ...(subagentHitRateLow(summaries) ? [{ kind: 'note', text: SUBAGENT_CACHE_NOTE } as const] : []),
+    { kind: 'blank' },
+  ]
+}
+
+function whatIfRows(records: ReviewState['turns']): PaneRow[] {
+  const options = estimateSwitchOptions(records)
+  if (options.length === 0) return []
+  return [
+    { kind: 'heading', text: HEADING.whatIf },
+    ...options.map((option): PaneRow => ({ kind: 'example', text: describeOption(option) })),
+    { kind: 'note', text: WHATIF_NOTE },
     { kind: 'blank' },
   ]
 }
@@ -141,7 +170,7 @@ function advisorRows(records: ReviewState['turns']): PaneRow[] {
 
 const concernHeading = (concerns: readonly Concern[]): string => {
   const total = concerns.reduce((sum, concern) => sum + concern.count, 0)
-  return total === 0 ? '妥当性（参考）' : `妥当性（参考）· 指摘 ${total} 件`
+  return total === 0 ? HEADING.concerns : `${HEADING.concerns}· 指摘 ${total} 件`
 }
 
 const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
@@ -163,33 +192,36 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
-export function buildPaneRows(review: ReviewState, drafts: Drafts = {}): PaneRow[] {
+export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: number): PaneRow[] {
   const records = review.turns
   const live = liveRows(drafts)
   if (records.length === 0) return live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
   const { costUsd: estimateUsd, unpricedTurns } = estimateTotal(records)
+  const range = estimateRange(records)
   const concerns = findConcerns(records)
   return [
     {
       kind: 'title',
       turns: records.length,
       subagents: records.filter(record => record.agentId !== null).length,
-      costText: formatUsd(unpricedTurns === records.length ? null : estimateUsd),
+      costText: unpricedTurns === records.length ? formatUsd(null) : formatUsdRange(range.lowUsd, range.highUsd),
     },
     { kind: 'blank' },
     ...live,
     { kind: 'heading', text: concernHeading(concerns) },
     ...concernRows(concerns),
     { kind: 'blank' },
-    { kind: 'heading', text: 'モデル × effort（コスト比）' },
+    { kind: 'heading', text: HEADING.groups },
     ...groupByModelEffort(records).map(group => groupRow(group, estimateUsd)),
     { kind: 'blank' },
     ...topTurnRows(records),
-    { kind: 'heading', text: 'コスト' },
+    ...loopRows(records),
+    ...whatIfRows(records),
+    { kind: 'heading', text: HEADING.cost },
     ...costRows(review, estimateUsd, unpricedTurns),
     ...advisorRows(records),
     { kind: 'blank' },
-    ...buildNotes(review).map((text): PaneRow => ({ kind: 'note', text })),
+    ...buildNotes(review, nowMs).map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
     { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },
   ]
