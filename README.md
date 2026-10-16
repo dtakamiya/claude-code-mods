@@ -27,7 +27,7 @@ Claude Code の **Mods**（関数フック型プラグイン）を作って配�
 
 ## 動作確認済みバージョン
 
-Claude Code 2.1.300（`validate` / `test` / tsc 通過。UI の目視確認は未実施）。Mods API は early access のため、バージョンが変わったら再検証する。
+Claude Code 2.1.301（model-review・context-doctor・repeat-call-notice・session-recap で `validate` / `test` 通過、model-review は tsc も通過。UI の目視確認は未実施）。Mods API は early access のため、バージョンが変わったら再検証する。
 
 ## 安全性
 
