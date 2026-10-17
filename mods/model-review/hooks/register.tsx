@@ -6,6 +6,7 @@ import { EMPTY_REVIEW, appendTurn, withBaseline, withCostSample } from './state'
 import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
+import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 
 const PANE_ID = 'model-review'
 const PANE_TITLE = 'モデル振り返り'
@@ -13,6 +14,7 @@ const ADVISOR_TOOL_NAME = 'advisor'
 const PANE_OPENED_TEXT = 'モデル振り返りペインを開きました。'
 // 例外の中身は入力由来の文字列を含みうるので出さず、固定文言だけをログに残す。
 const COST_READ_FAILED_TEXT = 'model-review: 累計コストの取得に失敗したため、実コストを記録しなかった'
+const GLANCE_FAILED_TEXT = 'model-review: status 行の更新に失敗したため、この更新を省いた'
 const RECORD_FAILED_TEXT = 'model-review: 記録に失敗したため、この更新を記録しなかった'
 
 // validate の静的走査が読めるよう、参照はこのファイルに置く（リテラルの plugin / key）。
@@ -50,7 +52,12 @@ const logDebug =
     void $.ui.log(text, { to: 'debug' })
   }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const limits = readLimits(options)
+  const showStatus = readShowStatus(options)
+  // 知らせ済みの上限と、直近に出した status 文。reload で消えるので、reload 後は超過中の上限をもう一度知らせうる。
+  let notified: ReadonlySet<string> = new Set()
+  let lastStatus: string | undefined
   // 進行中のターンの下書き（ループごと）。値は差し替えるだけで、中身は書き換えない。
   let drafts: Drafts = {}
   // /compact（自動を含む）が通った後、まだ完了していないメインのターンに印を付けるための旗。
@@ -66,6 +73,7 @@ export const register: Register = on => {
       text => $.ui.log(text, { to: 'debug' }),
     )
     await update($, reviewAtom, state => withBaseline(state, costUsd))
+    lastStatus = undefined
     return next(e)
   })
 
@@ -82,6 +90,24 @@ export const register: Register = on => {
 
   on('session.measure', async ($, e, next) => {
     const costUsd = e.cost?.usd
+    // 表示は記録（await）より先に。記録の失敗や遅れで status 行が止まったり、古い値で上書きされたりしないように。
+    if (needsRedraw(e.changed)) {
+      try {
+        const glance = { costUsd, rateLimits: e.rateLimits }
+        if (showStatus) {
+          const text = formatStatus(glance)
+          if (text !== lastStatus) {
+            lastStatus = text
+            void $.ui.status(text)
+          }
+        }
+        const result = evaluateAlerts(glance, limits, notified)
+        notified = result.notified
+        for (const alert of result.alerts) void $.ui.toast(alert)
+      } catch {
+        void $.ui.log(GLANCE_FAILED_TEXT, { to: 'debug' })
+      }
+    }
     if (costUsd !== undefined) await update($, reviewAtom, state => withCostSample(state, costUsd))
     return next(e)
   })
