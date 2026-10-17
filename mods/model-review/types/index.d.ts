@@ -58,6 +58,8 @@ export type TurnRecord = {
   readonly advisorCalls?: number
   /** /compact（自動を含む）の直後のターン。必然的なキャッシュ再構築を含むので、書込多め・切替コストの判定から外す。0.14.2 で追加。 */
   readonly afterCompact?: boolean
+  /** plan mode 中のメインのターン。モデル起因の過剰の判定から外す。古い記録には無い（false 扱い）。0.25.0 で追加。 */
+  readonly planMode?: boolean
   /** ターンの開始を見ていない（reload を跨いだ）記録。最初の応答の書込が実際と違うので、切替コストの基準から外す。0.14.2 で追加。 */
   readonly partial?: boolean
   /** メインのターンの通し番号（1 始まり）。サブエージェントは、その実行を含むメインのターンの番号。畳んだ後も変わらない。0.22.0 で追加。古い記録には無い。 */

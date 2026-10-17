@@ -9,6 +9,7 @@ import {
   beginTurn,
   finishTurn,
   liveDrafts,
+  recordPlanMode,
   recordStep,
   recordTool,
   type Drafts,
@@ -578,4 +579,28 @@ test('日付違いの別表記は同じモデルとして 1 行にまとめ、�
   // Assert
   expect('byModel' in record).toBe(false)
   expect('divergedSteps' in record).toBe(false)
+})
+
+test('plan mode の印はメインのターンだけに付き、記録に真偽として残る', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' })
+  drafts = beginTurn(drafts, { turnId: 's1', agentId: 'sub-1' })
+
+  // Act
+  drafts = recordPlanMode(drafts, {})
+  drafts = recordPlanMode(drafts, { agentId: 'sub-1' })
+  const main = finishTurn(drafts, { turnId: 't1', durationMs: 1, reason: 'answer' })
+  const sub = finishTurn(main.drafts, { turnId: 's1', agentId: 'sub-1', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(main.record.planMode).toBe(true)
+  expect(sub.record.planMode).toBeUndefined()
+})
+
+test('plan mode でないターンの記録は planMode を持たない', () => {
+  // Act
+  const finished = finishTurn(beginTurn({}, { turnId: 't1' }), { turnId: 't1', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect('planMode' in finished.record).toBe(false)
 })

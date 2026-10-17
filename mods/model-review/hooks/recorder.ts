@@ -47,6 +47,8 @@ export type LoopDraft = {
   readonly sessionModel: string | null
   /** 応答のモデルがセッションのモデルと食い違った応答の数。 */
   readonly divergedSteps: number
+  /** plan mode のリマインダーが付いた（メインのループだけ）。真偽のみで、計画ファイルのパスは持たない。 */
+  readonly planMode: boolean
   /** turn.start を見て作った下書きか。false なら reload で下書きが消えた後に途中から拾った下書き。 */
   readonly started: boolean
 }
@@ -121,6 +123,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   byModel: [],
   sessionModel: null,
   divergedSteps: 0,
+  planMode: false,
   started: false,
 })
 
@@ -238,6 +241,13 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     divergedSteps: prev.divergedSteps + (step.agentId === undefined && isDiverged(prev.sessionModel, usage?.model ?? step.model) ? 1 : 0),
   }
   return withDraft(drafts, step.agentId, next)
+}
+
+/** plan mode のリマインダーを見たメインのターンに印を付ける。サブエージェントは対象外。 */
+export function recordPlanMode(drafts: Drafts, loop: { readonly agentId?: string }, nowMs?: number): Drafts {
+  if (loop.agentId !== undefined) return drafts
+  const prev = draftOf(drafts, undefined, '')
+  return withDraft(drafts, undefined, { ...prev, planMode: true, lastActivityMs: nowMs ?? prev.lastActivityMs })
 }
 
 export function recordTool(drafts: Drafts, call: ToolInput, nowMs?: number): Drafts {
@@ -365,6 +375,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     advisorCalls: draft.advisorCalls,
     ...byModelField(draft, usage),
     ...(draft.divergedSteps > 0 ? { divergedSteps: draft.divergedSteps } : {}),
+    ...(draft.planMode ? { planMode: true } : {}),
     ...(end.afterCompact === true ? { afterCompact: true } : {}),
     ...agentTypeField(end),
     ...(draft.started ? {} : { partial: true }),

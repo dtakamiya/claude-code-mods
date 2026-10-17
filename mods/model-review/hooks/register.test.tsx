@@ -781,3 +781,21 @@ test('agent.spawn で覚えた種類は turn.complete の記録に載り、spawn
   expect(ran.text).toContain('└ 種類不明')
   expect(ran.text).not.toContain('SECRET-PROMPT')
 })
+
+test('prompt.attachment の plan_mode を観察しても結果は変えず、メインのターンに planMode を残す', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  on('prompt.attachment', () => ({ text: 'PLAN-REMINDER' }) as never)
+  await $.session.start(SESSION_START)
+  await $.turn.start({ text: '', turnId: 'turn-1' } as never)
+
+  // Act
+  const attached = await $.prompt.attachment({ type: 'plan_mode', text: 'PLAN-REMINDER', origin: { kind: 'engine' }, detail: { reminder: 'full', planFilePath: '/secret/PATH', hasPlan: false } } as never)
+  await $.turn.complete({ answer: '', durationMs: 1_500, isAborted: false, turnId: 'turn-1', reason: 'answer', usage: SONNET_USAGE } as never)
+  const ran = await $.command.run(COMMAND_RUN)
+
+  // Assert
+  expect(attached.text).toBe('PLAN-REMINDER')
+  expect(ran.text).toContain('plan mode のターン 1 件')
+  expect(ran.text).not.toContain('/secret/PATH')
+})

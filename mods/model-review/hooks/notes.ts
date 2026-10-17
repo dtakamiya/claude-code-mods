@@ -89,6 +89,13 @@ function divergedNote(records: readonly TurnRecord[]): readonly string[] {
   ]
 }
 
+/** plan mode のターンは、モデル起因の過剰の判定から外している。外した件数だけを 1 行。 */
+function planModeNote(records: readonly TurnRecord[]): readonly string[] {
+  const count = records.filter(record => record.planMode === true).length
+  if (count === 0) return []
+  return [`plan mode のターン ${count} 件は、モデル起因の過剰の判定に入れていません（計画のための上位モデルとして扱う。effort 起因の判定は残します）`]
+}
+
 /** 状況に応じた注記（常に出す 1 行を除く）。記録がなければ空。 */
 export function buildNotes(review: ReviewState, nowMs?: number): readonly string[] {
   const records = review.turns
@@ -102,5 +109,6 @@ export function buildNotes(review: ReviewState, nowMs?: number): readonly string
     ...priceAgeNote(nowMs),
     ...switchNote(records),
     ...divergedNote(records),
+    ...planModeNote(records),
   ]
 }

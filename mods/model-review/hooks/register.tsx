@@ -3,7 +3,7 @@ import type { Register, SessionUsage } from 'claude-code'
 
 import { PaneBody } from './pane'
 import { EMPTY_REVIEW, appendTurn, stampTurn, withBaseline, withCostSample } from './state'
-import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
+import { beginTurn, finishTurn, liveDrafts, recordPlanMode, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
@@ -178,6 +178,15 @@ export const register: Register = (on, options) => {
     }, logDebug($))
     return result
   })
+
+  // plan mode 中の各リクエストに付くリマインダーを観察するだけ。結果は書き換えず、本文・計画ファイルのパスは読まない。
+  on('prompt.attachment', { type: 'plan_mode' }, async ($, e, next) => {
+    await recordSafely(async () => {
+      const nowMs = await $.clock.now()
+      drafts = recordPlanMode(drafts, { agentId: e.agentId }, nowMs)
+    }, logDebug($))
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   // 入力（e の tool 以外）は記録しない。記録が失敗してもツールは通す。
   on('tool.call', async ($, e, next) => {
