@@ -88,7 +88,7 @@ const RATE_TABLE: ReadonlyMap<string, readonly RateTier[]> = new Map<string, rea
 ])
 
 const BEDROCK_PREFIX = 'anthropic.'
-const BEDROCK_VERSION_SUFFIX = /-v\d+:\d+$/
+const BEDROCK_VERSION_SUFFIX = /-v\d+(?::\d+)?$/
 const DATE_SUFFIX = /[-@]\d{8}$/
 const BRACKET_SUFFIX = /\[[^\]]*\]$/
 
@@ -100,7 +100,20 @@ export function normalizeModelId(raw: string): string {
   const trimmed = raw.trim().replace(BRACKET_SUFFIX, '')
   const prefixAt = trimmed.indexOf(BEDROCK_PREFIX)
   const unprefixed = prefixAt === -1 ? trimmed : trimmed.slice(prefixAt + BEDROCK_PREFIX.length)
-  return unprefixed.replace(BEDROCK_VERSION_SUFFIX, '').replace(DATE_SUFFIX, '').toLowerCase()
+  // Bedrock は日付の後ろに -v1:0、Vertex は -v2 の後ろに @日付。どちらの順でも落ちるよう、日付 → バージョン → 日付の順に外す。
+  return unprefixed
+    .replace(DATE_SUFFIX, '')
+    .replace(BEDROCK_VERSION_SUFFIX, '')
+    .replace(DATE_SUFFIX, '')
+    .toLowerCase()
+}
+
+const VERTEX_ID = /@\d{8}$/
+
+/** Bedrock（`anthropic.` を含む）・Vertex（末尾 `@YYYYMMDD`）の表記か。gateway 名などの `@` だけでは判定しない。 */
+export function isThirdPartyModelId(model: string): boolean {
+  const trimmed = model.trim().replace(BRACKET_SUFFIX, '')
+  return trimmed.includes(BEDROCK_PREFIX) || VERTEX_ID.test(trimmed)
 }
 
 export function ratesFor(model: string, promptTokens: number): Rates | null {

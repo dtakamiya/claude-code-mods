@@ -91,3 +91,11 @@
 - 不足（underspec）は「Haiku × low の重いターン」「Sonnet × low のエラー連続」だけを見る。Haiku の通常 effort や Sonnet の通常 effort での失敗連続は見逃す。effort を持たないモデルは `effort === 'low'` が偽になり対象外。
 - 過剰（overspec）の軽作業判定は出力トークン（思考分を含む）・ツール回数・編集の有無だけで、質問の難しさは見ない。
 - いずれも「参考の観察」で、モデル選択の誤りを断定しない。エラー連続を effort 不問の観察として出す案は未実装（#40 の残り）。
+
+### 単価表の更新手順と突き合わせ結果（#44・0.15.0）
+
+- 突き合わせ（2026-10-17、公式の価格表）: 基本単価は `pricing.ts` と一致。長文脈の割増層があるのは Haiku 5.5（プロンプト 100,000 tokens 超）のみで、実装済み。Claude 4.6 以降（Haiku 5.5 を除く）は 1M 窓まで標準単価。ページに Sonnet 4 / 4.5 の 200k 超割増の記載はなく、層は足していない（退役モデルのため、記載がないことまでを確認した）。
+- 更新手順: ① 公式の価格表を取得 → ② `pricing.ts` の `RATE_TABLE` と `PRICE_TABLE_FETCHED_AT` を更新 → ③ 新世代が出たら `HAIKU/SONNET/OPUS_REFERENCE_MODEL` を差し替え（`pricing.test.ts` が、参照モデルと `CACHE_SAFE_EFFORT_MODELS` が表に引けることを確認する）→ ④ plugin.json の version を上げる。
+- 取得日のテスト: `pricing.test.ts` の「単価表の取得日が古くなりすぎていない」は、取得から `PRICE_TABLE_STALE_DAYS` の 2 倍（120 日）を過ぎると意図して落ちる。落ちたら上の手順で更新する。
+- 正規化: `global.` / 地域 Bedrock 接頭辞 + `-v1:0`、Vertex の `-vN@日付`、`[1m]` に対応。`-latest` 別名は、単価表のキーに写る実在の別名がないため扱わない（単価不明として画面に名前が出る）。
+- `isThirdPartyModelId`: `anthropic.` を含む、または末尾が `@YYYYMMDD` のときだけ第三者経由とみなす。

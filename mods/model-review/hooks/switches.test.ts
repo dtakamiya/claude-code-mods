@@ -156,3 +156,17 @@ test('compact 直後・reload を跨いだ（partial）ターンの切替は、�
   expect(summary.count).toBe(2)
   expect(summary.costUsd).toBeNull()
 })
+
+test('Vertex（@YYYYMMDD）・Bedrock の ID は effort 変更を切替に数え、日付でない @ を含む名前は単価不明扱いのまま数えない', () => {
+  // Arrange
+  const pair = (model: string): TurnRecord[] => [
+    turn({ model, effort: 'high' }),
+    turn({ turnId: 't2', model, effort: 'low', firstStepCacheWrite: 10_000 }),
+  ]
+
+  // Act / Assert
+  expect(findSwitches(pair('claude-sonnet-5-5@20260101')).count).toBe(1)
+  expect(findSwitches(pair('anthropic.claude-sonnet-5-5')).count).toBe(1)
+  expect(findSwitches(pair('claude-sonnet-5-5')).count).toBe(0)
+  expect(findSwitches(pair('team@gateway')).count).toBe(0)
+})
