@@ -3,6 +3,7 @@
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
 import { GROWTH_LABEL, growthView } from './growth'
+import type { RateView } from './pace'
 import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
@@ -59,11 +60,16 @@ function groupLine(group: ArchivedGroup): string {
   ].join('  ')
 }
 
-function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
+function rateLines(rate: RateView | null): string[] {
+  return rate === null ? [] : [...rate.rows.map(row => `使用率 ${row.label}: ${row.text}`), `  ${rate.note}`]
+}
+
+function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscription: boolean): string[] {
+  const totalLabel = isSubscription ? '合計推定コスト（API 換算・参考）' : '合計推定コスト'
   const estimate = estimateFacts(records, review.archived)
   const estimateLine = estimate.allUnpriced
-    ? `合計推定コスト: ${allUnpricedText(records.length + (review.archived?.turns ?? 0))}`
-    : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
+    ? `${totalLabel}: ${allUnpricedText(records.length + (review.archived?.turns ?? 0))}`
+    : `${totalLabel}: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
   const view = breakdownView(records, review.archived)
   const breakdownLines = view === null ? [] : [`${BREAKDOWN_LABEL}: ${view.items}`, ...(view.hint === null ? [] : [`  → ${view.hint}`]), `  ${view.note}`]
   const growth = growthView(records, review.archived?.turns)
@@ -162,7 +168,12 @@ const CRITERIA_LINES = [
  * テキストレポートの行。先頭はペインと同じ結論の 1 行。記録がなければ結論と案内の 2 行だけを返す。
  * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
  */
-export function buildReportLines(review: ReviewState, nowMs?: number, muted: ReadonlySet<ConcernKind> = new Set()): string[] {
+export function buildReportLines(
+  review: ReviewState,
+  nowMs?: number,
+  muted: ReadonlySet<ConcernKind> = new Set(),
+  rate: RateView | null = null,
+): string[] {
   const records = review.turns
   if (records.length === 0) return [NO_RECORDS_CONCLUSION.text, NO_TURNS_LINE]
   const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
@@ -182,7 +193,8 @@ export function buildReportLines(review: ReviewState, nowMs?: number, muted: Rea
     ...loopLines(records),
     ...whatIfLines(records),
     `■ ${HEADING.cost}`,
-    ...costLines(review, records),
+    ...costLines(review, records, rate !== null),
+    ...rateLines(rate),
     ...advisorLines(records, review.archived),
     ...notes,
     ...archiveNoteLines(review),

@@ -3,6 +3,7 @@
 import type { ArchivedGroup, ReviewState } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
 import { GROWTH_LABEL, growthView } from './growth'
+import type { RateView } from './pace'
 import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import {
@@ -146,18 +147,27 @@ function growthRows(records: ReviewState['turns'], archived: ReviewState['archiv
   ]
 }
 
-function costRows(review: ReviewState, estimate: EstimateFacts): PaneRow[] {
+function rateRows(rate: RateView | null): PaneRow[] {
+  if (rate === null) return []
+  return [
+    ...rate.rows.map((row): PaneRow => ({ kind: 'kv', label: `使用率 ${row.label}`, value: row.text, tone: 'plain' })),
+    { kind: 'note', text: rate.note },
+  ]
+}
+
+function costRows(review: ReviewState, estimate: EstimateFacts, isSubscription: boolean): PaneRow[] {
+  const estimateWord = isSubscription ? 'API 換算の推定' : '推定'
   const unpriced = estimate.unpricedTurns > 0 ? ` ${unpricedExclusionText(estimate.unpricedTurns)}` : ''
   const estimateText = estimate.allUnpriced
     ? allUnpricedText(estimate.unpricedTurns)
     : `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
   const actual = actualCostUsd(review)
   if (actual === null) {
-    return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimateText} / 実コスト 取得できませんでした（/model-review で再取得）`, tone: 'plain' }]
+    return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実コスト 取得できませんでした（/model-review で再取得）`, tone: 'plain' }]
   }
   const diff = actual - estimate.costUsd
   const diffText = `${diff >= 0 ? '+' : '-'}${formatUsd(Math.abs(diff))}`
-  return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimateText} / 実 ${formatUsd(actual)}（読み込み後）/ 差 ${diffText}`, tone: 'plain' }]
+  return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実 ${formatUsd(actual)}（読み込み後）/ 差 ${diffText}`, tone: 'plain' }]
 }
 
 /** 直近の指摘は種類の色と「次の一手」つき。過去の指摘は色なし（plain）で、次の一手を付けない。 */
@@ -302,6 +312,7 @@ export function buildPaneRows(
   nowMs?: number,
   columns?: number,
   muted: ReadonlySet<ConcernKind> = new Set(),
+  rate: RateView | null = null,
 ): PaneRow[] {
   const records = review.turns
   const live = liveRows(drafts)
@@ -334,7 +345,8 @@ export function buildPaneRows(
     ...loopRows(records),
     ...whatIfRows(records),
     { kind: 'heading', text: HEADING.cost },
-    ...costRows(review, estimate),
+    ...costRows(review, estimate, rate !== null),
+    ...rateRows(rate),
     ...breakdownRows(records, review.archived),
     ...growthRows(records, review.archived),
     ...advisorRows(records, review.archived),
