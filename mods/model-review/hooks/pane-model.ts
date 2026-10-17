@@ -2,6 +2,7 @@
 // 集計と文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
 import type { ArchivedGroup, ReviewState } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
+import { GROWTH_LABEL, growthView } from './growth'
 import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import {
@@ -131,6 +132,16 @@ function breakdownRows(records: ReviewState['turns'], archived: ReviewState['arc
   return [
     { kind: 'kv', label: BREAKDOWN_LABEL, value: view.items, tone: 'plain' },
     ...(view.hint === null ? [] : [{ kind: 'next', text: view.hint } satisfies PaneRow]),
+    { kind: 'note', text: view.note },
+  ]
+}
+
+function growthRows(records: ReviewState['turns'], archived: ReviewState['archived']): PaneRow[] {
+  const view = growthView(records, archived?.turns)
+  if (view === null) return []
+  return [
+    { kind: 'kv', label: GROWTH_LABEL, value: view.trend, tone: 'plain' },
+    ...(view.compact === null ? [] : [{ kind: 'kv', label: '  compact の前後', value: view.compact, tone: 'plain' } satisfies PaneRow]),
     { kind: 'note', text: view.note },
   ]
 }
@@ -325,6 +336,7 @@ export function buildPaneRows(
     { kind: 'heading', text: HEADING.cost },
     ...costRows(review, estimate),
     ...breakdownRows(records, review.archived),
+    ...growthRows(records, review.archived),
     ...advisorRows(records, review.archived),
     ...glossaryRows(shownTerms(review, groups, concerns)),
     { kind: 'blank' },
