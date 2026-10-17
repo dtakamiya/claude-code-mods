@@ -1,5 +1,6 @@
-import { test, expect } from 'claude-code/testing'
+import { test, expect, mock } from 'claude-code/testing'
 import type { On, SessionUsage } from 'claude-code'
+import { LIVE_DRAFT_LIFETIME_MS } from './recorder'
 import type { Engine } from 'claude-code/testing'
 
 // 架空データのみ。Sonnet 5.5 の 1 応答（入力 1,000,000 / 出力 100,000）は $2 + $1 = $3。
@@ -10,6 +11,7 @@ const SONNET_USAGE = {
   cache_read_input_tokens: 0,
   cache_creation_input_tokens: 0,
 }
+const CLOCK_START = 1_700_000_000_000
 const SESSION_CWD = '/tmp/model-review-test'
 const SESSION_START = { source: 'startup', cwd: SESSION_CWD } as never
 const COMMAND_RUN = {
@@ -31,7 +33,7 @@ const PANE_PROPS = {
  * 本体の hook の下で答える engine の既定値。`usd` は呼ばれた時点の累計コスト（テストが書き換える）。
  * undefined を返すと cost を載せない（起動時に取れない環境）。
  */
-function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean) {
+function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean, withClock = true) {
   on('session.start', () => ({ cwd: SESSION_CWD }))
   on('command.register', () => ({ value: {} as never }))
   on('session.usage', () => {
@@ -41,7 +43,10 @@ function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean) 
   on('ui.open', () => ({ value: isPlaced ? { isPlaced: true } : { isPlaced: false, reason: 'narrow' } }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
+  // 時計を答えないと、記録の途中（時刻の取得）で例外が出る。例外耐性のテストで使う。
+  const clock = withClock ? mock.clock(on, { now: CLOCK_START }) : undefined
   on('tool.call', () => ({ result: { text: 'ok', isError: false } }) as never)
+  return clock as ReturnType<typeof mock.clock>
 }
 
 // 一つのメインループのターンを、開始 → ツール → 終了の順に流す。
@@ -360,4 +365,109 @@ test('Pane の末尾に「/model-review で更新」を dim の 1 行で出す',
   // Assert
   expect(await ui.find({ type: 'Text', text: /^\/model-review で更新$/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('記録処理が例外を投げても、tool.call は通り、debug ログに固定文言だけを残す', async ($, on) => {
+  // Arrange: 時計を答えないので、記録の時刻取得で例外になる。
+  const logs: string[] = []
+  answerEngine(on, () => 0, false, false)
+  on('ui.log', (_$, e) => {
+    logs.push((e as { text: string }).text)
+    return { value: undefined } as never
+  })
+  await $.session.start(SESSION_START)
+
+  // Act
+  const called = await $.tool.call({ tool: 'Read', tool_use_id: 'use-x', file_path: '/secret/PRIVATE-PATH' } as never)
+
+  // Assert: ツールの結果は変わらず、ログに入力由来の文字列は出ない。
+  expect(called).toEqual({ result: { text: 'ok', isError: false } })
+  expect(logs.some(text => text.includes('記録に失敗した'))).toBe(true)
+  expect(logs.join('\n')).not.toContain('PRIVATE-PATH')
+})
+
+test('未完了のターンは、最後の動きから 10 分までペインに出て、過ぎると消える（固定時刻）', async ($, on) => {
+  // Arrange
+  const clock = answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await $.command.run(COMMAND_RUN)
+  await $.turn.start({ text: '', turnId: 'turn-stale' } as never)
+  await $.tool.call({ tool: 'Read', tool_use_id: 'use-stale', file_path: '/x' } as never)
+  const mountPane = () =>
+    $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+
+  // Act / Assert: 10 分ちょうどまでは出る。
+  await clock.advance(LIVE_DRAFT_LIFETIME_MS)
+  const before = await mountPane()
+  expect(await before.find({ type: 'Text', text: /実行中/ })).toBeDefined()
+  await before.unmount()
+
+  // Act / Assert: 1ms 過ぎると消える。
+  await clock.advance(1)
+  const after = await mountPane()
+  expect(await after.find({ type: 'Text', text: /実行中/ })).toBeUndefined()
+  await after.unmount()
+})
+
+test('メインとサブエージェントが同時に進んでも、ターンの記録は混ざらない', async ($, on) => {
+  // Arrange
+  const haikuUsage = { ...SONNET_USAGE, model: 'claude-haiku-5-5', input_tokens: 10_000, output_tokens: 0 }
+  answerEngine(on, () => 0, false)
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: 0, answer: '', toolUses: [], stopReason: 'end_turn', usage: e.agentId ? haikuUsage : SONNET_USAGE } as never
+  })
+  await $.session.start(SESSION_START)
+  await $.turn.start({ text: '', turnId: 'main-1' } as never)
+  await $.turn.start({ text: '', turnId: 'sub-1', agentId: 'agent-1' } as never)
+
+  // Act: 両方の応答とツール呼び出しを同時に流す。
+  const step = async (turnId: string, model: string, agentId?: string) => {
+    const stream = $.turn.step({ turnId, index: 0, model, effort: 'low', messageCount: 1, agentId } as never)
+    for await (const chunk of stream) void chunk
+    await stream.result
+  }
+  await Promise.all([
+    step('main-1', 'claude-sonnet-5-5'),
+    step('sub-1', 'claude-haiku-5-5', 'agent-1'),
+    $.tool.call({ tool: 'Edit', tool_use_id: 'u-m', file_path: '/x' } as never),
+    $.tool.call({ tool: 'Read', tool_use_id: 'u-s', file_path: '/y', agentId: 'agent-1' } as never),
+  ])
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'sub-1', agentId: 'agent-1', reason: 'answer', usage: haikuUsage } as never)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'main-1', reason: 'answer', usage: SONNET_USAGE } as never)
+  const ran = await $.command.run(COMMAND_RUN)
+
+  // Assert: メインは Sonnet、サブエージェントは Haiku で、別々に数えられる。
+  expect(ran.text).toContain('claude-sonnet-5-5')
+  expect(ran.text).toContain('claude-haiku-5-5')
+  expect(ran.text).toContain('対象: 2 ターン（サブエージェント 1 件）')
+  expect(ran.text).toMatch(/claude-haiku-5-5 {2}effort low {2}ターン 1 /)
+  expect(ran.text).toMatch(/claude-sonnet-5-5 {2}effort low {2}ターン 1 /)
+  // どちらのツール呼び出しも、並行の更新で失われず、自分のループに数えられる。
+  expect(ran.text).toMatch(/main-1（メイン）.*ツール 1 回/)
+  expect(ran.text).toMatch(/sub-1（サブエージェント）.*ツール 1 回/)
+})
+
+test('記録（$.state）にはツールの入力（パス・コマンド）が含まれない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 0, false)
+  const written: string[] = []
+  on('state.set', async (_$, e, next) => {
+    written.push(JSON.stringify(e))
+    return next(e)
+  })
+  await $.session.start(SESSION_START)
+  await $.turn.start({ text: 'PROMPT-MARKER', turnId: 'turn-priv' } as never)
+
+  // Act
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'u-p', command: 'echo COMMAND-MARKER', file_path: '/PATH-MARKER' } as never)
+  await $.turn.complete({ answer: 'ANSWER-MARKER', durationMs: 1, isAborted: false, turnId: 'turn-priv', reason: 'answer', usage: SONNET_USAGE } as never)
+  const ran = await $.command.run(COMMAND_RUN)
+  const stored = written.join('\n')
+
+  // Assert: ツールは回数だけ残り、入力・プロンプト・回答は残らない。
+  expect(stored).toContain('"toolCount":1')
+  for (const marker of ['COMMAND-MARKER', 'PATH-MARKER', 'PROMPT-MARKER', 'ANSWER-MARKER']) {
+    expect(stored).not.toContain(marker)
+    expect(ran.text).not.toContain(marker)
+  }
 })
