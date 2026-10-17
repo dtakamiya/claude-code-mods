@@ -114,7 +114,7 @@ test('実コストは基準点と現在値の両方があるときだけ、読�
 test('advisor の呼び出しがなければ文面を出さない', () => {
   // Act / Assert
   expect(advisorCallText([turn({})])).toBeNull()
-  expect(advisorCallText([turn({ advisorCalls: 2 })])).toContain('2 回（費用が usage に載るかは未確認')
+  expect(advisorCallText([turn({ advisorCalls: 2 })])).toContain('2 回（費用は usage に載らず取得できないため、金額には含まれません')
 })
 
 test('ループ別は、メインとサブエージェントの両方があるときだけ返す', () => {

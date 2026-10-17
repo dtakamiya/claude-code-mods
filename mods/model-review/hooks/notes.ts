@@ -10,7 +10,7 @@ import { findSwitches } from './switches'
 export const UNPRICED_STALE_RATIO = 0.3
 
 export const ALWAYS_NOTE =
-  '推定に含まれないもの: fast mode の割増、advisor の費用（未確認）。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
+  '推定に含まれないもの: fast mode の割増、advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
 
 export const advisorCallTotal = (records: readonly TurnRecord[]): number =>
   records.reduce((sum, record) => sum + (record.advisorCalls ?? 0), 0)
