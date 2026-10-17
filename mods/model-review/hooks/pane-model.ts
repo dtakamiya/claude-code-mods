@@ -12,7 +12,7 @@ import {
   type Concern,
 } from './analyze'
 import { archiveNote, mergeGroups } from './archive'
-import { formatUsd, formatUsdRange } from './format'
+import { cellWidth, formatUsd, formatUsdRange } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, TERM_TEXT, type TermKey } from './labels'
 import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
@@ -38,7 +38,7 @@ import {
 
 /** コスト比バーの最大幅。狭い画面では barWidthFor が縮める。 */
 export const BAR_WIDTH = 14
-/** バーが縮んでもこの幅は残す（比が読める最小）。 */
+/** バーを出す最小の幅（比が読める最小）。これに収まらないときはバーを出さず、金額と割合だけにする。 */
 export const MIN_BAR_WIDTH = 4
 /** バーは本文の桁数のこの割合（1/5）までにとどめる。狭い画面で金額・割合より先にバーを縮める。 */
 const BAR_MAX_SHARE_OF_COLUMNS = 5
@@ -76,14 +76,14 @@ function costShare(costUsd: number | null, totalUsd: number): number | null {
 }
 
 /**
- * 本文の桁数（bodyColumns）と金額の長さから、バーが収まる幅を決める。金額は削らず、バーを縮める。
- * 桁数が分からなければ（undefined）最大幅。
+ * 本文の桁数（bodyColumns）と金額の桁数から、バーが収まる幅を決める。金額は削らず、バーを縮める。
+ * MIN_BAR_WIDTH に収まらなければ 0（バーを出さない）。桁数が分からなければ（undefined）最大幅。
  */
 export function barWidthFor(columns: number | undefined, costText: string): number {
   if (columns === undefined) return BAR_WIDTH
-  const room = columns - BAR_ROW_FIXED_CELLS - costText.length
-  const cap = Math.floor(columns / BAR_MAX_SHARE_OF_COLUMNS)
-  return Math.min(BAR_WIDTH, Math.max(MIN_BAR_WIDTH, Math.min(room, cap)))
+  const room = columns - BAR_ROW_FIXED_CELLS - cellWidth(costText)
+  const width = Math.min(BAR_WIDTH, room, Math.floor(columns / BAR_MAX_SHARE_OF_COLUMNS))
+  return width < MIN_BAR_WIDTH ? 0 : width
 }
 
 /** コスト比を 0〜width のセル数にする。1% 未満は 0、それ以上は最低 1 セル。 */

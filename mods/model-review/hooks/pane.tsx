@@ -54,7 +54,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
             </Text>
             <Text wrap="wrap">
               <Text bold>{`  ${row.costText}`}</Text>
-              <Text>{'  '}</Text>
+              {row.barWidth === 0 ? null : <Text>{'  '}</Text>}
               <Text color={TIER_COLOR[row.tier]}>{FILLED_GLYPH.repeat(row.filled)}</Text>
               {dim(EMPTY_GLYPH.repeat(row.barWidth - row.filled))}
               {row.percentText === '' ? null : sub(`  ${row.percentText}`)}
@@ -66,7 +66,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
       case 'turn':
         return (
           <Box flexDirection="column">
-            <Text wrap="truncate-end">
+            <Text wrap="wrap">
               <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
               <Text bold>{`  ${row.costText}`}</Text>
             </Text>

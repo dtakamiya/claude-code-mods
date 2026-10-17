@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL } from './conclusion'
+import { cellWidth, formatUsdRange } from './format'
 import { BAR_WIDTH, MIN_BAR_WIDTH, barWidthFor, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
@@ -67,7 +68,8 @@ const groupsAt = (columns: number | undefined): GroupRow[] =>
   ).filter((row): row is GroupRow => row.kind === 'group')
 
 /** pane.tsx のバー行の幅: 字下げ 2 + 金額 + 2 + バー + 2 + 割合。 */
-const barRowCells = (row: GroupRow): number => 2 + row.costText.length + 2 + row.barWidth + 2 + row.percentText.length
+const barRowCells = (row: GroupRow): number =>
+  2 + cellWidth(row.costText) + (row.barWidth === 0 ? 0 : 2 + row.barWidth) + 2 + row.percentText.length
 
 for (const columns of [110, 80, 60]) {
   test(`${columns} 桁のペインでも、バー行は金額を削らず桁数に収まる`, () => {
@@ -91,9 +93,30 @@ test('バー幅は桁数に応じて縮み、広ければ最大幅、狭すぎ�
   expect(barWidthFor(80, '$3.0000')).toBe(BAR_WIDTH)
   expect(barWidthFor(60, '$3.0000')).toBeLessThan(BAR_WIDTH)
   expect(barWidthFor(60, '$3.0000')).toBeGreaterThan(MIN_BAR_WIDTH)
-  expect(barWidthFor(20, '$3.0000')).toBe(MIN_BAR_WIDTH)
-  // 金額の範囲表記（長い）ほどバーが縮む。
-  expect(barWidthFor(30, '$10.0000–$12.0000')).toBeLessThan(barWidthFor(30, '$3.0000'))
+  // 収まらないときはバーを出さない（0）。最小幅を無理に残して行を溢れさせない。
+  expect(barWidthFor(20, '$3.0000')).toBe(0)
+  expect(barWidthFor(24, '$3.0000')).toBe(MIN_BAR_WIDTH)
+  // 実際の範囲表記（全角の〜）や「単価不明」は、桁数で数えるのでバーがさらに縮む。
+  const range = formatUsdRange(10, 12)
+  expect(cellWidth(range)).toBe(range.length + 1)
+  expect(barWidthFor(32, range)).toBeLessThan(barWidthFor(32, '$3.0000'))
+  expect(cellWidth('単価不明')).toBe(8)
+})
+
+test('幅が極端に狭い、または金額が全角（単価不明・範囲）でも、バー行は桁数に収まる', () => {
+  // Arrange: 単価不明（全角 4 文字 = 8 桁）のグループと、範囲表記のグループ。
+  const unpriced = turn({ costUsd: null, costUpperUsd: null, model: 'gateway-model' })
+  const ranged = turn({ turnId: 't2', costUsd: 10, costUpperUsd: 12 })
+
+  for (const columns of [60, 36, 24, 18]) {
+    // Act
+    const groups = buildPaneRows(review([unpriced, ranged]), {}, undefined, columns).filter((row): row is GroupRow => row.kind === 'group')
+
+    // Assert
+    expect(groups.length).toBeGreaterThan(0)
+    // バーを出す行は必ず収まる。出さない行（barWidth 0）は金額と割合だけで、それ以上は縮められない。
+    for (const row of groups) if (row.barWidth > 0) expect(barRowCells(row)).toBeLessThanOrEqual(columns)
+  }
 })
 
 test('バー幅が変わっても、埋まるセルの割合は同じ（75% / 25%）', () => {

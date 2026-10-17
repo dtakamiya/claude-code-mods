@@ -3,6 +3,27 @@ export function formatInt(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
 
+/** 全角・ハングル・CJK 記号・全角形が占める 2 桁の範囲（East Asian Width の W / F の主なもの）。 */
+const WIDE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x1100, 0x115f],
+  [0x2e80, 0xa4cf],
+  [0xac00, 0xd7a3],
+  [0xf900, 0xfaff],
+  [0xfe30, 0xfe6f],
+  [0xff00, 0xff60],
+  [0xffe0, 0xffe6],
+]
+
+/** 端末で占める桁数。全角は 2、それ以外は 1。`.length` は全角を 1 と数えるので、桁数の見積りにはこちらを使う。 */
+export function cellWidth(text: string): number {
+  let width = 0
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    width += WIDE_RANGES.some(([from, to]) => code >= from && code <= to) ? 2 : 1
+  }
+  return width
+}
+
 /** 推定の幅。上限が下限と（表示上）同じなら単独の値にする。 */
 export function formatUsdRange(lowUsd: number, highUsd: number): string {
   const low = formatUsd(lowUsd)
