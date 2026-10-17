@@ -10,12 +10,20 @@ export const GROWTH_MIN_TURNS = GROWTH_WINDOW_TURNS * 2
 /** compact の前後それぞれに必要な最小のターン数（仮置き）。少ないと平均が 1 ターンの揺れで決まる。 */
 export const COMPACT_MIN_SIDE_TURNS = 3
 
+/** 次の一手（/compact の候補）を添える、直近の平均が最初の平均の何倍以上か（仮置き）。 */
+export const GROWTH_HINT_RATIO = 3
+
+/** 候補の条件として、プロンプト長（最初の応答）も直近が最初のこの倍率以上に伸びていること（仮置き）。費用の上昇が会話の伸び由来かを確かめる。 */
+export const GROWTH_HINT_PROMPT_RATIO = 1.5
+
 export const GROWTH_LABEL = '1 ターンあたりの費用の推移'
 
 export type GrowthView = {
   readonly trend: string
   /** /compact の前後の比較。compact の直後のターンがない、または前後のターンが足りなければ null。 */
   readonly compact: string | null
+  /** 増え方が大きいときの候補（/compact と、文脈を捨ててよいときの /clear）。出さないときは null。表示のみで自動では実行しない。 */
+  readonly hint: string | null
   readonly note: string
 }
 
@@ -59,6 +67,27 @@ function compactText(turns: readonly MainTurn[]): string | null {
   return `/compact の前 ${before.length} ターン ${formatUsd(costMean(before))} → 後 ${after.length} ターン ${formatUsd(costMean(after))}${promptText(before, after)}`
 }
 
+/**
+ * 直近の平均が最初の `GROWTH_HINT_RATIO` 倍以上のときだけ候補を添える。
+ * 次のときは添えない: 畳み込み済みのターンがある（「最初」が会話の始まりではない）、直近の窓の中で compact 済み（すでに縮めた後）、
+ * プロンプト長が取れない・伸びていない（モデルや effort の変更など、会話の伸びが原因ではない上昇かもしれない）。
+ */
+function hintText(turns: readonly MainTurn[], archivedTurns: number): string | null {
+  if (archivedTurns > 0 || turns.length < GROWTH_MIN_TURNS) return null
+  const firstTurns = turns.slice(0, GROWTH_WINDOW_TURNS)
+  const recentTurns = turns.slice(-GROWTH_WINDOW_TURNS)
+  const first = costMean(firstTurns)
+  const recent = costMean(recentTurns)
+  // 浮動小数の誤差で境界がぶれないよう、わずかな余裕を持って比べる。
+  if (first <= 0 || recent < first * GROWTH_HINT_RATIO * (1 - 1e-9)) return null
+  const firstPrompt = promptMean(firstTurns)
+  const recentPrompt = promptMean(recentTurns)
+  if (firstPrompt === null || recentPrompt === null || firstPrompt <= 0 || recentPrompt < firstPrompt * GROWTH_HINT_PROMPT_RATIO) return null
+  const lastCompact = turns.map(turn => turn.afterCompact === true).lastIndexOf(true)
+  if (lastCompact >= turns.length - GROWTH_WINDOW_TURNS) return null
+  return `直近の平均が最初の ${GROWTH_HINT_RATIO} 倍以上です。候補: /compact で会話を縮めると、次のターンから読込が減る目安です（最初の 1 回は書き直しの費用がかかります）。文脈を捨ててよい区切りなら /clear も選べます。品質に響くことがあるため、判断は任せます（自動では実行しません）`
+}
+
 function noteText(archivedTurns: number): string {
   const folded = archivedTurns > 0 ? `。畳み込み済みの古い ${archivedTurns} ターンは含みません（「最初」は残っている記録の先頭）` : ''
   return `メインのターンの 1 ターンあたりの推定コスト（5 分単価）の平均。単価不明のターン・サブエージェントを除く。compact 直後のターンは再構築を含むため比較に入れない${folded}。会話が伸びると毎回の読込が増えるためで、モデルの選び方とは別の話です`
@@ -69,5 +98,5 @@ export function growthView(records: readonly TurnRecord[], archivedTurns = 0): G
   const turns = mainPricedTurns(records)
   const trend = trendText(turns)
   if (trend === null) return null
-  return { trend, compact: compactText(turns), note: noteText(archivedTurns) }
+  return { trend, compact: compactText(turns), hint: hintText(turns, archivedTurns), note: noteText(archivedTurns) }
 }

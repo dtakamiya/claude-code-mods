@@ -254,3 +254,21 @@ test('メインのターンが 20 件以上あれば、コストの節に費用�
   expect(rows.some(row => row.kind === 'kv' && row.label === '1 ターンあたりの費用の推移' && row.value.includes('$0.1900'))).toBe(true)
   expect(buildReportLines(withTurns(many.slice(0, 5), null, null)).join('\n')).not.toContain('費用の推移')
 })
+
+test('費用の推移の候補は、テキストレポートとペインの両方に出る', () => {
+  // Arrange: 費用 0.04 → 0.19、プロンプト長 18k → 142k（段階 2 の条件を満たす）。
+  const grown = (id: string, costUsd: number, firstStepPromptTokens: number) => turn({ turnId: id, costUsd, firstStepPromptTokens })
+  const turns = [
+    ...Array.from({ length: 10 }, (_, i) => grown(`a${i}`, 0.04, 18_000)),
+    ...Array.from({ length: 10 }, (_, i) => grown(`b${i}`, 0.19, 142_000)),
+  ]
+  const review = withTurns(turns, null, null)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+  const rows = JSON.stringify(buildPaneRows(review))
+
+  // Assert
+  expect(text).toContain('  → 直近の平均が最初の 3 倍以上です。候補: /compact')
+  expect(rows).toContain('→ 直近の平均が最初の 3 倍以上です。候補: /compact')
+})

@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
-import { COMPACT_MIN_SIDE_TURNS, GROWTH_MIN_TURNS, GROWTH_WINDOW_TURNS, growthView } from './growth'
+import { COMPACT_MIN_SIDE_TURNS, GROWTH_HINT_PROMPT_RATIO, GROWTH_HINT_RATIO, GROWTH_MIN_TURNS, GROWTH_WINDOW_TURNS, growthView } from './growth'
 
 // 架空データのみ。
 const turn = (costUsd: number | null, overrides: Partial<TurnRecord> = {}): TurnRecord => ({
@@ -80,4 +80,42 @@ test('畳み込み済みのターンがあれば注記に件数を出す', () =>
   // Assert
   expect(view?.note).toContain('150 ターンは含みません')
   expect(growthView(run(GROWTH_MIN_TURNS, 0.1))?.note).not.toContain('畳み込み')
+})
+
+test('直近の平均が最初の倍率以上なら /compact・/clear の候補を添える。表示のみで自動実行はしない', () => {
+  // Arrange: 0.04 → 0.19（4.75 倍）
+  const view = growthView([...run(GROWTH_WINDOW_TURNS, 0.04, 18_000), ...run(GROWTH_WINDOW_TURNS, 0.19, 142_000)])
+
+  // Assert
+  expect(view?.hint).toContain('/compact')
+  expect(view?.hint).toContain('/clear')
+  expect(view?.hint).toContain('自動では実行しません')
+})
+
+test('倍率に届かない・最初が 0 円なら候補は出さない', () => {
+  expect(growthView([...run(GROWTH_WINDOW_TURNS, 0.1, 10_000), ...run(GROWTH_WINDOW_TURNS, 0.1 * GROWTH_HINT_RATIO - 0.001, 90_000)])?.hint).toBeNull()
+  expect(growthView([...run(GROWTH_WINDOW_TURNS, 0, 10_000), ...run(GROWTH_WINDOW_TURNS, 0.5, 90_000)])?.hint).toBeNull()
+})
+
+test('直近の窓の中で compact 済みなら、候補は出さない', () => {
+  // Arrange: 費用は 5 倍以上だが、直近 10 ターンの中で compact している。
+  const records = [...run(15, 0.04, 10_000), ...run(5, 0.3, 90_000), turn(0.9, { afterCompact: true, firstStepPromptTokens: 30_000 }), ...run(4, 0.3, 90_000)]
+
+  // Assert
+  expect(growthView(records)?.hint).toBeNull()
+})
+
+test('費用がちょうど倍率の境界でも出す（浮動小数の誤差で外れない）', () => {
+  expect(growthView([...run(GROWTH_WINDOW_TURNS, 0.1, 10_000), ...run(GROWTH_WINDOW_TURNS, 0.3, 90_000)])?.hint).not.toBeNull()
+})
+
+test('プロンプト長が伸びていない・取れないとき（モデルや effort の変更など）は候補を出さない', () => {
+  // 費用は 4.75 倍だがプロンプト長は同じ。
+  expect(growthView([...run(GROWTH_WINDOW_TURNS, 0.04, 50_000), ...run(GROWTH_WINDOW_TURNS, 0.19, 50_000 * (GROWTH_HINT_PROMPT_RATIO - 0.1))])?.hint).toBeNull()
+  expect(growthView([...run(GROWTH_WINDOW_TURNS, 0.04), ...run(GROWTH_WINDOW_TURNS, 0.19)])?.hint).toBeNull()
+})
+
+test('畳み込み済みのターンがあるとき、「最初」は会話の始まりではないので候補を出さない', () => {
+  const records = [...run(GROWTH_WINDOW_TURNS, 0.04, 18_000), ...run(GROWTH_WINDOW_TURNS, 0.19, 142_000)]
+  expect(growthView(records, 150)?.hint).toBeNull()
 })

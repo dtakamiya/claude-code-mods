@@ -143,6 +143,7 @@ function growthRows(records: ReviewState['turns'], archived: ReviewState['archiv
   return [
     { kind: 'kv', label: GROWTH_LABEL, value: view.trend, tone: 'plain' },
     ...(view.compact === null ? [] : [{ kind: 'kv', label: '  compact の前後', value: view.compact, tone: 'plain' } satisfies PaneRow]),
+    ...(view.hint === null ? [] : [{ kind: 'note', text: `→ ${view.hint}` } satisfies PaneRow]),
     { kind: 'note', text: view.note },
   ]
 }
