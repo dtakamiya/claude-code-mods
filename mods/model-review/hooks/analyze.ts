@@ -1,6 +1,7 @@
 // 集計と妥当性の判定。$ に触れない純粋関数。判定は参考（LLM は使わず、閾値は下の名前付き定数）。
 import type { TokenCounts, TurnRecord } from '../types'
 import { UNKNOWN_AGENT_TYPE } from './agenttype'
+import { sharesOf } from './archive'
 import { cacheHitRate } from './cache'
 import { effortText } from './effort'
 import { formatDuration, formatInt, formatUsd } from './format'
@@ -117,10 +118,12 @@ const addTokens = (a: TokenCounts, b: TokenCounts): TokenCounts => ({
 const addCost = (total: number | null, cost: number | null): number | null =>
   total === null || cost === null ? null : total + cost
 
-function addToGroup(group: ModelGroup | undefined, record: TurnRecord): ModelGroup {
+type Share = ReturnType<typeof sharesOf>[number]
+
+function addToGroup(group: ModelGroup | undefined, record: Share, effort: string | null): ModelGroup {
   const base: ModelGroup = group ?? {
     model: record.model,
-    effort: record.effort,
+    effort,
     turns: 0,
     unpricedTurns: 0,
     tokens: ZERO_TOKENS,
@@ -138,10 +141,14 @@ function addToGroup(group: ModelGroup | undefined, record: TurnRecord): ModelGro
 
 /** モデル × effort 別に集計し、ターン数の多い順に並べる。 */
 export function groupByModelEffort(records: readonly TurnRecord[]): readonly ModelGroup[] {
-  const groups = records.reduce<Readonly<Record<string, ModelGroup>>>((acc, record) => {
-    const key = `${record.model}\u0000${record.effort ?? ''}`
-    return { ...acc, [key]: addToGroup(acc[key], record) }
-  }, {})
+  const groups = records.reduce<Readonly<Record<string, ModelGroup>>>(
+    (outer, record) =>
+      sharesOf(record).reduce((acc, share) => {
+        const key = `${share.model}\u0000${record.effort ?? ''}`
+        return { ...acc, [key]: addToGroup(acc[key], share, record.effort) }
+      }, outer),
+    {},
+  )
   return Object.values(groups).sort((a, b) => b.turns - a.turns || a.model.localeCompare(b.model))
 }
 

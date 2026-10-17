@@ -23,12 +23,38 @@ const groupKey = (model: string, effort: string | null): string => `${model}\u00
 
 const addCost = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : a + b)
 
+/**
+ * 1 ターンを集計に入れる単位に分ける。モデルが混ざったターン（byModel あり）はモデルごとに分け、
+ * それぞれのモデルの行にそのターンを 1 件ずつ数える（行の合計はターン数より増えうる）。
+ * 内訳のない記録・古い記録は従来どおり、最後のモデル 1 つにまとめる。
+ */
+export function sharesOf(record: TurnRecord): readonly {
+  readonly model: string
+  readonly tokens: TurnRecord['tokens']
+  readonly costUsd: number | null
+}[] {
+  return record.byModel !== undefined && record.byModel.length > 1
+    ? record.byModel
+    : [{ model: record.model, tokens: record.tokens, costUsd: record.costUsd }]
+}
+
 function foldIntoGroups(groups: readonly ArchivedGroup[], record: TurnRecord): readonly ArchivedGroup[] {
-  const key = groupKey(record.model, record.effort)
+  return sharesOf(record).reduce(
+    (acc, share) => foldShare(acc, record.effort, share),
+    groups,
+  )
+}
+
+function foldShare(
+  groups: readonly ArchivedGroup[],
+  effort: string | null,
+  record: { readonly model: string; readonly tokens: TurnRecord['tokens']; readonly costUsd: number | null },
+): readonly ArchivedGroup[] {
+  const key = groupKey(record.model, effort)
   const found = groups.find(group => groupKey(group.model, group.effort) === key)
   const base: ArchivedGroup = found ?? {
     model: record.model,
-    effort: record.effort,
+    effort,
     turns: 0,
     unpricedTurns: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

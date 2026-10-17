@@ -17,6 +17,15 @@ export type CostParts = {
 }
 
 /** 完了したターン 1 件。agentId が null なら メインループ、値があればサブエージェントの 1 実行。 */
+/** 1 ターンの中の、モデルごとの内訳（0.24.1 で追加）。 */
+export type ModelShare = {
+  readonly model: string
+  readonly tokens: TokenCounts
+  /** このモデルの応答の推定コスト（USD）。単価不明の応答を含むとき null。 */
+  readonly costUsd: number | null
+  readonly steps: number
+}
+
 export type TurnRecord = {
   readonly turnId: string
   readonly agentId: string | null
@@ -57,6 +66,10 @@ export type TurnRecord = {
   readonly completedAtMs?: number
   /** サブエージェントの種類（agent.spawn の subagentType の名前だけ。説明・プロンプトは持たない）。0.24.0 で追加。メインのターン・種類が分からないターン・古い記録には無い。 */
   readonly agentType?: string
+  /** 1 ターンの中で応答のモデルが替わったときだけ持つ、モデル別の内訳。1 モデルのターンには無い。0.24.1 で追加。 */
+  readonly byModel?: readonly ModelShare[]
+  /** 応答のモデルが、ターン開始時のセッションのモデルと食い違った応答の数（フォールバックなどの可能性。推定）。0 のときは持たない。0.24.1 で追加。 */
+  readonly divergedSteps?: number
 }
 
 /** 畳み込んだ古いターンの、モデル × effort 別の集計。ModelGroup（hooks/analyze.ts）と同じ形。 */
