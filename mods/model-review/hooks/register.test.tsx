@@ -519,7 +519,7 @@ test('Pane のトークン行・キャッシュ行・ターン行は切り詰め
   const texts = await ui.findAll({ type: 'Text' })
   const tokenRow = texts.find(element => element.text.includes('入力 '))
   const cacheRow = texts.find(element => element.text.includes('キャッシュ 読'))
-  const turnRow = texts.find(element => element.text.startsWith('  a · '))
+  const turnRow = texts.find(element => element.text.startsWith('  #1（'))
 
   // Assert
   expect(tokenRow?.props.wrap).toBe('wrap')
@@ -668,8 +668,8 @@ test('メインとサブエージェントが同時に進んでも、ターン�
   expect(ran.text).toMatch(/claude-haiku-5-5 {2}effort low {2}ターン 1 /)
   expect(ran.text).toMatch(/claude-sonnet-5-5 {2}effort low {2}ターン 1 /)
   // どちらのツール呼び出しも、並行の更新で失われず、自分のループに数えられる。
-  expect(ran.text).toMatch(/main-1（メイン）.*ツール 1 回/)
-  expect(ran.text).toMatch(/sub-1（サブエージェント）.*ツール 1 回/)
+  expect(ran.text).toMatch(/#1（[^）]+）.*ツール 1 回/)
+  expect(ran.text).toMatch(/#1 の中のサブエージェント.*ツール 1 回/)
 })
 
 test('記録（$.state）にはツールの入力（パス・コマンド）が含まれない', async ($, on) => {

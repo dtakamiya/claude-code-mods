@@ -4,6 +4,7 @@ import { cacheHitRate } from './cache'
 import { formatDuration, formatInt, formatUsd } from './format'
 import { normalizeModelId } from './pricing'
 import { findSwitches } from './switches'
+import { turnRefText } from './turnref'
 
 export const RANK_UNRANKED = -1
 export const RANK_HAIKU = 0
@@ -246,10 +247,10 @@ const loopLabel = (record: TurnRecord): string => (record.agentId === null ? '�
 
 const durationPhrase = (record: TurnRecord): string => (record.durationMs === undefined ? '' : `・${formatDuration(record.durationMs)}`)
 
-const underspecLine = (record: TurnRecord): string =>
+const underspecLine = (record: TurnRecord, records: readonly TurnRecord[]): string =>
   isHeavyTurn(record)
-    ? `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回${durationPhrase(record)} を ${record.model} / effort low で実行（終了理由 ${record.reason}）`
-    : `[${loopLabel(record)}] ターン ${record.turnId}: エラー終了が連続（${record.model} / effort low）。API 側の原因の可能性もあります`
+    ? `[${loopLabel(record)}] ${turnRefText(record, mainTurnsAfter(records, record))}: ツール ${record.toolCount} 回${durationPhrase(record)} を ${record.model} / effort low で実行（終了理由 ${record.reason}）`
+    : `[${loopLabel(record)}] ${turnRefText(record, mainTurnsAfter(records, record))}: エラー終了が連続（${record.model} / effort low）。API 側の原因の可能性もあります`
 
 function concernOf(
   kind: ConcernKind,
@@ -300,11 +301,11 @@ function overspecGroups(overspec: readonly TurnRecord[]): readonly OverspecGroup
     .sort((a, b) => (b.haikuUsd ?? -1) - (a.haikuUsd ?? -1) || b.turns.length - a.turns.length)
 }
 
-function overspecGroupLine(group: OverspecGroup): string {
+function overspecGroupLine(group: OverspecGroup, records: readonly TurnRecord[]): string {
   const sonnet = group.sonnetUsd === null ? '' : ` · Sonnet なら約 ${formatUsd(group.sonnetUsd)} 減`
   const haiku = group.haikuUsd === null ? '' : ` · Haiku なら最大約 ${formatUsd(group.haikuUsd)} 減（上限）`
   const latest = group.turns[group.turns.length - 1]
-  const latestText = latest === undefined ? '' : ` · 直近 ターン ${latest.turnId}`
+  const latestText = latest === undefined ? '' : ` · 直近 ${turnRefText(latest, mainTurnsAfter(records, latest))}`
   return `[${group.loop}] ${group.model} / effort ${group.effort}: 軽作業 ${group.turns.length} 件（ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下）${sonnet}${haiku}${latestText}`
 }
 
@@ -358,7 +359,7 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
   const concern = concernOf(
     'overspec',
     overspec.length,
-    overspecGroups(overspec).map(overspecGroupLine),
+    overspecGroups(overspec).map(group => overspecGroupLine(group, records)),
     sumKnown(modelTurns.map(sonnetSavingsUsd)),
   )
   if (concern === null) return null
@@ -420,7 +421,7 @@ function subagentConcern(records: readonly TurnRecord[]): Concern | null {
 function underspecConcern(records: readonly TurnRecord[]): Concern | null {
   const underspec = underspecTurns(records)
   if (underspec.length < MIN_UNDERSPEC_TURNS) return null
-  const concern = concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine))
+  const concern = concernOf('underspec', underspec.length, [...underspec].reverse().map(record => underspecLine(record, records)))
   if (concern === null) return null
   const withFacts: Concern = {
     ...concern,

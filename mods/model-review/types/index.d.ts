@@ -41,6 +41,10 @@ export type TurnRecord = {
   readonly afterCompact?: boolean
   /** ターンの開始を見ていない（reload を跨いだ）記録。最初の応答の書込が実際と違うので、切替コストの基準から外す。0.14.2 で追加。 */
   readonly partial?: boolean
+  /** メインのターンの通し番号（1 始まり）。サブエージェントは、その実行を含むメインのターンの番号。畳んだ後も変わらない。0.22.0 で追加。古い記録には無い。 */
+  readonly mainSeq?: number
+  /** 完了した時刻（`$.clock.now()` の ms）。0.22.0 で追加。古い記録には無い。 */
+  readonly completedAtMs?: number
 }
 
 /** 畳み込んだ古いターンの、モデル × effort 別の集計。ModelGroup（hooks/analyze.ts）と同じ形。 */

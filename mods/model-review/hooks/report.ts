@@ -17,6 +17,7 @@ import {
   findConcerns,
   groupByModelEffort,
   partitionByRecency,
+  mainTurnsAfter,
   topCostTurns,
   type Concern,
   type ConcernKind,
@@ -36,6 +37,7 @@ import {
   turnOriginLabel,
   unpricedExclusionText,
 } from './summary'
+import { hasSeq, turnRefText } from './turnref'
 
 export { formatInt, formatUsd } from './format'
 export { NO_TURNS_LINE } from './summary'
@@ -90,15 +92,21 @@ function concernLines(concerns: readonly Concern[], records: readonly TurnRecord
   ]
 }
 
-function topTurnLines(records: readonly TurnRecord[]): string[] {
+/** 通し番号のある記録は「#37（12 分前）」、古い記録は従来どおり「ターン <turnId>（種別）」。 */
+const reportTurnRef = (record: TurnRecord, records: readonly TurnRecord[], nowMs?: number): string =>
+  !hasSeq(record)
+    ? `${turnRefText(record, 0)}（${turnOriginLabel(record)}）`
+    : turnRefText(record, mainTurnsAfter(records, record), nowMs)
+
+function topTurnLines(records: readonly TurnRecord[], nowMs?: number): string[] {
   return topCostTurns(records).map(
     record =>
-      `  ${formatUsd(record.costUsd)}  ターン ${record.turnId}（${turnOriginLabel(record)}）${record.model}  ${toolDetailText(record)}`,
+      `  ${formatUsd(record.costUsd)}  ${reportTurnRef(record, records, nowMs)}  ${record.model}  ${toolDetailText(record)}`,
   )
 }
 
-function topTurnSection(records: readonly TurnRecord[]): string[] {
-  const lines = topTurnLines(records)
+function topTurnSection(records: readonly TurnRecord[], nowMs?: number): string[] {
+  const lines = topTurnLines(records, nowMs)
   return lines.length === 0 ? [] : [`■ ${HEADING.topTurns}`, ...lines, '']
 }
 
@@ -154,7 +162,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number, muted: Rea
     `■ ${HEADING.groups}`,
     ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),
     '',
-    ...topTurnSection(records),
+    ...topTurnSection(records, nowMs),
     ...loopLines(records),
     ...whatIfLines(records),
     `■ ${HEADING.cost}`,

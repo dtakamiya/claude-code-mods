@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register, SessionUsage } from 'claude-code'
 
 import { PaneBody } from './pane'
-import { EMPTY_REVIEW, appendTurn, withBaseline, withCostSample } from './state'
+import { EMPTY_REVIEW, appendTurn, stampTurn, withBaseline, withCostSample } from './state'
 import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
@@ -181,7 +181,9 @@ export const register: Register = (on, options) => {
       })
       if (e.agentId === undefined) compactPending = false
       drafts = finished.drafts
-      await update($, reviewAtom, state => appendTurn(state, finished.record))
+      // 時刻は付加情報。取れなくてもターンの記録は落とさない。
+      const completedAtMs = await $.clock.now().catch(() => undefined)
+      await update($, reviewAtom, state => appendTurn(state, stampTurn(state, finished.record, completedAtMs)))
       $.ui.invalidate('ui.render')
     }, logDebug($))
     return next(e)
