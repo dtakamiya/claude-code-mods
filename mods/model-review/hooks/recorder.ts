@@ -47,6 +47,8 @@ export type LoopDraft = {
   readonly sessionModel: string | null
   /** 応答のモデルがセッションのモデルと食い違った応答の数。 */
   readonly divergedSteps: number
+  /** plan mode 中に進んだターンか（メインのみ）。 */
+  readonly planMode: boolean
   /** turn.start を見て作った下書きか。false なら reload で下書きが消えた後に途中から拾った下書き。 */
   readonly started: boolean
 }
@@ -121,6 +123,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   byModel: [],
   sessionModel: null,
   divergedSteps: 0,
+  planMode: false,
   started: false,
 })
 
@@ -149,6 +152,12 @@ export function beginTurn(
     started: true,
   }
   return withDraft(drafts, turn.agentId, started)
+}
+
+/** 進行中のメインのターンに plan mode の印を付ける。下書きがなければ（ターンの外の添付）何もしない。 */
+export function markPlanMode(drafts: Drafts): Drafts {
+  const prev = drafts[MAIN_LOOP_KEY]
+  return prev === undefined || prev.planMode ? drafts : withDraft(drafts, undefined, { ...prev, planMode: true })
 }
 
 /** 数値として使えるのは有限な非負数だけ。それ以外（欠損・NaN・負数）は 0 とする。 */
@@ -365,6 +374,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     advisorCalls: draft.advisorCalls,
     ...byModelField(draft, usage),
     ...(draft.divergedSteps > 0 ? { divergedSteps: draft.divergedSteps } : {}),
+    ...(draft.planMode ? { planMode: true } : {}),
     ...(end.afterCompact === true ? { afterCompact: true } : {}),
     ...agentTypeField(end),
     ...(draft.started ? {} : { partial: true }),

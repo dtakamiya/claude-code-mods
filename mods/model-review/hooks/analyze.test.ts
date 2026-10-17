@@ -670,3 +670,30 @@ test('数値の effort は過剰の判定に入らず、文字列の effort と�
   expect(groups.map(group => group.effort)).toContain(effortToRecord(32000))
   expect(groups.map(group => group.effort)).toContain('32000')
 })
+
+test('plan mode の Opus の軽作業は、モデル起因の過剰に数えない。effort 起因は残る', () => {
+  // Arrange
+  const opus = { model: 'claude-opus-5-5', toolCount: 2, costUsd: 0.5, sonnetCostUsd: 0.25, planMode: true }
+  const modelOnly = repeat(MIN_OVERSPEC_TURNS, () => turn({ ...opus, effort: 'medium' }))
+  const effortHigh = repeat(MIN_OVERSPEC_TURNS, () => turn({ ...opus, effort: 'xhigh' }))
+
+  // Act
+  const modelConcern = findConcerns(modelOnly).find(candidate => candidate.kind === 'overspec')
+  const effortConcern = findConcerns(effortHigh).find(candidate => candidate.kind === 'overspec')
+
+  // Assert
+  expect(modelConcern).toBeUndefined()
+  expect(effortConcern).toMatchObject({ kind: 'overspec', count: 3 })
+})
+
+test('plan mode でない Opus の軽作業は、plan mode のターンが混ざっても過剰に数える', () => {
+  // Arrange: 3 件が plan 外、1 件が plan 中。
+  const opus = { model: 'claude-opus-5-5', effort: 'medium', toolCount: 2, costUsd: 0.5, sonnetCostUsd: 0.25 }
+  const records = [...repeat(MIN_OVERSPEC_TURNS, () => turn(opus)), turn({ ...opus, planMode: true })]
+
+  // Act
+  const concern = findConcerns(records).find(candidate => candidate.kind === 'overspec')
+
+  // Assert
+  expect(concern).toMatchObject({ kind: 'overspec', count: 3 })
+})

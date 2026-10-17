@@ -3,7 +3,7 @@ import type { Register, SessionUsage } from 'claude-code'
 
 import { PaneBody } from './pane'
 import { EMPTY_REVIEW, appendTurn, stampTurn, withBaseline, withCostSample } from './state'
-import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
+import { beginTurn, finishTurn, liveDrafts, markPlanMode, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
@@ -186,6 +186,17 @@ export const register: Register = (on, options) => {
       drafts = recordTool(drafts, { agentId: e.agentId, tool: e.tool }, nowMs)
       $.ui.invalidate('ui.render')
     }, logDebug($))
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // plan mode のリマインダーを観察するだけ。type 以外は読まず、結果は書き換えない（next(e) をそのまま返す）。
+  // メインのループだけ（サブエージェントの plan_mode 行は数えない）。
+  on('prompt.attachment', { type: 'plan_mode' }, async ($, e, next) => {
+    if (e.agentId === undefined) {
+      await recordSafely(() => {
+        drafts = markPlanMode(drafts)
+      }, logDebug($))
+    }
     return next(e)
   }).catch(($, e, next) => next(e))
 

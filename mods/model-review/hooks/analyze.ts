@@ -197,9 +197,9 @@ const sonnetSavingsUsd = (record: TurnRecord): number | null => {
   return Math.max(0, record.costUsd - sonnet)
 }
 
-/** モデル起因: Opus 系の軽作業で、Sonnet 換算の差額が下限以上。差額が分からないときは指摘しない。Sonnet・Haiku はモデルでは指摘しない。 */
+/** モデル起因: Opus 系の軽作業で、Sonnet 換算の差額が下限以上。差額が分からないときは指摘しない。Sonnet・Haiku はモデルでは指摘しない。plan mode のターンは計画のために選んだ Opus なので外す（effort 起因は外さない）。 */
 const isModelOverspec = (record: TurnRecord): boolean => {
-  if (!isLightTurn(record) || modelRank(record.model) !== RANK_OPUS) return false
+  if (record.planMode === true || !isLightTurn(record) || modelRank(record.model) !== RANK_OPUS) return false
   const savings = sonnetSavingsUsd(record)
   return savings !== null && savings >= MIN_OVERSPEC_SAVINGS_USD
 }

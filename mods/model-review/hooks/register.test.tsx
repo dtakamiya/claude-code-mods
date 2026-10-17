@@ -781,3 +781,30 @@ test('agent.spawn で覚えた種類は turn.complete の記録に載り、spawn
   expect(ran.text).toContain('└ 種類不明')
   expect(ran.text).not.toContain('SECRET-PROMPT')
 })
+
+test('prompt.attachment の plan_mode を観察するとメインのターンに印が付き、結果は書き換えない。サブエージェントの行は数えない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  on('prompt.attachment', (_$, e) => ({ text: e.text }))
+  const attachment = (agentId?: string) =>
+    ({ type: 'plan_mode', text: 'PLAN-REMINDER', origin: { kind: 'engine' }, agentId, detail: { reminder: 'full', planFilePath: '/secret/plan.md', hasPlan: false } }) as never
+  await $.session.start(SESSION_START)
+  const complete = (turnId: string, agentId?: string) =>
+    $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, agentId, reason: 'answer', usage: SONNET_USAGE } as never)
+
+  // Act: plan 中のメイン、plan の行を受けたサブ、plan でないメイン。
+  await $.turn.start({ text: '', turnId: 'plan-1' } as never)
+  const seen = await $.prompt.attachment(attachment())
+  await complete('plan-1')
+  await $.turn.start({ text: '', turnId: 'sub-1', agentId: 'sub-a' } as never)
+  await $.prompt.attachment(attachment('sub-a'))
+  await complete('sub-1', 'sub-a')
+  await $.turn.start({ text: '', turnId: 'work-1' } as never)
+  await complete('work-1')
+  const ran = await $.command.run(commandWith('text'))
+
+  // Assert
+  expect((seen as { text: string | null }).text).toBe('PLAN-REMINDER')
+  expect(ran.text).toContain('plan mode のターンが 1 件')
+  expect(ran.text).not.toContain('/secret/plan.md')
+})

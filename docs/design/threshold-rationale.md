@@ -96,6 +96,7 @@
 ### model-review の判定の限界（仕様・#40）
 
 - 不足（underspec）は「Haiku × low の重いターン」「Sonnet × low のエラー連続」だけを見る。Haiku の通常 effort や Sonnet の通常 effort での失敗連続は見逃す。effort を持たないモデルは `effort === 'low'` が偽になり対象外。
+- plan mode のターン（`prompt.attachment` の `plan_mode` を見たメインのターン）は、モデル起因の過剰から外す（0.25.0・#82）。effort 起因は外さない。数値のしきい値は増えない。
 - 過剰（overspec）の軽作業判定は出力トークン（思考分を含む）・ツール回数・編集の有無だけで、質問の難しさは見ない。
 - いずれも「参考の観察」で、モデル選択の誤りを断定しない。エラー連続を effort 不問の観察として出す案は未実装（#40 の残り）。
 

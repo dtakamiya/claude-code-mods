@@ -9,6 +9,7 @@ import {
   beginTurn,
   finishTurn,
   liveDrafts,
+  markPlanMode,
   recordStep,
   recordTool,
   type Drafts,
@@ -578,4 +579,45 @@ test('日付違いの別表記は同じモデルとして 1 行にまとめ、�
   // Assert
   expect('byModel' in record).toBe(false)
   expect('divergedSteps' in record).toBe(false)
+})
+
+test('markPlanMode は進行中のメインのターンに印を付け、記録に planMode: true を残す', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, null)
+
+  // Act
+  drafts = markPlanMode(drafts)
+  const { record } = finishTurn(drafts, { turnId: 't1', usage: sonnetUsage, durationMs: 10, reason: 'answer' })
+
+  // Assert
+  expect(record.planMode).toBe(true)
+})
+
+test('plan mode を見ていないターン、下書きのないときの印は記録に残さない', () => {
+  // Arrange
+  const drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, null)
+
+  // Act
+  const unmarked = finishTurn(drafts, { turnId: 't1', usage: sonnetUsage, durationMs: 10, reason: 'answer' }).record
+  const empty = markPlanMode({})
+
+  // Assert
+  expect('planMode' in unmarked).toBe(false)
+  expect(empty).toEqual({})
+})
+
+test('plan mode の印はサブエージェントの下書きには付かず、次のターンへ持ち越さない', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 'm1' }, 0, null)
+  drafts = beginTurn(drafts, { turnId: 's1', agentId: 'sub-1' }, 0, null)
+
+  // Act
+  drafts = markPlanMode(drafts)
+  const sub = finishTurn(drafts, { turnId: 's1', agentId: 'sub-1', usage: sonnetUsage, durationMs: 1, reason: 'answer' })
+  const next = beginTurn(sub.drafts, { turnId: 'm2' }, 0, null)
+  const second = finishTurn(next, { turnId: 'm2', usage: sonnetUsage, durationMs: 1, reason: 'answer' }).record
+
+  // Assert
+  expect('planMode' in sub.record).toBe(false)
+  expect('planMode' in second).toBe(false)
 })
