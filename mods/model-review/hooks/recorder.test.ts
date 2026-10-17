@@ -472,3 +472,15 @@ test('step が欠けているときの内訳は、終了時の usage から再�
   expect(record.costParts).toEqual({ input: 2, output: 1, cacheRead: 0, cacheWrite: 0 })
   expectNear(record.costUsd, 3)
 })
+
+test('数値の effort は文字列と区別できる形で残し、読み替えない', () => {
+  // Arrange
+  let drafts = beginTurn({}, { turnId: 't4' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't4', model: 'claude-sonnet-5-5', effort: 32000, usage: null })
+  const finished = finishTurn(drafts, { turnId: 't4', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.effort).toBe('n:32000')
+})

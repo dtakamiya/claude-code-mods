@@ -2,6 +2,7 @@
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { CostParts, TurnRecord } from '../types'
 import { ZERO_PARTS, addParts } from './breakdown'
+import { effortToRecord } from './effort'
 import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, priceUsageParts, type CacheWriteTtl, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
@@ -172,7 +173,7 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     ...prev,
     turnId: step.turnId,
     model: usage?.model ?? prev.model ?? step.model,
-    effort: step.effort === undefined ? null : String(step.effort),
+    effort: effortToRecord(step.effort),
     stepCount: prev.stepCount + 1,
     stepTokenTotal: prev.stepTokenTotal + (usage ? totalTokensOf(usage) : 0),
     pricedCostUsd: prev.pricedCostUsd + (priced ?? 0),

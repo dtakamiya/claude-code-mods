@@ -2,6 +2,7 @@
 // 集計と文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
 import type { ArchivedGroup, ReviewState } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
+import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import {
   HEAVY_TOOL_CALLS,
@@ -166,6 +167,7 @@ function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent:
 /** 直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。止めている種類は最後に注記 1 行だけ。 */
 function concernRows(concerns: readonly Concern[], records: ReviewState['turns'], mutedLine: string | null): PaneRow[] {
   const { recent, past } = partitionByRecency(concerns)
+  const numericNote = numericEffortNote(records)
   return [
     ...(recent.length === 0
       ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow]
@@ -173,6 +175,7 @@ function concernRows(concerns: readonly Concern[], records: ReviewState['turns']
     ...(past.length === 0
       ? []
       : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, records, false))]),
+    ...(numericNote === null ? [] : [{ kind: 'note', text: numericNote } satisfies PaneRow]),
     ...(mutedLine === null ? [] : [{ kind: 'note', text: mutedLine } satisfies PaneRow]),
   ]
 }

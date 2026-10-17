@@ -3,6 +3,7 @@
 import type { ArchivedTurns, ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
 import { estimateRange, estimateTotal, type Concern, type ModelGroup } from './analyze'
+import { effortText } from './effort'
 import { formatDuration, formatInt, formatUsd } from './format'
 import { CONCERN_TEXT } from './labels'
 import { describeLoop, loopLabel, subagentHitRateLow, summarizeLoops, SUBAGENT_CACHE_NOTE } from './loops'
@@ -10,9 +11,6 @@ import { advisorCallTotal } from './notes'
 import { describeOption, estimateSwitchOptions } from './whatif'
 
 export const NO_TURNS_LINE = '記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
-
-/** effort がないグループの表記。 */
-const EFFORT_NONE_TEXT = '-'
 
 /** 指摘の金額の前に付ける語。金額の意味が種類ごとに違う。 */
 export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | null>> = {
@@ -64,7 +62,7 @@ export type GroupFacts = {
 export function groupFacts(group: ModelGroup): GroupFacts {
   const { tokens } = group
   return {
-    effort: group.effort ?? EFFORT_NONE_TEXT,
+    effort: effortText(group.effort),
     hit: hitRateText(tokens),
     input: formatInt(tokens.input),
     output: formatInt(tokens.output),

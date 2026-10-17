@@ -2,6 +2,7 @@
 // 切替直後のターンの最初の応答の書込トークンを、読めていれば払わなかった額として評価する。
 // 長い中断によるキャッシュ切れ（TTL）とは区別できないので、金額はあくまで推定。
 import type { TurnRecord } from '../types'
+import { effortText } from './effort'
 import { formatUsd } from './format'
 import { turnRefText } from './turnref'
 import { cacheRebuildCostUsd, isThirdPartyModelId, normalizeModelId, ratesFor } from './pricing'
@@ -54,7 +55,7 @@ function describe(kind: SwitchKind, prev: TurnRecord, current: TurnRecord, turns
   const change =
     kind === 'model'
       ? `${prev.model} → ${current.model}`
-      : `effort ${prev.effort ?? '-'} → ${current.effort ?? '-'}（${current.model}）`
+      : `effort ${effortText(prev.effort)} → ${effortText(current.effort)}（${current.model}）`
   return `${turnRefText(current, turnsAgo)}: ${change}`
 }
 
