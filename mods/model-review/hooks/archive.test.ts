@@ -96,7 +96,7 @@ test('畳んだことはペインとレポートに注記し、件数は畳ん�
   expect(rows).toContainEqual({ kind: 'note', text: note })
   expect(lines).toContain(note)
   expect(rows.find(row => row.kind === 'title')).toMatchObject({ turns: MAX_TURNS + 40 })
-  expect(lines[0]).toContain(`${MAX_TURNS + 40} ターン`)
+  expect(lines[2]).toContain(`${MAX_TURNS + 40} ターン`)
   expect(archiveNote(undefined)).toBeNull()
 })
 

@@ -6,6 +6,7 @@ import { EMPTY_REVIEW, appendTurn, withBaseline, withCostSample } from './state'
 import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
+import { COPIED_TEXT, USAGE_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 
 const PANE_ID = 'model-review'
@@ -77,13 +78,20 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'model-review' }, async $ => {
+  on('command.run', { command: 'model-review' }, async ($, e) => {
+    const mode = parseCommandMode(e.args)
+    if (mode === 'unknown') return { text: USAGE_TEXT }
     const costUsd = await readCostUsd(
       () => $.session.usage(),
       text => $.ui.log(text, { to: 'debug' }),
     )
     if (costUsd !== null) await update($, reviewAtom, state => withCostSample(state, costUsd))
     const lines = buildReportLines(await read($, reviewAtom), await $.clock.now())
+    if (mode === 'copy') {
+      // コピー内容はテキストレポートそのもの（input・プロンプトは記録していないので含まれない）。
+      const copied = await $.ui.copy({ text: lines.join('\n') })
+      return { text: copied.isCopied ? COPIED_TEXT : copyFailedText(copied.reason) }
+    }
     const opened = await $.ui.open({ id: PANE_ID, title: PANE_TITLE })
     return { text: opened.isPlaced ? PANE_OPENED_TEXT : lines.join('\n') }
   })

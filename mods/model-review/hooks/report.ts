@@ -6,6 +6,7 @@ import { formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
+import { conclusionOfReview } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
@@ -120,8 +121,11 @@ const CRITERIA_LINES = [
 /** ペインに表示する行。記録がなければ案内の 1 行だけを返す。 */
 export function buildReportLines(review: ReviewState, nowMs?: number): string[] {
   const records = review.turns
-  if (records.length === 0) return [NO_TURNS_LINE]
+  const conclusion = conclusionOfReview(review, nowMs).text
+  if (records.length === 0) return [conclusion, NO_TURNS_LINE]
   return [
+    conclusion,
+    '',
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,

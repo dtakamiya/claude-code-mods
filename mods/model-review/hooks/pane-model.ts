@@ -10,12 +10,12 @@ import {
   modelRank,
   topCostTurns,
   type Concern,
-  type ConcernKind,
 } from './analyze'
 import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
 import type { Drafts, LoopDraft } from './recorder'
-import { CONCLUSION_NONE_TEXT, CONCLUSION_NO_RECORDS_TEXT, CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, TERM_TEXT, type TermKey } from './labels'
+import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, TERM_TEXT, type TermKey } from './labels'
+import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import {
@@ -37,11 +37,9 @@ import {
 } from './summary'
 
 export const BAR_WIDTH = 14
-/** 状況に応じた警告（buildNotes）のバッジ。常に出す免責・判定基準（dim の注記）と見分ける。 */
-export const ALERT_LABEL = '注意'
+export { ALERT_LABEL, type Tone }
 const MODEL_ID_PREFIX = 'claude-'
 
-export type Tone = 'success' | 'warning' | 'error' | 'suggestion' | 'plain'
 export type Tier = 'haiku' | 'sonnet' | 'opus' | 'other'
 
 export type PaneRow =
@@ -59,13 +57,6 @@ export type PaneRow =
   | { kind: 'note'; text: string }
 
 const TIER_OF_RANK: Readonly<Record<number, Tier>> = { 0: 'haiku', 1: 'sonnet', 2: 'opus' }
-const CONCERN_TONE: Readonly<Record<ConcernKind, Tone>> = {
-  overspec: 'warning',
-  underspec: 'error',
-  delegation: 'suggestion',
-  subagent: 'warning',
-  switch: 'warning',
-}
 
 const tierOf = (model: string): Tier => TIER_OF_RANK[modelRank(model)] ?? 'other'
 const shortModel = (model: string): string => (model.startsWith(MODEL_ID_PREFIX) ? model.slice(MODEL_ID_PREFIX.length) : model)
@@ -178,31 +169,10 @@ function archiveNoteRows(review: ReviewState): PaneRow[] {
   return text === null ? [] : [{ kind: 'note', text }]
 }
 
-const NO_RECORDS_CONCLUSION: PaneRow = { kind: 'conclusion', text: `結論: ${CONCLUSION_NO_RECORDS_TEXT}`, tone: 'plain' }
-
-/** 件数のある指摘のうち最も重い種類の色。件数がなければ色なし。 */
-function worstConcernTone(present: readonly Concern[]): Tone {
-  const tones = new Set(present.map(concern => CONCERN_TONE[concern.kind]))
-  return CONCERN_SEVERITY.find(tone => tones.has(tone)) ?? 'plain'
-}
-
-/** 注意（buildNotes）が 1 件以上あるときだけ、結論行の末尾に件数を足す。 */
-const alertSuffix = (alertCount: number): string => (alertCount === 0 ? '' : ` · ${ALERT_LABEL} ${alertCount} 件`)
-
-/** 結論の 1 行。件数のある種類だけ、ConcernKind の短い名前で並べる。色は最も重い種類に合わせる。 */
-function conclusionRow(concerns: readonly Concern[], alertCount: number): PaneRow {
-  const present = concerns.filter(concern => concern.count > 0)
-  const total = present.reduce((sum, concern) => sum + concern.count, 0)
-  if (total === 0) {
-    return { kind: 'conclusion', text: `${CONCLUSION_MARK_NONE} 結論: ${CONCLUSION_NONE_TEXT}${alertSuffix(alertCount)}`, tone: 'success' }
-  }
-  const parts = present.map(concern => `${CONCERN_TEXT[concern.kind].label} ${concern.count}`).join(' / ')
-  return {
-    kind: 'conclusion',
-    text: `${CONCLUSION_MARK_CONCERN} 結論: 見直し候補 ${total} 件（${parts}）${alertSuffix(alertCount)}`,
-    tone: worstConcernTone(present),
-  }
-}
+const conclusionRow = (concerns: readonly Concern[], alertCount: number): PaneRow => ({
+  kind: 'conclusion',
+  ...conclusionOf(concerns, alertCount),
+})
 
 /** 画面に出る行と同じ条件で、説明すべき用語を選ぶ。 */
 function shownTerms(review: ReviewState, groups: readonly ArchivedGroup[], concerns: readonly Concern[]): TermKey[] {
@@ -227,11 +197,6 @@ const CONCERN_DETAIL_HEADING = `${HEADING.concerns}· 見直し候補の内訳`
 const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
 /** 実コストが取れなかったときの、ペイン末尾の案内。 */
 const REFRESH_NOTE = '/model-review で更新'
-/** 結論行の先頭の印。指摘ありは ▲、なしは ✓（色だけに頼らない）。 */
-const CONCLUSION_MARK_CONCERN = '▲'
-const CONCLUSION_MARK_NONE = '✓'
-/** 指摘の色の優先順。最も重い種類の色を結論行に使う。 */
-const CONCERN_SEVERITY: readonly Tone[] = ['error', 'warning', 'suggestion']
 
 const isStarted = (draft: LoopDraft): boolean => draft.stepCount > 0 || draft.toolCount > 0
 
@@ -255,7 +220,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
   const live = liveRows(drafts)
   if (records.length === 0) {
     const body: PaneRow[] = live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
-    return [NO_RECORDS_CONCLUSION, ...body]
+    return [{ kind: 'conclusion', ...NO_RECORDS_CONCLUSION }, ...body]
   }
   const estimate = estimateFacts(records, review.archived)
   const concerns = findConcerns(records)
