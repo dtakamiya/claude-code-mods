@@ -23,8 +23,8 @@ test('N-1 回では報告されない', () => {
 })
 
 test('4 回・5 回は実際の回数で報告される', () => {
-  expect(findRepeats([prompt(), asst(...times(4, use('Read')))], 3)[0].count).toBe(4)
-  expect(findRepeats([prompt(), asst(...times(5, use('Read')))], 3)[0].count).toBe(5)
+  expect(findRepeats([prompt(), asst(...times(4, use('Read')))], 3)[0]?.count).toBe(4)
+  expect(findRepeats([prompt(), asst(...times(5, use('Read')))], 3)[0]?.count).toBe(5)
 })
 
 test('input が 1 キーだけ違う呼び出しは組にならない', () => {

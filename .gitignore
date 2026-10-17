@@ -4,3 +4,6 @@ node_modules/
 data/
 .env*
 .DS_Store
+
+# claude plugin test 等のビルド成果物（hooks/ の .ts/.tsx と対応する .js）
+mods/*/hooks/*.js

@@ -38,7 +38,7 @@ const canonicalKey = (tool: string, input: unknown): string | null => {
 const currentTurn = <T extends MessageLike>(messages: readonly T[]): readonly T[] => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
-    if (m.role === 'user' && !(m.toolResults && m.toolResults.length > 0)) {
+    if (m && m.role === 'user' && !(m.toolResults && m.toolResults.length > 0)) {
       return messages.slice(i + 1)
     }
   }

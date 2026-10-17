@@ -1,0 +1,56 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      mods: ${{ steps.ls.outputs.mods }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: ls
+        run: echo "mods=$(ls mods | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+  mods:
+    needs: list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mod: ${{ fromJson(needs.list.outputs.mods) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code@2.1.302
+      - run: claude plugin validate mods/${{ matrix.mod }}
+      - run: claude plugin test mods/${{ matrix.mod }}
+  version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 変更した mod の plugin.json の version が上がっているか
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base=$(git merge-base "origin/$BASE_REF" HEAD)
+          fail=0
+          for dir in mods/*/; do
+            mod=$(basename "$dir")
+            git diff --quiet "$base...HEAD" -- "mods/$mod" && continue
+            git cat-file -e "$base:mods/$mod/.claude-plugin/plugin.json" 2>/dev/null || continue
+            old=$(git show "$base:mods/$mod/.claude-plugin/plugin.json" | jq -r '.version // ""')
+            new=$(jq -r '.version // ""' "mods/$mod/.claude-plugin/plugin.json")
+            if [ -z "$new" ] || [ "$old" = "$new" ]; then
+              echo "::error::mods/$mod を変更したが plugin.json の version が同じ ($new)"
+              fail=1
+            fi
+          done
+          exit $fail
