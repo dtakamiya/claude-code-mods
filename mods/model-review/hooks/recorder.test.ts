@@ -484,3 +484,98 @@ test('数値の effort は文字列と区別できる形で残し、読み替え
   // Assert
   expect(finished.record.effort).toBe('n:32000')
 })
+
+// ---- 1 ターンの中でモデルが替わる（#83） ----
+const opusUsage = {
+  model: 'claude-opus-5-5',
+  input_tokens: 1_000,
+  output_tokens: 500,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+}
+const haikuUsage = { ...opusUsage, model: 'claude-haiku-5-5', input_tokens: 2_000 }
+
+test('2 モデルが混ざるターンは、モデル別の内訳を応答ごとに分けて残す', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, 'claude-opus-5-5')
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5', usage: opusUsage })
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-haiku-5-5', usage: haikuUsage })
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-haiku-5-5', usage: haikuUsage })
+  const { record } = finishTurn(drafts, {
+    turnId: 't1',
+    usage: { ...haikuUsage, input_tokens: 1_000 + 2_000 * 2, output_tokens: 1_500 },
+    durationMs: 10,
+    reason: 'answer',
+  })
+
+  // Assert
+  expect(record.byModel?.map(share => [share.model, share.steps, share.tokens.input])).toEqual([
+    ['claude-opus-5-5', 1, 1_000],
+    ['claude-haiku-5-5', 2, 4_000],
+  ])
+  expect(record.divergedSteps).toBe(2)
+})
+
+test('1 モデルだけのターンは byModel も divergedSteps も持たない', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, 'claude-opus-5-5')
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5', usage: opusUsage })
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5', usage: opusUsage })
+  const { record } = finishTurn(drafts, {
+    turnId: 't1',
+    usage: { ...opusUsage, input_tokens: 2_000, output_tokens: 1_000 },
+    durationMs: 10,
+    reason: 'answer',
+  })
+
+  // Assert
+  expect('byModel' in record).toBe(false)
+  expect('divergedSteps' in record).toBe(false)
+})
+
+test('セッションのモデルを読めなければ、食い違いは数えない', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, null)
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-haiku-5-5', usage: haikuUsage })
+  const { record } = finishTurn(drafts, { turnId: 't1', usage: haikuUsage, durationMs: 10, reason: 'answer' })
+
+  // Assert
+  expect('divergedSteps' in record).toBe(false)
+})
+
+test('サブエージェントの応答は、セッションのモデルと違っても食い違いに数えない', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1', agentId: 'a1' }, 0, 'claude-opus-5-5')
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't1', agentId: 'a1', model: 'claude-haiku-5-5', usage: haikuUsage })
+  const { record } = finishTurn(drafts, { turnId: 't1', agentId: 'a1', usage: haikuUsage, durationMs: 10, reason: 'answer' })
+
+  // Assert
+  expect('divergedSteps' in record).toBe(false)
+})
+
+test('日付違いの別表記は同じモデルとして 1 行にまとめ、エイリアスのセッションモデルは比べない', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, 'opus')
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5', usage: opusUsage })
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5-20260101', usage: { ...opusUsage, model: 'claude-opus-5-5-20260101' } })
+  const { record } = finishTurn(drafts, {
+    turnId: 't1',
+    usage: { ...opusUsage, model: 'claude-opus-5-5-20260101', input_tokens: 2_000, output_tokens: 1_000 },
+    durationMs: 10,
+    reason: 'answer',
+  })
+
+  // Assert
+  expect('byModel' in record).toBe(false)
+  expect('divergedSteps' in record).toBe(false)
+})

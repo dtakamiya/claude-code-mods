@@ -1,10 +1,10 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
-import type { CostParts, TurnRecord } from '../types'
+import type { CostParts, ModelShare, TurnRecord } from '../types'
 import { ZERO_PARTS, addParts } from './breakdown'
 import { sanitizeAgentType } from './agenttype'
 import { effortToRecord } from './effort'
-import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, priceUsageParts, type CacheWriteTtl, type TokenUsageLike } from './pricing'
+import { HAIKU_REFERENCE_MODEL, normalizeModelId, SONNET_REFERENCE_MODEL, priceUsage, priceUsageParts, type CacheWriteTtl, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
 export const UNKNOWN_MODEL = 'unknown'
@@ -41,6 +41,12 @@ export type LoopDraft = {
   readonly editCount: number
   /** 最後に開始・応答・ツール呼び出しがあった時刻（ms）。取れなかったときは null。 */
   readonly lastActivityMs: number | null
+  /** 応答したモデルごとの内訳（出現順）。終了時、2 モデル以上のときだけ記録に残す。 */
+  readonly byModel: readonly ModelShare[]
+  /** ターン開始時に読んだセッションのモデル。読めなければ null。 */
+  readonly sessionModel: string | null
+  /** 応答のモデルがセッションのモデルと食い違った応答の数。 */
+  readonly divergedSteps: number
   /** turn.start を見て作った下書きか。false なら reload で下書きが消えた後に途中から拾った下書き。 */
   readonly started: boolean
 }
@@ -112,6 +118,9 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   toolCount: 0,
   editCount: 0,
   lastActivityMs: null,
+  byModel: [],
+  sessionModel: null,
+  divergedSteps: 0,
   started: false,
 })
 
@@ -126,8 +135,19 @@ const withDraft = (drafts: Drafts, agentId: string | undefined, draft: LoopDraft
 const ZERO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const
 
 /** 同じループに残っていた未完了の下書きは置き換える（中断されたターンの残りを引きずらない）。 */
-export function beginTurn(drafts: Drafts, turn: { readonly turnId: string; readonly agentId?: string }, nowMs?: number): Drafts {
-  const started = { ...emptyDraft(turn.turnId, turn.agentId ?? null), lastActivityMs: nowMs ?? null, started: true }
+export function beginTurn(
+  drafts: Drafts,
+  turn: { readonly turnId: string; readonly agentId?: string },
+  nowMs?: number,
+  sessionModel?: string | null,
+): Drafts {
+  const started = {
+    ...emptyDraft(turn.turnId, turn.agentId ?? null),
+    lastActivityMs: nowMs ?? null,
+    // `opus` などのエイリアス・opusplan は応答のモデル ID と一致しないので、完全な ID（claude-…）のときだけ比べる。
+    sessionModel: typeof sessionModel === 'string' && sessionModel.startsWith('claude-') ? sessionModel : null,
+    started: true,
+  }
   return withDraft(drafts, turn.agentId, started)
 }
 
@@ -164,6 +184,31 @@ const promptTokensOf = (usage: SafeUsage | null): number =>
 const totalTokensOf = (usage: SafeUsage): number =>
   usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
 
+const addShare = (shares: readonly ModelShare[], model: string, usage: SafeUsage | null, priced: number | null): readonly ModelShare[] => {
+  // usage のない応答はトークンも費用も 0 なので、内訳の行を増やさない。
+  if (usage === null) return shares
+  const tokens = tokenCountsOf(usage)
+  // 日付違いなどの別表記は同じモデルとして数える（表記は最初のものを残す）。
+  const found = shares.find(share => normalizeModelId(share.model) === normalizeModelId(model))
+  const base: ModelShare = found ?? { model, tokens: ZERO_TOKENS, costUsd: 0, steps: 0 }
+  const next: ModelShare = {
+    model,
+    tokens: {
+      input: base.tokens.input + tokens.input,
+      output: base.tokens.output + tokens.output,
+      cacheRead: base.tokens.cacheRead + tokens.cacheRead,
+      cacheWrite: base.tokens.cacheWrite + tokens.cacheWrite,
+    },
+    costUsd: base.costUsd === null || priced === null ? null : base.costUsd + priced,
+    steps: base.steps + 1,
+  }
+  return found === undefined ? [...shares, next] : shares.map(share => (share === found ? next : share))
+}
+
+/** メインのループだけで判定する（サブエージェントは定義のモデルで動くのが通常のため）。セッションのモデルが分かっていて、応答のモデルがそれと（日付違いなどを除いて）違うときだけ true。 */
+const isDiverged = (sessionModel: string | null, stepModel: string): boolean =>
+  sessionModel !== null && normalizeModelId(sessionModel) !== normalizeModelId(stepModel)
+
 export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Drafts {
   const prev = draftOf(drafts, step.agentId, step.turnId)
   const usage = sanitizeUsage(step.usage)
@@ -189,6 +234,8 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     firstStepPromptTokens: prev.stepCount === 0 ? promptTokensOf(usage) : prev.firstStepPromptTokens,
     advisorCalls: prev.advisorCalls + countOf(step.advisorCalls),
     lastActivityMs: nowMs ?? prev.lastActivityMs,
+    byModel: addShare(prev.byModel, usage?.model ?? step.model, usage, priced),
+    divergedSteps: prev.divergedSteps + (step.agentId === undefined && isDiverged(prev.sessionModel, usage?.model ?? step.model) ? 1 : 0),
   }
   return withDraft(drafts, step.agentId, next)
 }
@@ -289,6 +336,10 @@ const agentTypeField = (end: TurnEndInput): { readonly agentType?: string } => {
   return type === null ? {} : { agentType: type }
 }
 
+/** 2 モデル以上が応答したときだけ内訳を残す。step の記録が欠けているときは合計と合わないので残さない。 */
+const byModelField = (draft: LoopDraft, usage: SafeUsage | null): { readonly byModel?: readonly ModelShare[] } =>
+  draft.byModel.length > 1 && !isStepRecordIncomplete(draft, usage) ? { byModel: draft.byModel } : {}
+
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
   const key = loopKey(end.agentId)
   const draft = draftOf(drafts, end.agentId, end.turnId)
@@ -312,6 +363,8 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     firstStepCacheWrite: first.cacheWrite,
     firstStepPromptTokens: first.promptTokens,
     advisorCalls: draft.advisorCalls,
+    ...byModelField(draft, usage),
+    ...(draft.divergedSteps > 0 ? { divergedSteps: draft.divergedSteps } : {}),
     ...(end.afterCompact === true ? { afterCompact: true } : {}),
     ...agentTypeField(end),
     ...(draft.started ? {} : { partial: true }),

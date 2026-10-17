@@ -80,6 +80,15 @@ function switchNote(records: readonly TurnRecord[]): readonly string[] {
   return ['切替の推定は、切替直後の最初の応答のキャッシュ書込から算出しています。長い中断によるキャッシュ切れとは区別できません。Bedrock・Vertex・gateway 経由では effort 変更でもキャッシュは維持されません']
 }
 
+/** モデルが途中で替わったターンの事実だけを 1 行。原因（フォールバックなど）は断定しない。 */
+function divergedNote(records: readonly TurnRecord[]): readonly string[] {
+  const count = records.filter(record => (record.divergedSteps ?? 0) > 0).length
+  if (count === 0) return []
+  return [
+    `モデルがターン開始時のセッションのモデルと食い違った応答を含むターンが ${count} 件あります（フォールバックなどの可能性。推定で、原因は断定できません）。応答したモデルの内訳を取れたターンは、モデル × effort の表でモデルごとに分けて数えています`,
+  ]
+}
+
 /** 状況に応じた注記（常に出す 1 行を除く）。記録がなければ空。 */
 export function buildNotes(review: ReviewState, nowMs?: number): readonly string[] {
   const records = review.turns
@@ -92,5 +101,6 @@ export function buildNotes(review: ReviewState, nowMs?: number): readonly string
     ...staleNote(review, unpricedTurns, totalTurns),
     ...priceAgeNote(nowMs),
     ...switchNote(records),
+    ...divergedNote(records),
   ]
 }

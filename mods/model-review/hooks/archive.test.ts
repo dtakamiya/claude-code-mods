@@ -131,3 +131,56 @@ test('5,000 ターンでも保持は上限まで、ペインの組み立ては�
   expect(appended - started).toBeLessThan(3_000)
   expect(built - appended).toBeLessThan(500)
 })
+
+test('モデルが混ざるターンは、モデル別の集計と畳み込みの両方でモデルごとに分かれる（#83）', () => {
+  // Arrange
+  const mixed: TurnRecord = {
+    ...turnAt(1),
+    agentId: null,
+    model: 'claude-haiku-5-5',
+    effort: 'high',
+    tokens: { input: 300, output: 30, cacheRead: 0, cacheWrite: 0 },
+    costUsd: 0.3,
+    byModel: [
+      { model: 'claude-opus-5-5', tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.2, steps: 1 },
+      { model: 'claude-haiku-5-5', tokens: { input: 200, output: 20, cacheRead: 0, cacheWrite: 0 }, costUsd: 0.1, steps: 1 },
+    ],
+  }
+  const filler = Array.from({ length: MAX_TURNS }, (_, index) => ({ ...turnAt(index + 1000), agentId: null, model: 'claude-sonnet-5-5', effort: null }))
+  const all = [mixed, ...filler]
+
+  // Act
+  const direct = groupByModelEffort([mixed])
+  const review = all.reduce(appendTurn, EMPTY_REVIEW)
+  const folded = mergeGroups(review.archived, groupByModelEffort(review.turns))
+
+  // Assert
+  expect(direct.map(group => [group.model, group.tokens.input, group.costUsd])).toEqual([
+    ['claude-haiku-5-5', 200, 0.1],
+    ['claude-opus-5-5', 100, 0.2],
+  ])
+  const opus = folded.find(group => group.model === 'claude-opus-5-5' && group.effort === 'high')
+  expect(opus?.tokens.input).toBe(100)
+  expect(opus?.costUsd).toBe(0.2)
+})
+
+test('byModel のない記録は、これまでどおり最後のモデルにまとめる', () => {
+  // Arrange
+  const old = { ...turnAt(1), model: 'claude-opus-5-5', effort: 'high' }
+
+  // Act
+  const groups = groupByModelEffort([old])
+
+  // Assert
+  expect(groups.map(group => [group.model, group.turns])).toEqual([['claude-opus-5-5', 1]])
+})
+
+test('食い違った応答があるターンは注記に 1 行出し、なければ出さない（#83）', () => {
+  // Arrange
+  const plain = { ...EMPTY_REVIEW, turns: [turnAt(1)] }
+  const diverged = { ...EMPTY_REVIEW, turns: [{ ...turnAt(1), divergedSteps: 2 }] }
+
+  // Act / Assert
+  expect(buildNotes(plain).some(note => note.includes('食い違った'))).toBe(false)
+  expect(buildNotes(diverged).filter(note => note.includes('食い違った')).length).toBe(1)
+})

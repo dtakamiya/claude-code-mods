@@ -142,7 +142,15 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     await recordSafely(async () => {
       const nowMs = await $.clock.now()
-      drafts = beginTurn(drafts, e, nowMs)
+      // 読めなくてもターンの記録は止めない（フォールバックの推定ができないだけ）。
+      // 食い違いはメインのループだけで数えるので、サブエージェントでは読まない。
+      const sessionModel =
+        e.agentId !== undefined
+          ? null
+          : await Promise.resolve()
+              .then(() => $.session.model())
+              .catch(() => null)
+      drafts = beginTurn(drafts, e, nowMs, sessionModel)
       $.ui.invalidate('ui.render')
     }, logDebug($))
     return next(e)
