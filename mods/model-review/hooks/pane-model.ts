@@ -36,7 +36,14 @@ import {
   type EstimateFacts,
 } from './summary'
 
+/** コスト比バーの最大幅。狭い画面では barWidthFor が縮める。 */
 export const BAR_WIDTH = 14
+/** バーが縮んでもこの幅は残す（比が読める最小）。 */
+export const MIN_BAR_WIDTH = 4
+/** バーは本文の桁数のこの割合（1/5）までにとどめる。狭い画面で金額・割合より先にバーを縮める。 */
+const BAR_MAX_SHARE_OF_COLUMNS = 5
+/** バー行の固定部分: 先頭の字下げ 2 + 金額との間 2 + 割合との間 2 + 割合（`100%` で 4）。 */
+const BAR_ROW_FIXED_CELLS = 10
 const MODEL_ID_PREFIX = 'claude-'
 
 export type Tier = 'haiku' | 'sonnet' | 'opus' | 'other'
@@ -47,7 +54,7 @@ export type PaneRow =
   | { kind: 'blank' }
   | { kind: 'title'; turns: number; subagents: number; costText: string }
   | { kind: 'heading'; text: string }
-  | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; filled: number; percentText: string; costText: string; tokenText: string; cacheText: string }
+  | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; barWidth: number; filled: number; percentText: string; costText: string; tokenText: string; cacheText: string }
   | { kind: 'turn'; label: string; model: string; tier: Tier; costText: string; detail: string }
   | { kind: 'kv'; label: string; value: string; tone: Tone }
   | { kind: 'badge'; label: string; tone: Tone; text: string }
@@ -68,10 +75,21 @@ function costShare(costUsd: number | null, totalUsd: number): number | null {
   return costUsd / totalUsd
 }
 
-/** コスト比を 0〜BAR_WIDTH のセル数にする。1% 未満は 0、それ以上は最低 1 セル。 */
-function filledCells(share: number | null): number {
+/**
+ * 本文の桁数（bodyColumns）と金額の長さから、バーが収まる幅を決める。金額は削らず、バーを縮める。
+ * 桁数が分からなければ（undefined）最大幅。
+ */
+export function barWidthFor(columns: number | undefined, costText: string): number {
+  if (columns === undefined) return BAR_WIDTH
+  const room = columns - BAR_ROW_FIXED_CELLS - costText.length
+  const cap = Math.floor(columns / BAR_MAX_SHARE_OF_COLUMNS)
+  return Math.min(BAR_WIDTH, Math.max(MIN_BAR_WIDTH, Math.min(room, cap)))
+}
+
+/** コスト比を 0〜width のセル数にする。1% 未満は 0、それ以上は最低 1 セル。 */
+function filledCells(share: number | null, width: number): number {
   if (share === null || share < MIN_VISIBLE_SHARE) return 0
-  return Math.min(BAR_WIDTH, Math.max(1, Math.round(share * BAR_WIDTH)))
+  return Math.min(width, Math.max(1, Math.round(share * width)))
 }
 
 function percentText(share: number | null): string {
@@ -79,16 +97,18 @@ function percentText(share: number | null): string {
   return share < MIN_VISIBLE_SHARE ? '<1%' : `${Math.round(share * 100)}%`
 }
 
-function groupRow(group: ArchivedGroup, totalUsd: number): PaneRow {
+function groupRow(group: ArchivedGroup, totalUsd: number, columns: number | undefined): PaneRow {
   const facts = groupFacts(group)
   const share = costShare(group.costUsd, totalUsd)
+  const barWidth = barWidthFor(columns, facts.costText)
   return {
     kind: 'group',
     model: shortModel(group.model),
     effort: facts.effort,
     tier: tierOf(group.model),
     turns: group.turns,
-    filled: filledCells(share),
+    barWidth,
+    filled: filledCells(share, barWidth),
     percentText: percentText(share),
     costText: facts.costText,
     tokenText: `${facts.hit === null ? '' : `${facts.hit} · `}入力 ${facts.input} · 出力 ${facts.output}`,
@@ -214,7 +234,8 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
-export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: number): PaneRow[] {
+/** `columns` はペイン本文の桁数（bodyColumns）。バー幅を合わせる。省略時は最大幅。 */
+export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: number, columns?: number): PaneRow[] {
   const records = review.turns
   const live = liveRows(drafts)
   if (records.length === 0) {
@@ -240,7 +261,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     ...concernRows(concerns),
     { kind: 'blank' },
     { kind: 'heading', text: HEADING.groups },
-    ...groups.map(group => groupRow(group, estimate.costUsd)),
+    ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
     { kind: 'blank' },
     ...topTurnRows(records),
     ...loopRows(records),

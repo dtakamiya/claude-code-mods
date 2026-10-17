@@ -415,6 +415,34 @@ test('Pane のトークン行・キャッシュ行・ターン行は切り詰め
   await ui.unmount()
 })
 
+test('Pane のバーは bodyColumns に合わせて縮み、金額が行の先頭に来て、見出し・タイトル・モデル行は切り詰めない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_RUN)
+  const barCells = async (bodyColumns: number) => {
+    const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: { ...PANE_PROPS, bodyColumns } } as never)
+    const texts = await ui.findAll({ type: 'Text' })
+    const bar = texts.find(element => element.text.includes('$3.0000') && /[█░]/.test(element.text))
+    const wraps = texts.filter(element => element.text.startsWith('▎') || element.text.startsWith('推定 ') || element.text.includes('effort ')).map(element => element.props.wrap)
+    await ui.unmount()
+    return { bar: bar?.text ?? '', cells: (bar?.text.match(/[█░]/g) ?? []).length, wraps }
+  }
+
+  // Act
+  const wide = await barCells(100)
+  const narrow = await barCells(30)
+
+  // Assert
+  expect(wide.cells).toBe(14)
+  expect(narrow.cells).toBeLessThan(wide.cells)
+  expect(narrow.bar.trimStart().startsWith('$3.0000')).toBe(true)
+  expect(narrow.wraps.length).toBeGreaterThan(0)
+  expect(narrow.wraps).toContain('wrap')
+  expect(narrow.wraps).not.toContain('truncate-end')
+})
+
 test('Pane の過剰の例文は切り詰めず折り返す', async ($, on) => {
   // Arrange: 軽作業（ツール 0 回）に Opus を 3 回使い、過剰の例文を出す。
   answerEngine(on, () => 10, true)

@@ -2,7 +2,7 @@
 import type { Elements } from 'claude-code'
 
 import { type Tone } from './conclusion'
-import { BAR_WIDTH, type PaneRow, type Tier } from './pane-model'
+import { type PaneRow, type Tier } from './pane-model'
 
 type Ui = Pick<Elements['terminal'], 'Box' | 'Text'>
 
@@ -25,40 +25,42 @@ const TIER_COLOR: Record<Tier, 'success' | 'suggestion' | 'warning' | undefined>
 
 export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
   const { Box, Text } = ui
+  // dim は飾り（空きのセル・免責）だけ。値や説明は subtle で、暗い背景でも読めるようにする。
   const dim = (text: string) => <Text color="inactive" dimColor>{text}</Text>
+  const sub = (text: string) => <Text color="subtle">{text}</Text>
 
   const renderRow = (row: PaneRow) => {
     switch (row.kind) {
       case 'title':
         return (
-          <Text wrap="truncate-end">
+          <Text wrap="wrap">
             {'推定 '}
             <Text bold>{row.costText}</Text>
-            {dim(`  ·  ${row.turns} ターン  ·  サブエージェント ${row.subagents}`)}
+            {sub(`  ·  ${row.turns} ターン  ·  サブエージェント ${row.subagents}`)}
           </Text>
         )
       case 'conclusion':
         return <Text bold wrap="wrap" color={TONE_COLOR[row.tone]}>{row.text}</Text>
       case 'heading':
-        return <Text bold wrap="truncate-end">{`▎${row.text}`}</Text>
+        return <Text bold wrap="wrap">{`▎${row.text}`}</Text>
       case 'group':
         return (
           <Box flexDirection="column">
-            <Text wrap="truncate-end">
+            <Text wrap="wrap">
               <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
               <Text>{'  '}</Text>
               <Text color="subtle">{`effort ${row.effort}`}</Text>
-              {dim(`  ${row.turns} ターン`)}
+              {sub(`  ${row.turns} ターン`)}
             </Text>
-            <Text wrap="truncate-end">
+            <Text wrap="wrap">
+              <Text bold>{`  ${row.costText}`}</Text>
               <Text>{'  '}</Text>
               <Text color={TIER_COLOR[row.tier]}>{FILLED_GLYPH.repeat(row.filled)}</Text>
-              {dim(EMPTY_GLYPH.repeat(BAR_WIDTH - row.filled))}
-              <Text bold>{`  ${row.costText}`}</Text>
-              {row.percentText === '' ? null : dim(`  ${row.percentText}`)}
+              {dim(EMPTY_GLYPH.repeat(row.barWidth - row.filled))}
+              {row.percentText === '' ? null : sub(`  ${row.percentText}`)}
             </Text>
-            <Text color="inactive" dimColor wrap="wrap">{`  ${row.tokenText}`}</Text>
-            <Text color="inactive" dimColor wrap="wrap">{`  ${row.cacheText}`}</Text>
+            <Text color="subtle" wrap="wrap">{`  ${row.tokenText}`}</Text>
+            <Text color="subtle" wrap="wrap">{`  ${row.cacheText}`}</Text>
           </Box>
         )
       case 'turn':
@@ -68,13 +70,13 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
               <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
               <Text bold>{`  ${row.costText}`}</Text>
             </Text>
-            <Text color="inactive" dimColor wrap="wrap">{`  ${row.label} · ${row.detail}`}</Text>
+            <Text color="subtle" wrap="wrap">{`  ${row.label} · ${row.detail}`}</Text>
           </Box>
         )
       case 'kv':
         return (
           <Text wrap="wrap">
-            {dim(`${row.label}  `)}
+            {sub(`${row.label}  `)}
             <Text color={TONE_COLOR[row.tone]}>{row.value}</Text>
           </Text>
         )
@@ -86,7 +88,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
           </Text>
         )
       case 'example':
-        return <Text color="inactive" dimColor wrap="wrap">{`  ・${row.text}`}</Text>
+        return <Text color="subtle" wrap="wrap">{`  ・${row.text}`}</Text>
       case 'ok':
         return (
           <Text>
@@ -95,9 +97,9 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
           </Text>
         )
       case 'note':
-        return <Text color="inactive" dimColor wrap="wrap">{row.text}</Text>
+        return <Text color="subtle" wrap="wrap">{row.text}</Text>
       case 'message':
-        return <Text dimColor wrap="wrap">{row.text}</Text>
+        return <Text color="subtle" wrap="wrap">{row.text}</Text>
       default:
         return <Text>{' '}</Text>
     }

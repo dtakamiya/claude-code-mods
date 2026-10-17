@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL } from './conclusion'
-import { BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
+import { BAR_WIDTH, MIN_BAR_WIDTH, barWidthFor, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
 // 架空データのみ。
@@ -55,6 +55,70 @@ test('コスト比のバーは合計に対する割合で埋まる', () => {
   // Assert
   const filledByTier = Object.fromEntries(groups.map(row => (row.kind === 'group' ? [row.tier, row.filled] : [])))
   expect(filledByTier).toEqual({ sonnet: Math.round((3 / 4) * BAR_WIDTH), haiku: Math.round((1 / 4) * BAR_WIDTH) })
+})
+
+type GroupRow = Extract<PaneRow, { kind: 'group' }>
+const groupsAt = (columns: number | undefined): GroupRow[] =>
+  buildPaneRows(
+    review([turn({ costUsd: 3 }), turn({ turnId: 't2', model: 'claude-haiku-5-5', effort: 'low', costUsd: 1 })]),
+    {},
+    undefined,
+    columns,
+  ).filter((row): row is GroupRow => row.kind === 'group')
+
+/** pane.tsx のバー行の幅: 字下げ 2 + 金額 + 2 + バー + 2 + 割合。 */
+const barRowCells = (row: GroupRow): number => 2 + row.costText.length + 2 + row.barWidth + 2 + row.percentText.length
+
+for (const columns of [110, 80, 60]) {
+  test(`${columns} 桁のペインでも、バー行は金額を削らず桁数に収まる`, () => {
+    // Act
+    const groups = groupsAt(columns)
+
+    // Assert
+    expect(groups).toHaveLength(2)
+    for (const row of groups) {
+      expect(barRowCells(row)).toBeLessThanOrEqual(columns)
+      expect(row.filled).toBeLessThanOrEqual(row.barWidth)
+      expect(row.costText).toMatch(/^\$/)
+    }
+  })
+}
+
+test('バー幅は桁数に応じて縮み、広ければ最大幅、狭すぎても最小幅を残す', () => {
+  // Assert
+  expect(barWidthFor(undefined, '$3.0000')).toBe(BAR_WIDTH)
+  expect(barWidthFor(110, '$3.0000')).toBe(BAR_WIDTH)
+  expect(barWidthFor(80, '$3.0000')).toBe(BAR_WIDTH)
+  expect(barWidthFor(60, '$3.0000')).toBeLessThan(BAR_WIDTH)
+  expect(barWidthFor(60, '$3.0000')).toBeGreaterThan(MIN_BAR_WIDTH)
+  expect(barWidthFor(20, '$3.0000')).toBe(MIN_BAR_WIDTH)
+  // 金額の範囲表記（長い）ほどバーが縮む。
+  expect(barWidthFor(30, '$10.0000–$12.0000')).toBeLessThan(barWidthFor(30, '$3.0000'))
+})
+
+test('バー幅が変わっても、埋まるセルの割合は同じ（75% / 25%）', () => {
+  // Act
+  const narrow = groupsAt(40)
+  const wide = groupsAt(120)
+
+  // Assert
+  for (const rows of [narrow, wide]) {
+    const sonnet = rows.find(row => row.tier === 'sonnet')
+    expect(sonnet?.filled).toBe(Math.round(0.75 * (sonnet?.barWidth ?? 0)))
+  }
+  expect(narrow[0]?.barWidth).toBeLessThan(wide[0]?.barWidth ?? 0)
+  expect(groupsAt(60)[0]?.barWidth).toBeLessThan(groupsAt(80)[0]?.barWidth ?? 0)
+})
+
+test('色以外でも状態が分かる: 結論は記号（▲ / ✓）と文言、注意は「注意」の文言、割合は数字で出る', () => {
+  // Act
+  const rows = groupsAt(60)
+  const [conclusion] = buildPaneRows(review([turn({ toolCount: 5 })]), {}, undefined, 60)
+
+  // Assert
+  expect(conclusion).toMatchObject({ kind: 'conclusion' })
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toMatch(/^✓ 結論:/)
+  expect(Object.fromEntries(rows.map(row => [row.tier, row.percentText]))).toEqual({ sonnet: '75%', haiku: '25%' })
 })
 
 test('単価不明のグループはバーが空で、コストは「単価不明」', () => {
