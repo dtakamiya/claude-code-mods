@@ -33,9 +33,19 @@ const PANE_PROPS = {
  * 本体の hook の下で答える engine の既定値。`usd` は呼ばれた時点の累計コスト（テストが書き換える）。
  * undefined を返すと cost を載せない（起動時に取れない環境）。
  */
-function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean, withClock = true, opened: unknown[] = []) {
+function answerEngine(
+  on: On,
+  usd: () => number | undefined,
+  isPlaced: boolean,
+  withClock = true,
+  opened: unknown[] = [],
+  registered: unknown[] = [],
+) {
   on('session.start', () => ({ cwd: SESSION_CWD }))
-  on('command.register', () => ({ value: {} as never }))
+  on('command.register', (_$, e) => {
+    registered.push(e)
+    return { value: {} as never }
+  })
   on('session.usage', () => {
     const current = usd()
     return { value: { cost: current === undefined ? undefined : { usd: current } } as unknown as SessionUsage }
@@ -155,7 +165,9 @@ test('コピーに失敗したら理由を返し、記録がなければ結論�
   expect(copied).toEqual(['結論: まだ記録がありません\n記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'])
 })
 
-test('copy 以外の引数は従来どおりペインを開き、何もコピーしない', async ($, on) => {
+const commandWith = (args: string) => ({ ...(COMMAND_RUN as object), args }) as never
+
+test('不明な引数はペインを開かず、何もコピーせず、help への案内を返す', async ($, on) => {
   // Arrange
   const opened: unknown[] = []
   answerEngine(on, () => 0, true, true, opened)
@@ -164,12 +176,62 @@ test('copy 以外の引数は従来どおりペインを開き、何もコピー
   await $.session.start(SESSION_START)
 
   // Act
-  const ran = await $.command.run({ ...(COMMAND_RUN as object), args: 'save' } as never)
+  const typo = await $.command.run(commandWith('cpy'))
+  const other = await $.command.run(commandWith('save'))
 
   // Assert
-  expect(ran.text).toContain('ペインを開きました')
-  expect(opened).toHaveLength(1)
+  expect(typo.text).toBe('不明な引数です。/model-review help を参照してください。')
+  expect(other.text).toBe(typo.text)
+  expect(opened).toHaveLength(0)
   expect(copied).toHaveLength(0)
+})
+
+test('/model-review help は使える引数の一覧を返し、ペインを開かない', async ($, on) => {
+  // Arrange
+  const opened: unknown[] = []
+  answerEngine(on, () => 0, true, true, opened)
+  await $.session.start(SESSION_START)
+
+  // Act
+  const ran = await $.command.run(commandWith(' HELP '))
+
+  // Assert
+  expect(ran.text?.split('\n')[0]).toBe('/model-review の使い方')
+  expect(ran.text).toContain('copy')
+  expect(ran.text).toContain('text')
+  expect(opened).toHaveLength(0)
+})
+
+test('/model-review text はペインが置ける画面でもペインを開かず、テキストレポート（copy と同じ内容）を返す', async ($, on) => {
+  // Arrange: copy の内容は、ペインを置けないときの通常出力と同じ（上のテストで固定）。
+  const opened: unknown[] = []
+  answerEngine(on, () => 10, true, true, opened)
+  const copied: string[] = []
+  answerCopy(on, copied)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_COPY)
+
+  // Act
+  const ran = await $.command.run(commandWith('text'))
+
+  // Assert
+  expect(ran.text).toBe(copied[0])
+  expect(ran.text).toContain('対象: 1 ターン')
+  expect(opened).toHaveLength(0)
+})
+
+test('コマンドは引数のヒントつきで登録する', async ($, on) => {
+  // Arrange
+  const registered: unknown[] = []
+  answerEngine(on, () => 0, false, true, [], registered)
+
+  // Act
+  await $.session.start(SESSION_START)
+
+  // Assert
+  expect(registered).toHaveLength(1)
+  expect(registered[0]).toMatchObject({ name: 'model-review', argumentHint: '[copy|text|help]' })
 })
 
 test('基準点から現在までの実コストと、推定との差を表示する', async ($, on) => {
