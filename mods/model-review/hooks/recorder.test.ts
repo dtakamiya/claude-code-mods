@@ -597,6 +597,20 @@ test('plan mode の印はメインのターンだけに付き、記録に真偽�
   expect(sub.record.planMode).toBeUndefined()
 })
 
+test('turn.start より先に付いた plan mode の印は引き継ぎ、完了していない前のターンの印は引き継がない', () => {
+  // Arrange
+  const early = recordPlanMode({}, {})
+  const stale = recordPlanMode(beginTurn({}, { turnId: 'old' }), {})
+
+  // Act
+  const carried = finishTurn(beginTurn(early, { turnId: 't1' }), { turnId: 't1', durationMs: 1, reason: 'answer' })
+  const dropped = finishTurn(beginTurn(stale, { turnId: 't2' }), { turnId: 't2', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(carried.record.planMode).toBe(true)
+  expect(dropped.record.planMode).toBeUndefined()
+})
+
 test('plan mode でないターンの記録は planMode を持たない', () => {
   // Act
   const finished = finishTurn(beginTurn({}, { turnId: 't1' }), { turnId: 't1', durationMs: 1, reason: 'answer' })

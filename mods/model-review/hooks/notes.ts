@@ -1,6 +1,6 @@
 // ペイン・コマンド出力で共用する注記と合計。$ に触れない純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
-import { estimateRange, estimateTotal } from './analyze'
+import { RANK_OPUS, estimateRange, estimateTotal, modelRank } from './analyze'
 import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 import { UNKNOWN_MODEL } from './recorder'
@@ -89,9 +89,9 @@ function divergedNote(records: readonly TurnRecord[]): readonly string[] {
   ]
 }
 
-/** plan mode のターンは、モデル起因の過剰の判定から外している。外した件数だけを 1 行。 */
+/** plan mode のターンは、モデル起因の過剰の判定から外している。対象になりうる Opus 系のターンの件数だけを 1 行（直近の記録のみ）。 */
 function planModeNote(records: readonly TurnRecord[]): readonly string[] {
-  const count = records.filter(record => record.planMode === true).length
+  const count = records.filter(record => record.planMode === true && modelRank(record.model) === RANK_OPUS).length
   if (count === 0) return []
   return [`plan mode のターン ${count} 件は、モデル起因の過剰の判定に入れていません（計画のための上位モデルとして扱う。effort 起因の判定は残します）`]
 }

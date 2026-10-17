@@ -144,8 +144,11 @@ export function beginTurn(
   nowMs?: number,
   sessionModel?: string | null,
 ): Drafts {
+  // turn.start より先に plan mode の印だけが付いた下書き（未開始）の印は引き継ぐ。完了していない前のターンの印は引き継がない。
+  const prev = drafts[loopKey(turn.agentId)]
   const started = {
     ...emptyDraft(turn.turnId, turn.agentId ?? null),
+    planMode: turn.agentId === undefined && prev !== undefined && !prev.started && prev.planMode,
     lastActivityMs: nowMs ?? null,
     // `opus` などのエイリアス・opusplan は応答のモデル ID と一致しないので、完全な ID（claude-…）のときだけ比べる。
     sessionModel: typeof sessionModel === 'string' && sessionModel.startsWith('claude-') ? sessionModel : null,
@@ -244,10 +247,10 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
 }
 
 /** plan mode のリマインダーを見たメインのターンに印を付ける。サブエージェントは対象外。 */
-export function recordPlanMode(drafts: Drafts, loop: { readonly agentId?: string }, nowMs?: number): Drafts {
+export function recordPlanMode(drafts: Drafts, loop: { readonly agentId?: string }): Drafts {
   if (loop.agentId !== undefined) return drafts
   const prev = draftOf(drafts, undefined, '')
-  return withDraft(drafts, undefined, { ...prev, planMode: true, lastActivityMs: nowMs ?? prev.lastActivityMs })
+  return withDraft(drafts, undefined, { ...prev, planMode: true })
 }
 
 export function recordTool(drafts: Drafts, call: ToolInput, nowMs?: number): Drafts {

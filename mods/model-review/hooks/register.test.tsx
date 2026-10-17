@@ -791,7 +791,7 @@ test('prompt.attachment の plan_mode を観察しても結果は変えず、メ
 
   // Act
   const attached = await $.prompt.attachment({ type: 'plan_mode', text: 'PLAN-REMINDER', origin: { kind: 'engine' }, detail: { reminder: 'full', planFilePath: '/secret/PATH', hasPlan: false } } as never)
-  await $.turn.complete({ answer: '', durationMs: 1_500, isAborted: false, turnId: 'turn-1', reason: 'answer', usage: SONNET_USAGE } as never)
+  await $.turn.complete({ answer: '', durationMs: 1_500, isAborted: false, turnId: 'turn-1', reason: 'answer', usage: { ...SONNET_USAGE, model: 'claude-opus-5-5' } } as never)
   const ran = await $.command.run(COMMAND_RUN)
 
   // Assert

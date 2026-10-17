@@ -172,7 +172,7 @@ test('単価不明のモデル名は、3 割未満でも注記に出す（件数
 
 test('plan mode のターンがあれば、判定から外した件数を注記する', () => {
   // Arrange
-  const planned: ReviewState = { ...review, turns: [{ ...turn, planMode: true }, turn] }
+  const planned: ReviewState = { ...review, turns: [{ ...turn, model: 'claude-opus-5-5', planMode: true }, { ...turn, planMode: true }, turn] }
 
   // Act
   const notes = buildNotes(planned)

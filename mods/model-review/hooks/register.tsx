@@ -182,8 +182,7 @@ export const register: Register = (on, options) => {
   // plan mode 中の各リクエストに付くリマインダーを観察するだけ。結果は書き換えず、本文・計画ファイルのパスは読まない。
   on('prompt.attachment', { type: 'plan_mode' }, async ($, e, next) => {
     await recordSafely(async () => {
-      const nowMs = await $.clock.now()
-      drafts = recordPlanMode(drafts, { agentId: e.agentId }, nowMs)
+      drafts = recordPlanMode(drafts, { agentId: e.agentId })
     }, logDebug($))
     return next(e)
   }).catch(($, e, next) => next(e))
