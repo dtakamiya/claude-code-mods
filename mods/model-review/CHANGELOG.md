@@ -2,6 +2,9 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.24.0
+- サブエージェントを種類別（Explore / general-purpose / 独自エージェントなど）に集計する（#72）。`agent.spawn` の結果で `agentId → subagentType` を覚え（`agenttype.ts` の純粋な reducer）、reload で表が消えた後は `$.agent.list()` の `type` で補う。`TurnRecord.agentType`（任意項目、種類の名前だけ。説明・プロンプトは記録しない）に残し、ループ別の節のサブエージェントの下に種類別の行（ターン数・モデル・ヒット率・推定コスト）を出す（種類が 2 つ以上のとき）。「サブ」の指摘には、コストが最も大きい種類を名前で添える。種類が分からないターンは「種類不明」にまとめ、推測しない。読取専用。見た目は terminal / desktop とも目視未確認。
+
 ## 0.23.1
 - effort が数値で届いたときの扱いを直した（#85）。`recorder.ts` は数値を `String()` で文字列にせず `n:32000` の形で残し（`effort.ts`）、文字列の effort とは別のグループにする。数値は high などに読み替えない（公式に対応表がなく、数値が届く条件も未検証のため）。表（モデル × effort・切替・過剰の行）では「数値 32000」と書き、数値のターンがあれば指摘の節に「effort が数値のターン N 件は、effort による過剰・不足の判定に入れていません」の 1 行を出す。見た目は terminal / desktop とも目視未確認。
 

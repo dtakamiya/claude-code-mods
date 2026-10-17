@@ -9,6 +9,7 @@ import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 import { readMutedConcerns } from './mute'
+import { recordSpawn, resolveAgentType, type AgentTypes } from './agenttype'
 
 const PANE_ID = 'model-review'
 const PANE_TITLE = 'モデル振り返り'
@@ -65,6 +66,8 @@ export const register: Register = (on, options) => {
   let drafts: Drafts = {}
   // /compact（自動を含む）が通った後、まだ完了していないメインのターンに印を付けるための旗。
   let compactPending = false
+  // agentId → サブエージェントの種類。reload で消えるので、消えた後は $.agent.list() で補う。
+  let agentTypes: AgentTypes = {}
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -126,6 +129,15 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // 種類の名前だけを覚える（prompt・description は読まない）。記録の失敗で spawn は止めない。
+  on('agent.spawn', async ($, e, next) => {
+    const result = await next(e)
+    await recordSafely(() => {
+      agentTypes = recordSpawn(agentTypes, result.agentId, e.subagentType)
+    }, logDebug($))
+    return result
+  }).catch(($, e, next) => next(e))
+
   // 実行中のターンの途中経過は $.state に載らないので、変わるたびにペインを描き直させる（毎秒 10 回まで）。
   on('turn.start', async ($, e, next) => {
     await recordSafely(async () => {
@@ -171,6 +183,11 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     await recordSafely(async () => {
+      // 種類は drafts を読む前に引く。spawn で覚えていなければ $.agent.list() で補う（reload 後）。
+      const agentType =
+        e.agentId === undefined
+          ? null
+          : (resolveAgentType(agentTypes, e.agentId) ?? resolveAgentType(agentTypes, e.agentId, await $.agent.list().catch(() => [])))
       const finished = finishTurn(drafts, {
         turnId: e.turnId,
         agentId: e.agentId,
@@ -178,6 +195,7 @@ export const register: Register = (on, options) => {
         durationMs: e.durationMs,
         reason: e.reason,
         afterCompact: e.agentId === undefined && compactPending,
+        agentType,
       })
       if (e.agentId === undefined) compactPending = false
       drafts = finished.drafts

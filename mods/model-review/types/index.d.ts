@@ -55,6 +55,8 @@ export type TurnRecord = {
   readonly mainSeq?: number
   /** 完了した時刻（`$.clock.now()` の ms）。0.22.0 で追加。古い記録には無い。 */
   readonly completedAtMs?: number
+  /** サブエージェントの種類（agent.spawn の subagentType の名前だけ。説明・プロンプトは持たない）。0.24.0 で追加。メインのターン・種類が分からないターン・古い記録には無い。 */
+  readonly agentType?: string
 }
 
 /** 畳み込んだ古いターンの、モデル × effort 別の集計。ModelGroup（hooks/analyze.ts）と同じ形。 */

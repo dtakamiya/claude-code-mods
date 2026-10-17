@@ -2,7 +2,7 @@
 // サブエージェントは親のキャッシュを読まず、TTL も 5 分が既定なので、メインと分けて見る。
 import type { TokenCounts, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
-import { estimateTotal } from './analyze'
+import { estimateTotal, type AgentTypeSummary } from './analyze'
 import { formatInt, formatUsd } from './format'
 
 export type LoopKind = 'main' | 'subagent'
@@ -72,4 +72,10 @@ export function subagentHitRateLow(summaries: readonly LoopSummary[]): boolean {
   const sub = summaries.find(summary => summary.kind === 'subagent')?.hitRate ?? null
   if (main === null || sub === null) return false
   return main - sub >= SUBAGENT_HIT_GAP
+}
+
+export function describeAgentType(summary: AgentTypeSummary): string {
+  const hit = summary.hitRate === null ? 'ヒット -' : `ヒット ${Math.round(summary.hitRate * 100)}%`
+  const unpriced = summary.unpricedTurns > 0 ? `（単価不明 ${summary.unpricedTurns} ターンを除く）` : ''
+  return [`ターン ${summary.turns}`, summary.models.join(' / '), hit, `推定 ${formatUsd(summary.costUsd)}${unpriced}`].join(' · ')
 }

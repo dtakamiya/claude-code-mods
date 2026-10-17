@@ -1,5 +1,6 @@
 // 集計と妥当性の判定。$ に触れない純粋関数。判定は参考（LLM は使わず、閾値は下の名前付き定数）。
 import type { TokenCounts, TurnRecord } from '../types'
+import { UNKNOWN_AGENT_TYPE } from './agenttype'
 import { cacheHitRate } from './cache'
 import { effortText } from './effort'
 import { formatDuration, formatInt, formatUsd } from './format'
@@ -396,6 +397,36 @@ function delegationConcern(records: readonly TurnRecord[]): Concern | null {
   ])
 }
 
+export type AgentTypeSummary = {
+  /** 種類の名前。分からないターンは UNKNOWN_AGENT_TYPE にまとめる。 */
+  readonly type: string
+  readonly turns: number
+  /** 出てきたモデル（初出の順）。 */
+  readonly models: readonly string[]
+  readonly hitRate: number | null
+  readonly costUsd: number
+  readonly unpricedTurns: number
+}
+
+/** サブエージェントのターンを種類別に集計する。推定コストの大きい順。種類のないターンは「種類不明」。 */
+export function summarizeAgentTypes(records: readonly TurnRecord[]): readonly AgentTypeSummary[] {
+  const groups = new Map<string, TurnRecord[]>()
+  for (const record of records) {
+    if (record.agentId === null) continue
+    const type = record.agentType ?? UNKNOWN_AGENT_TYPE
+    const group = groups.get(type)
+    if (group === undefined) groups.set(type, [record])
+    else group.push(record)
+  }
+  return [...groups.entries()]
+    .map(([type, group]): AgentTypeSummary => {
+      const tokens = group.reduce((sum, record) => addTokens(sum, record.tokens), ZERO_TOKENS)
+      const { costUsd, unpricedTurns } = estimateTotal(group)
+      return { type, turns: group.length, models: [...new Set(group.map(record => record.model))], hitRate: cacheHitRate(tokens), costUsd, unpricedTurns }
+    })
+    .sort((a, b) => b.costUsd - a.costUsd)
+}
+
 /** サブエージェントがコストの大半を占め、親のキャッシュを読めていないとき。 */
 function subagentConcern(records: readonly TurnRecord[]): Concern | null {
   // 単価不明のターンは比率の母数に入らないので、件数にも数えない（count が outOf を超えないように）。
@@ -406,11 +437,16 @@ function subagentConcern(records: readonly TurnRecord[]): Concern | null {
   if (total <= 0 || subCost / total < SUBAGENT_COST_SHARE) return null
   const hit = cacheHitRate(subs.reduce((sum, record) => addTokens(sum, record.tokens), ZERO_TOKENS))
   const hitText = hit === null ? '' : ` · キャッシュヒット ${Math.round(hit * 100)}%`
+  const top = summarizeAgentTypes(subs)[0]
+  const topText =
+    top === undefined || top.type === UNKNOWN_AGENT_TYPE || top.costUsd <= 0
+      ? []
+      : [`コストが最も大きい種類: ${top.type} ${top.turns} ターンで推定の ${Math.round((top.costUsd / total) * 100)}%（${top.models.join(' / ')}）`]
   return withLast(
     concernOf(
       'subagent',
       subs.length,
-      [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`],
+      [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`, ...topText],
       subCost,
     ),
     records,
