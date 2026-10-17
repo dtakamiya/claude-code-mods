@@ -4,8 +4,11 @@
 # それを mod の .claude-plugin/types/ に敷き、tsc で型検査する。敷いたものは gitignore 済み。
 set -euo pipefail
 mod="${1:?mod 名を指定}"
-dts="${2:?claude-code.d.ts のパスを指定}"
+dts="$(realpath "${2:?claude-code.d.ts のパスを指定}")"
+cd "$(dirname "$0")/.."
 dir="mods/$mod"
+command -v tsc >/dev/null || { echo "tsc が見つからない（npm i -g typescript）" >&2; exit 2; }
+[ -f "$dts" ] || { echo "型ファイルが無い: $dts" >&2; exit 2; }
 [ -d "$dir" ] || { echo "no such mod: $mod" >&2; exit 2; }
 types="$dir/.claude-plugin/types"
 mkdir -p "$types/claude-code"
