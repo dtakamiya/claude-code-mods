@@ -31,20 +31,21 @@ function ttlNote(review: ReviewState): readonly string[] {
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) return []
   const sinceBaseline = turnsSinceBaseline(review)
+  const folded = review.archived?.sinceBaseline
   const suspected = ttlUnderestimateSuspected({
     actualUsd: current - baseline,
-    estimateUsd: estimateRange(sinceBaseline).highUsd,
-    cacheWriteTokens: cacheWriteTotal(sinceBaseline),
+    estimateUsd: estimateRange(sinceBaseline).highUsd + (folded?.highUsd ?? 0),
+    cacheWriteTokens: cacheWriteTotal(sinceBaseline) + (folded?.cacheWrite ?? 0),
   })
   if (!suspected) return []
   return ['実コストが、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます']
 }
 
-function staleNote(records: readonly TurnRecord[], unpricedTurns: number): readonly string[] {
-  if (unpricedTurns / records.length < UNPRICED_STALE_RATIO) return []
+function staleNote(records: readonly TurnRecord[], unpricedTurns: number, totalTurns: number): readonly string[] {
+  if (unpricedTurns / totalTurns < UNPRICED_STALE_RATIO) return []
   const models = [...new Set(records.filter(record => record.costUsd === null).map(record => record.model))]
   return [
-    `単価不明のターンが ${unpricedTurns} / ${records.length} 件あります（モデル: ${models.join('、')}）。単価表が古い可能性があります（gateway・独自のモデル名のこともあります）。pricing.ts に単価を足すと推定に含まれます（取得日: ${PRICE_TABLE_FETCHED_AT}）`,
+    `単価不明のターンが ${unpricedTurns} / ${totalTurns} 件あります（モデル: ${models.join('、')}）。単価表が古い可能性があります（gateway・独自のモデル名のこともあります）。pricing.ts に単価を足すと推定に含まれます（取得日: ${PRICE_TABLE_FETCHED_AT}）`,
   ]
 }
 
@@ -73,11 +74,12 @@ function switchNote(records: readonly TurnRecord[]): readonly string[] {
 export function buildNotes(review: ReviewState, nowMs?: number): readonly string[] {
   const records = review.turns
   if (records.length === 0) return []
-  const { unpricedTurns } = estimateTotal(records)
+  const unpricedTurns = estimateTotal(records).unpricedTurns + (review.archived?.unpricedTurns ?? 0)
+  const totalTurns = records.length + (review.archived?.turns ?? 0)
   return [
     ...rebuildStreakNote(records),
     ...ttlNote(review),
-    ...staleNote(records, unpricedTurns),
+    ...staleNote(records, unpricedTurns, totalTurns),
     ...priceAgeNote(nowMs),
     ...switchNote(records),
   ]

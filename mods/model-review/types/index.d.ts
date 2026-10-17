@@ -43,8 +43,36 @@ export type TurnRecord = {
   readonly partial?: boolean
 }
 
+/** 畳み込んだ古いターンの、モデル × effort 別の集計。ModelGroup（hooks/analyze.ts）と同じ形。 */
+export type ArchivedGroup = {
+  readonly model: string
+  readonly effort: string | null
+  readonly turns: number
+  readonly unpricedTurns: number
+  readonly tokens: TokenCounts
+  /** 単価不明のターンを含むとき null。 */
+  readonly costUsd: number | null
+}
+
+/** 上限を超えて turns から外した古いターンの集計。0.14.4 で追加。指摘・切替・ループ別などは直近の turns だけで判定する。 */
+export type ArchivedTurns = {
+  readonly turns: number
+  readonly subagents: number
+  readonly advisorCalls: number
+  readonly groups: readonly ArchivedGroup[]
+  /** 単価のあるターンの推定コストの合計（下限。単価不明は含まない）。 */
+  readonly pricedUsd: number
+  readonly unpricedTurns: number
+  /** 推定の幅（5 分単価 〜 1 時間単価）。 */
+  readonly highUsd: number
+  /** 畳んだターンのうち、基準点より後に完了したぶん。実コストとの比較（TTL の注記）で使う。 */
+  readonly sinceBaseline: { readonly lowUsd: number; readonly highUsd: number; readonly cacheWrite: number }
+}
+
 export type ReviewState = {
   readonly turns: readonly TurnRecord[]
+  /** 上限を超えて畳んだ古いターンの集計。畳んでいなければ無い。 */
+  readonly archived?: ArchivedTurns
   /** `$.session.usage().cost.usd` の基準点（Mod 読み込み時）と直近値。取れない環境では null。 */
   readonly sessionCostUsd: {
     readonly baseline: number | null

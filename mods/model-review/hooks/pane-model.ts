@@ -1,6 +1,6 @@
 // ペインの行モデルを組み立てる純粋関数。`$` にも JSX にも依存しない。描画は pane.tsx。
 // 集計と文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
-import type { ReviewState } from '../types'
+import type { ArchivedGroup, ReviewState } from '../types'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
@@ -11,8 +11,8 @@ import {
   topCostTurns,
   type Concern,
   type ConcernKind,
-  type ModelGroup,
 } from './analyze'
+import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCLUSION_NONE_TEXT, CONCLUSION_NO_RECORDS_TEXT, CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, TERM_TEXT, type TermKey } from './labels'
@@ -89,7 +89,7 @@ function percentText(share: number | null): string {
   return share < MIN_VISIBLE_SHARE ? '<1%' : `${Math.round(share * 100)}%`
 }
 
-function groupRow(group: ModelGroup, totalUsd: number): PaneRow {
+function groupRow(group: ArchivedGroup, totalUsd: number): PaneRow {
   const facts = groupFacts(group)
   const share = costShare(group.costUsd, totalUsd)
   return {
@@ -168,9 +168,14 @@ function whatIfRows(records: ReviewState['turns']): PaneRow[] {
   ]
 }
 
-function advisorRows(records: ReviewState['turns']): PaneRow[] {
-  const text = advisorCallText(records)
+function advisorRows(records: ReviewState['turns'], archived: ReviewState['archived']): PaneRow[] {
+  const text = advisorCallText(records, archived)
   return text === null ? [] : [{ kind: 'kv', label: 'advisor', value: text, tone: 'plain' }]
+}
+
+function archiveNoteRows(review: ReviewState): PaneRow[] {
+  const text = archiveNote(review.archived)
+  return text === null ? [] : [{ kind: 'note', text }]
 }
 
 const NO_RECORDS_CONCLUSION: PaneRow = { kind: 'conclusion', text: `結論: ${CONCLUSION_NO_RECORDS_TEXT}`, tone: 'plain' }
@@ -200,7 +205,7 @@ function conclusionRow(concerns: readonly Concern[], alertCount: number): PaneRo
 }
 
 /** 画面に出る行と同じ条件で、説明すべき用語を選ぶ。 */
-function shownTerms(review: ReviewState, groups: readonly ModelGroup[], concerns: readonly Concern[]): TermKey[] {
+function shownTerms(review: ReviewState, groups: readonly ArchivedGroup[], concerns: readonly Concern[]): TermKey[] {
   const hasActual = actualCostUsd(review) !== null
   const candidates: ReadonlyArray<readonly [TermKey, boolean]> = [
     ['hitRate', groups.some(group => hitRateText(group.tokens) !== null)],
@@ -252,17 +257,17 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     const body: PaneRow[] = live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
     return [NO_RECORDS_CONCLUSION, ...body]
   }
-  const estimate = estimateFacts(records)
+  const estimate = estimateFacts(records, review.archived)
   const concerns = findConcerns(records)
-  const groups = groupByModelEffort(records)
+  const groups = mergeGroups(review.archived, groupByModelEffort(records))
   const notes = buildNotes(review, nowMs)
   return [
     conclusionRow(concerns, notes.length),
     { kind: 'blank' },
     {
       kind: 'title',
-      turns: records.length,
-      subagents: subagentCount(records),
+      turns: records.length + (review.archived?.turns ?? 0),
+      subagents: subagentCount(records, review.archived),
       costText: estimate.allUnpriced ? formatUsd(null) : formatUsdRange(estimate.lowUsd, estimate.highUsd),
     },
     { kind: 'blank' },
@@ -278,10 +283,11 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     ...whatIfRows(records),
     { kind: 'heading', text: HEADING.cost },
     ...costRows(review, estimate),
-    ...advisorRows(records),
+    ...advisorRows(records, review.archived),
     ...glossaryRows(shownTerms(review, groups, concerns)),
     { kind: 'blank' },
     ...notes.map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
+    ...archiveNoteRows(review),
     { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },
     { kind: 'note', text: REFRESH_NOTE },

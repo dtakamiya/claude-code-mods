@@ -1,6 +1,7 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 // 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
-import type { ReviewState, TurnRecord } from '../types'
+import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
+import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
@@ -14,7 +15,6 @@ import {
   groupByModelEffort,
   topCostTurns,
   type Concern,
-  type ModelGroup,
 } from './analyze'
 import {
   NO_TURNS_LINE,
@@ -35,7 +35,7 @@ import {
 export { formatInt, formatUsd } from './format'
 export { NO_TURNS_LINE } from './summary'
 
-function groupLine(group: ModelGroup): string {
+function groupLine(group: ArchivedGroup): string {
   const facts = groupFacts(group)
   return [
     `${group.model}  effort ${facts.effort}`,
@@ -50,9 +50,9 @@ function groupLine(group: ModelGroup): string {
 }
 
 function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
-  const estimate = estimateFacts(records)
+  const estimate = estimateFacts(records, review.archived)
   const estimateLine = estimate.allUnpriced
-    ? `合計推定コスト: ${allUnpricedText(records.length)}`
+    ? `合計推定コスト: ${allUnpricedText(records.length + (review.archived?.turns ?? 0))}`
     : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
   const actual = actualCostUsd(review)
   if (actual === null) {
@@ -85,9 +85,14 @@ function topTurnSection(records: readonly TurnRecord[]): string[] {
   return lines.length === 0 ? [] : [`■ ${HEADING.topTurns}`, ...lines, '']
 }
 
-function advisorLines(records: readonly TurnRecord[]): string[] {
-  const text = advisorCallText(records)
+function advisorLines(records: readonly TurnRecord[], archived: ReviewState['archived']): string[] {
+  const text = advisorCallText(records, archived)
   return text === null ? [] : [`advisor ${text}`]
+}
+
+function archiveNoteLines(review: ReviewState): string[] {
+  const text = archiveNote(review.archived)
+  return text === null ? [] : [text]
 }
 
 function loopLines(records: readonly TurnRecord[]): string[] {
@@ -117,21 +122,22 @@ export function buildReportLines(review: ReviewState, nowMs?: number): string[] 
   const records = review.turns
   if (records.length === 0) return [NO_TURNS_LINE]
   return [
-    `対象: ${records.length} ターン（サブエージェント ${subagentCount(records)} 件）。Mod 読み込み前のターンは含みません。`,
+    `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,
     ...concernLines(findConcerns(records)),
     '',
     `■ ${HEADING.groups}`,
-    ...groupByModelEffort(records).map(groupLine),
+    ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),
     '',
     ...topTurnSection(records),
     ...loopLines(records),
     ...whatIfLines(records),
     `■ ${HEADING.cost}`,
     ...costLines(review, records),
-    ...advisorLines(records),
+    ...advisorLines(records, review.archived),
     ...buildNotes(review, nowMs),
+    ...archiveNoteLines(review),
     ALWAYS_NOTE,
     '',
     ...CRITERIA_LINES,
