@@ -18,7 +18,7 @@ export const SWITCH_EXAMPLE_LIMIT = 3
 type SwitchKind = 'model' | 'effort'
 
 type SwitchEvent = {
-  readonly turnId: string
+  readonly record: TurnRecord
   readonly text: string
   readonly costUsd: number | null
 }
@@ -28,6 +28,8 @@ export type SwitchSummary = {
   /** 再構築コストの推定合計。単価がわかる切替がなければ null。 */
   readonly costUsd: number | null
   readonly examples: readonly string[]
+  /** 最も新しい切替の直後のターン。切替がなければ null。 */
+  readonly latest: TurnRecord | null
 }
 
 /** 同じモデルで effort を変えてもキャッシュが維持されるか。 */
@@ -65,22 +67,22 @@ function eventOf(prev: TurnRecord, current: TurnRecord): SwitchEvent | null {
       ? null
       : cacheRebuildCostUsd(current.model, current.firstStepCacheWrite, current.firstStepPromptTokens)
   const costText = costUsd === null ? '' : ` · 再構築の推定 ${formatUsd(costUsd)}`
-  return { turnId: current.turnId, text: `${describe(kind, prev, current)}${costText}`, costUsd }
+  return { record: current, text: `${describe(kind, prev, current)}${costText}`, costUsd }
 }
 
 /** メインループの切替を数える。サブエージェントのターンは対象外。 */
 export function findSwitches(records: readonly TurnRecord[]): SwitchSummary {
   const main = records.filter(record => record.agentId === null)
-  const events = main
-    .flatMap((record, index) => {
-      const prev = main[index - 1]
-      return prev === undefined ? [] : (eventOf(prev, record) ?? [])
-    })
-    .sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1))
+  const chronological = main.flatMap((record, index) => {
+    const prev = main[index - 1]
+    return prev === undefined ? [] : (eventOf(prev, record) ?? [])
+  })
+  const events = [...chronological].sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1))
   const known = events.flatMap(event => event.costUsd ?? [])
   return {
     count: events.length,
     costUsd: known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0),
     examples: events.slice(0, SWITCH_EXAMPLE_LIMIT).map(event => event.text),
+    latest: chronological[chronological.length - 1]?.record ?? null,
   }
 }

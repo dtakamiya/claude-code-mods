@@ -1,6 +1,6 @@
 // 結論の 1 行。ペイン（pane-model.ts）とテキストレポート（report.ts）が同じ関数から作る。
-import type { Concern, ConcernKind } from './analyze'
-import { CONCERN_TEXT, CONCLUSION_NONE_TEXT, CONCLUSION_NO_RECORDS_TEXT } from './labels'
+import { partitionByRecency, type Concern, type ConcernKind } from './analyze'
+import { CONCERN_TEXT, CONCLUSION_NONE_TEXT, CONCLUSION_NO_RECORDS_TEXT, PAST_CONCERNS_LABEL } from './labels'
 
 export type Tone = 'success' | 'warning' | 'error' | 'suggestion' | 'plain'
 export type Conclusion = { text: string; tone: Tone }
@@ -32,16 +32,26 @@ const alertSuffix = (alertCount: number): string => (alertCount === 0 ? '' : ` �
 
 export const NO_RECORDS_CONCLUSION: Conclusion = { text: `結論: ${CONCLUSION_NO_RECORDS_TEXT}`, tone: 'plain' }
 
-/** 結論の 1 行。件数のある種類だけ、ConcernKind の短い名前で並べる。色は最も重い種類に合わせる。 */
+/** 直近の窓より前にだけ該当した指摘があれば、その種類数を添える。 */
+const pastText = (pastKinds: number): string => (pastKinds === 0 ? '' : `${PAST_CONCERNS_LABEL} ${pastKinds} 種`)
+
+/**
+ * 結論の 1 行。▲ と件数・色は、直近の窓（isRecentConcern）に該当がある種類だけで決める。
+ * 窓より前にだけ該当した種類は「過去の指摘 N 種」として数だけ添え、それだけなら ✓ にする。
+ */
 export function conclusionOf(concerns: readonly Concern[], alertCount: number): Conclusion {
-  const present = concerns.filter(concern => concern.count > 0)
-  const total = present.reduce((sum, concern) => sum + concern.count, 0)
+  const split = partitionByRecency(concerns.filter(concern => concern.count > 0))
+  const recent = split.recent
+  const past = pastText(split.past.length)
+  const total = recent.reduce((sum, concern) => sum + concern.count, 0)
   if (total === 0) {
-    return { text: `${CONCLUSION_MARK_NONE} 結論: ${CONCLUSION_NONE_TEXT}${alertSuffix(alertCount)}`, tone: 'success' }
+    const pastPart = past === '' ? '' : `（${past}）`
+    return { text: `${CONCLUSION_MARK_NONE} 結論: ${CONCLUSION_NONE_TEXT}${pastPart}${alertSuffix(alertCount)}`, tone: 'success' }
   }
-  const parts = present.map(concern => `${CONCERN_TEXT[concern.kind].label} ${concern.count}`).join(' / ')
+  const parts = recent.map(concern => `${CONCERN_TEXT[concern.kind].label} ${concern.count}`).join(' / ')
+  const pastPart = past === '' ? '' : ` · ${past}`
   return {
-    text: `${CONCLUSION_MARK_CONCERN} 結論: 見直し候補 ${total} 件（${parts}）${alertSuffix(alertCount)}`,
-    tone: worstConcernTone(present),
+    text: `${CONCLUSION_MARK_CONCERN} 結論: 見直し候補 ${total} 件（${parts}）${pastPart}${alertSuffix(alertCount)}`,
+    tone: worstConcernTone(recent),
   }
 }

@@ -41,6 +41,8 @@ export const UNDERSPEC_ERROR_STREAK = 2
 /** 不足は、該当（重いターン・エラーの連続エピソード）がこの数以上あるときだけ指摘する。1 件の偶発を根拠にしない（仮置き）。 */
 export const MIN_UNDERSPEC_TURNS = 2
 export const TOP_COST_TURN_LIMIT = 3
+/** 結論の ▲ は、メインの直近この数のターンの中に該当がある指摘だけで決める。窓より前だけの指摘は「過去の指摘」として別に並べる。対処が効いたかを画面で分かるようにするため（仮置き）。 */
+export const RECENT_CONCERN_MAIN_TURNS = 20
 
 export type ModelGroup = {
   readonly model: string
@@ -88,6 +90,8 @@ export type Concern = {
   readonly overspec?: OverspecFacts
   /** 不足のときだけ付く。 */
   readonly underspec?: UnderspecFacts
+  /** 最後に該当したターンの後に完了したメインのターン数（0 = 最新のメインのターンで該当）。委譲は直近の窓だけで判定するので付けない。 */
+  readonly lastTurnsAgo?: number
 }
 
 const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -316,6 +320,33 @@ function lightShareByGroup(records: readonly TurnRecord[]): ReadonlyMap<string, 
   return new Map(Object.entries(counts).map(([key, { light, all }]) => [key, light / all]))
 }
 
+/**
+ * record の後に完了したメインのターン数。記録は完了順なので、サブエージェントのターンは親のメインのターンより前に並ぶ。
+ * そのためサブエージェントは、その後で最初に完了したメインのターン（親とみなす）を数えない。records にない record は 0 とする。
+ */
+export function mainTurnsAfter(records: readonly TurnRecord[], record: TurnRecord): number {
+  const index = records.lastIndexOf(record)
+  if (index < 0) return 0
+  const later = records.slice(index + 1).filter(next => next.agentId === null).length
+  return record.agentId === null ? later : Math.max(0, later - 1)
+}
+
+/** 指摘に「最後に該当したのは何ターン前か」を付ける。 */
+const withLast = (concern: Concern | null, records: readonly TurnRecord[], last: TurnRecord | undefined | null): Concern | null =>
+  concern === null || last === undefined || last === null ? concern : { ...concern, lastTurnsAgo: mainTurnsAfter(records, last) }
+
+/** 直近の窓（メインの RECENT_CONCERN_MAIN_TURNS ターン）の中に該当がある指摘か。何ターン前か分からない種類（委譲）は直近とする。 */
+export const isRecentConcern = (concern: Concern): boolean =>
+  concern.lastTurnsAgo === undefined || concern.lastTurnsAgo < RECENT_CONCERN_MAIN_TURNS
+
+/** 直近と過去に分ける（順序は保つ）。結論行・ペイン・テキストレポートが同じ分け方を使う。 */
+export function partitionByRecency(concerns: readonly Concern[]): { readonly recent: readonly Concern[]; readonly past: readonly Concern[] } {
+  return {
+    recent: concerns.filter(isRecentConcern),
+    past: concerns.filter(concern => !isRecentConcern(concern)),
+  }
+}
+
 function overspecConcern(records: readonly TurnRecord[]): Concern | null {
   const shares = lightShareByGroup(records)
   const overspec = records.filter(
@@ -331,7 +362,7 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
     sumKnown(modelTurns.map(sonnetSavingsUsd)),
   )
   if (concern === null) return null
-  return {
+  const withFacts: Concern = {
     ...concern,
     overspec: {
       mainModelTurns: mainModelTurns.length,
@@ -343,6 +374,7 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
       subagentEffort: overspec.some(record => isEffortOverspec(record) && record.agentId !== null),
     },
   }
+  return withLast(withFacts, records, overspec[overspec.length - 1])
 }
 
 /** 直近 DELEGATION_WINDOW_TURNS ターンの窓だけで、メインの非 Haiku ツール回数とサブエージェントの有無を見る。 */
@@ -372,11 +404,15 @@ function subagentConcern(records: readonly TurnRecord[]): Concern | null {
   if (total <= 0 || subCost / total < SUBAGENT_COST_SHARE) return null
   const hit = cacheHitRate(subs.reduce((sum, record) => addTokens(sum, record.tokens), ZERO_TOKENS))
   const hitText = hit === null ? '' : ` · キャッシュヒット ${Math.round(hit * 100)}%`
-  return concernOf(
-    'subagent',
-    subs.length,
-    [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`],
-    subCost,
+  return withLast(
+    concernOf(
+      'subagent',
+      subs.length,
+      [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`],
+      subCost,
+    ),
+    records,
+    subs[subs.length - 1],
   )
 }
 
@@ -386,7 +422,7 @@ function underspecConcern(records: readonly TurnRecord[]): Concern | null {
   if (underspec.length < MIN_UNDERSPEC_TURNS) return null
   const concern = concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine))
   if (concern === null) return null
-  return {
+  const withFacts: Concern = {
     ...concern,
     underspec: {
       haikuLowMain: underspec.some(record => isHaikuUnderspecTurn(record) && record.agentId === null),
@@ -394,11 +430,12 @@ function underspecConcern(records: readonly TurnRecord[]): Concern | null {
       sonnetLow: underspec.some(isSonnetLowFailure),
     },
   }
+  return withLast(withFacts, records, underspec[underspec.length - 1])
 }
 
 function switchConcern(records: readonly TurnRecord[]): Concern | null {
   const summary = findSwitches(records)
-  return concernOf('switch', summary.count, summary.examples, summary.costUsd)
+  return withLast(concernOf('switch', summary.count, summary.examples, summary.costUsd), records, summary.latest)
 }
 
 /** 「N 件」を割合で読む種類。 */

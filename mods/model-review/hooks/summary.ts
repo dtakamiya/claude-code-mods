@@ -33,9 +33,15 @@ const concernAmountSuffix = (concern: Concern): string => {
   return concern.amountUsd === null || label === null ? '' : ` · ${label} ${formatUsd(concern.amountUsd)}`
 }
 
-/** 指摘の 1 行分の文面（種類の説明 · 件数 · 金額）。種類の名前（【過剰】など）は含まない。 */
+/** 最後に該当したのがメインの何ターン前か（` · 最後は 3 ターン前`）。分からない種類は空文字。 */
+export const lastSeenSuffix = (concern: Concern): string => {
+  if (concern.lastTurnsAgo === undefined) return ''
+  return concern.lastTurnsAgo === 0 ? ' · 最後は最新のターン' : ` · 最後は ${concern.lastTurnsAgo} ターン前`
+}
+
+/** 指摘の 1 行分の文面（種類の説明 · 件数 · 金額 · 最後に該当したターン）。種類の名前（【過剰】など）は含まない。 */
 export const concernDetailText = (concern: Concern): string =>
-  `${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${concernAmountSuffix(concern)}`
+  `${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${concernAmountSuffix(concern)}${lastSeenSuffix(concern)}`
 
 /** キャッシュ読 ÷ 全プロンプト。分母が 0 なら null。 */
 export const hitRateText = (tokens: ModelGroup['tokens']): string | null => {

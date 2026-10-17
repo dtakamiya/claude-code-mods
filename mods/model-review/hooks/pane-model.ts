@@ -7,6 +7,7 @@ import {
   LIGHT_MAX_TOOL_CALLS,
   findConcerns,
   groupByModelEffort,
+  partitionByRecency,
   modelRank,
   topCostTurns,
   type Concern,
@@ -14,7 +15,7 @@ import {
 import { archiveNote, mergeGroups } from './archive'
 import { cellWidth, formatUsd, formatUsdRange } from './format'
 import type { Drafts, LoopDraft } from './recorder'
-import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, TERM_TEXT, type TermKey } from './labels'
+import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
 import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
@@ -132,16 +133,32 @@ function costRows(review: ReviewState, estimate: EstimateFacts): PaneRow[] {
   return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimateText} / 実 ${formatUsd(actual)}（読み込み後）/ 差 ${diffText}`, tone: 'plain' }]
 }
 
+/** 直近の指摘は種類の色と「次の一手」つき。過去の指摘は色なし（plain）で、次の一手を付けない。 */
+function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent: boolean): PaneRow[] {
+  const next = recent ? nextStepText(concern, records) : null
+  return [
+    {
+      kind: 'badge',
+      label: CONCERN_TEXT[concern.kind].label,
+      tone: recent ? CONCERN_TONE[concern.kind] : 'plain',
+      text: concernDetailText(concern),
+    },
+    ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
+    ...(next === null ? [] : [{ kind: 'next', text: next } satisfies PaneRow]),
+  ]
+}
+
+/** 直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。 */
 function concernRows(concerns: readonly Concern[], records: ReviewState['turns']): PaneRow[] {
-  if (concerns.length === 0) return [{ kind: 'ok', text: NO_CONCERNS_TEXT }]
-  return concerns.flatMap((concern): PaneRow[] => {
-    const next = nextStepText(concern, records)
-    return [
-      { kind: 'badge', label: CONCERN_TEXT[concern.kind].label, tone: CONCERN_TONE[concern.kind], text: concernDetailText(concern) },
-      ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
-      ...(next === null ? [] : [{ kind: 'next', text: next } satisfies PaneRow]),
-    ]
-  })
+  const { recent, past } = partitionByRecency(concerns)
+  return [
+    ...(recent.length === 0
+      ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow]
+      : recent.flatMap(concern => oneConcernRows(concern, records, true))),
+    ...(past.length === 0
+      ? []
+      : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, records, false))]),
+  ]
 }
 
 function topTurnRows(records: ReviewState['turns']): PaneRow[] {
