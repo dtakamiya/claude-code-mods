@@ -45,14 +45,22 @@ const isUsable = (record: TurnRecord): record is UsableRecord =>
   typeof record.firstStepCacheWrite === 'number' &&
   (record.firstStepPromptTokens ?? 0) > 0
 
+/** 再構築コストを 1 ターンあたりの節約で回収できるまでのターン数。安くならない・再構築が 0 のときは null。 */
+export function breakEvenTurns(rebuildUsd: number, savingPerTurnUsd: number): number | null {
+  return savingPerTurnUsd > 0 && rebuildUsd > 0 ? Math.ceil(rebuildUsd / savingPerTurnUsd) : null
+}
+
 function optionFor(record: UsableRecord, currentUsd: number, model: string): SwitchOption | null {
   const candidateUsd = priceUsage(usageOf(record, model))
   const rebuildUsd = cacheRebuildCostUsd(model, record.firstStepCacheWrite, record.firstStepPromptTokens)
   if (candidateUsd === null || rebuildUsd === null) return null
   const perTurnDeltaUsd = candidateUsd - currentUsd
-  const saving = -perTurnDeltaUsd
-  const breakEvenTurns = saving > 0 && rebuildUsd > 0 ? Math.ceil(rebuildUsd / saving) : null
-  return { model, rebuildUsd, perTurnDeltaUsd, breakEvenTurns }
+  return { model, rebuildUsd, perTurnDeltaUsd, breakEvenTurns: breakEvenTurns(rebuildUsd, -perTurnDeltaUsd) }
+}
+
+/** 見積りの基準にする直近のメインのターンのモデル。基準にできるターンがなければ null。 */
+export function baseModelOf(records: readonly TurnRecord[]): string | null {
+  return [...records].reverse().find(isUsable)?.model ?? null
 }
 
 /**

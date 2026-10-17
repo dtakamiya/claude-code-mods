@@ -54,6 +54,23 @@ export type ModelGroup = {
 
 export type ConcernKind = 'overspec' | 'underspec' | 'delegation' | 'subagent' | 'switch'
 
+/** 過剰の「次の一手」（nextstep.ts）を作る材料。 */
+export type OverspecFacts = {
+  /** メインループのモデル起因の過剰ターン数と、その Sonnet 換算の差額合計（分からなければ null）。 */
+  readonly mainModelTurns: number
+  readonly mainModelSavingsUsd: number | null
+  /** サブエージェントにモデル起因の過剰があるか。 */
+  readonly subagentModel: boolean
+  /** effort 起因の過剰ターンのモデル（重複なし）。 */
+  readonly effortModels: readonly string[]
+}
+
+/** 不足の「次の一手」を作る材料。どちらの条件で該当したか。 */
+export type UnderspecFacts = {
+  readonly haikuLow: boolean
+  readonly sonnetLow: boolean
+}
+
 export type Concern = {
   readonly kind: ConcernKind
   readonly count: number
@@ -62,6 +79,10 @@ export type Concern = {
   readonly amountUsd: number | null
   /** 件数の母数（全ターン数）。割合で読める種類にだけ付ける。 */
   readonly outOf?: number
+  /** 過剰のときだけ付く。 */
+  readonly overspec?: OverspecFacts
+  /** 不足のときだけ付く。 */
+  readonly underspec?: UnderspecFacts
 }
 
 const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -296,8 +317,24 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
     record => isOverspecTurn(record) && (shares.get(groupKeyOf(record)) ?? 0) >= OVERSPEC_MIN_LIGHT_SHARE,
   )
   if (overspec.length < MIN_OVERSPEC_TURNS) return null
-  const amountUsd = sumKnown(overspec.filter(isModelOverspec).map(sonnetSavingsUsd))
-  return concernOf('overspec', overspec.length, overspecGroups(overspec).map(overspecGroupLine), amountUsd)
+  const modelTurns = overspec.filter(isModelOverspec)
+  const mainModelTurns = modelTurns.filter(record => record.agentId === null)
+  const concern = concernOf(
+    'overspec',
+    overspec.length,
+    overspecGroups(overspec).map(overspecGroupLine),
+    sumKnown(modelTurns.map(sonnetSavingsUsd)),
+  )
+  if (concern === null) return null
+  return {
+    ...concern,
+    overspec: {
+      mainModelTurns: mainModelTurns.length,
+      mainModelSavingsUsd: sumKnown(mainModelTurns.map(sonnetSavingsUsd)),
+      subagentModel: modelTurns.some(record => record.agentId !== null),
+      effortModels: [...new Set(overspec.filter(isEffortOverspec).map(record => record.model))],
+    },
+  }
 }
 
 /** 直近 DELEGATION_WINDOW_TURNS ターンの窓だけで、メインの非 Haiku ツール回数とサブエージェントの有無を見る。 */
@@ -339,7 +376,12 @@ function subagentConcern(records: readonly TurnRecord[]): Concern | null {
 function underspecConcern(records: readonly TurnRecord[]): Concern | null {
   const underspec = underspecTurns(records)
   if (underspec.length < MIN_UNDERSPEC_TURNS) return null
-  return concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine))
+  const concern = concernOf('underspec', underspec.length, [...underspec].reverse().map(underspecLine))
+  if (concern === null) return null
+  return {
+    ...concern,
+    underspec: { haikuLow: underspec.some(isHaikuUnderspecTurn), sonnetLow: underspec.some(isSonnetLowFailure) },
+  }
 }
 
 function switchConcern(records: readonly TurnRecord[]): Concern | null {

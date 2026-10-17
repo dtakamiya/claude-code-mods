@@ -30,7 +30,8 @@ export type SwitchSummary = {
   readonly examples: readonly string[]
 }
 
-const keepsCacheOnEffortChange = (model: string): boolean =>
+/** 同じモデルで effort を変えてもキャッシュが維持されるか。 */
+export const keepsCacheOnEffortChange = (model: string): boolean =>
   !isThirdPartyModelId(model) && CACHE_SAFE_EFFORT_MODELS.has(normalizeModelId(model))
 
 /** 単価表にあるモデルか。単価表にないモデル（ゲートウェイ名など）はキャッシュの扱いを判断できない。 */

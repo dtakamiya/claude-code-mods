@@ -17,6 +17,7 @@ import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, TERM_TEXT, type TermKey } from './labels'
 import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
+import { nextStepText } from './nextstep'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import {
   NO_TURNS_LINE,
@@ -59,6 +60,7 @@ export type PaneRow =
   | { kind: 'kv'; label: string; value: string; tone: Tone }
   | { kind: 'badge'; label: string; tone: Tone; text: string }
   | { kind: 'example'; text: string }
+  | { kind: 'next'; text: string }
   | { kind: 'ok'; text: string }
   | { kind: 'note'; text: string }
 
@@ -130,12 +132,16 @@ function costRows(review: ReviewState, estimate: EstimateFacts): PaneRow[] {
   return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimateText} / 実 ${formatUsd(actual)}（読み込み後）/ 差 ${diffText}`, tone: 'plain' }]
 }
 
-function concernRows(concerns: readonly Concern[]): PaneRow[] {
+function concernRows(concerns: readonly Concern[], records: ReviewState['turns']): PaneRow[] {
   if (concerns.length === 0) return [{ kind: 'ok', text: NO_CONCERNS_TEXT }]
-  return concerns.flatMap((concern): PaneRow[] => [
-    { kind: 'badge', label: CONCERN_TEXT[concern.kind].label, tone: CONCERN_TONE[concern.kind], text: concernDetailText(concern) },
-    ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
-  ])
+  return concerns.flatMap((concern): PaneRow[] => {
+    const next = nextStepText(concern, records)
+    return [
+      { kind: 'badge', label: CONCERN_TEXT[concern.kind].label, tone: CONCERN_TONE[concern.kind], text: concernDetailText(concern) },
+      ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
+      ...(next === null ? [] : [{ kind: 'next', text: next } as const]),
+    ]
+  })
 }
 
 function topTurnRows(records: ReviewState['turns']): PaneRow[] {
@@ -258,7 +264,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     { kind: 'blank' },
     ...live,
     { kind: 'heading', text: CONCERN_DETAIL_HEADING },
-    ...concernRows(concerns),
+    ...concernRows(concerns, records),
     { kind: 'blank' },
     { kind: 'heading', text: HEADING.groups },
     ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
