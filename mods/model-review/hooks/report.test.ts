@@ -4,6 +4,7 @@ import type { ReviewState, TurnRecord } from '../types'
 import { HEADING, NO_CONCERNS_TEXT } from './labels'
 import { buildPaneRows, type PaneRow } from './pane-model'
 import { NO_TURNS_LINE, buildReportLines, formatInt, formatUsd } from './report'
+import { NEXT_STEP_PREFIX } from './nextstep'
 
 // 架空データのみ。
 const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
@@ -199,4 +200,29 @@ test('指摘がないときは、ペインと同じ文言を出す', () => {
 
   // Assert
   expect(text).toContain(NO_CONCERNS_TEXT)
+})
+
+test('指摘の例の後に、ペインとテキストで同じ「次の一手」の候補を 1 行添える', () => {
+  // Arrange: Sonnet 5.5 / xhigh の軽作業 3 件は effort 起因の過剰。
+  const records = ['a', 'b', 'c'].map(id => turn({ turnId: id, effort: 'xhigh' }))
+  const review = withTurns(records, null, null)
+
+  // Act
+  const lines = buildReportLines(review)
+  const rows = buildPaneRows(review)
+
+  // Assert: テキストは例の直後に「→ 候補: 」、ペインは 'next' 行。文言は同じ。
+  const nextLine = lines.find(line => line.includes(`→ ${NEXT_STEP_PREFIX}`)) ?? ''
+  const nextRow = rows.find((row): row is Extract<PaneRow, { kind: 'next' }> => row.kind === 'next')
+  expect(nextLine).toContain('/effort high などで effort を high 以下へ')
+  expect(nextRow?.text).toBe(nextLine.trim().replace(/^→ /, ''))
+  const badgeIndex = lines.findIndex(line => line.startsWith('  【過剰】'))
+  expect(lines.indexOf(nextLine)).toBeGreaterThan(badgeIndex)
+})
+
+test('指摘がなければ「次の一手」の行は出さない', () => {
+  const review = withTurns([turn({ toolCount: 5 })], null, null)
+
+  expect(buildReportLines(review).some(line => line.includes(NEXT_STEP_PREFIX))).toBe(false)
+  expect(buildPaneRows(review).some(row => row.kind === 'next')).toBe(false)
 })

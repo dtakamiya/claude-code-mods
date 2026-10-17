@@ -8,6 +8,7 @@ import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
 import { NO_RECORDS_CONCLUSION, conclusionOf } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
+import { nextStepText } from './nextstep'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
@@ -66,12 +67,16 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   ]
 }
 
-function concernLines(concerns: readonly Concern[]): string[] {
+function concernLines(concerns: readonly Concern[], records: readonly TurnRecord[]): string[] {
   if (concerns.length === 0) return [`  ${NO_CONCERNS_TEXT}`]
-  return concerns.flatMap(concern => [
-    `  【${CONCERN_TEXT[concern.kind].label}】 ${concernDetailText(concern)}`,
-    ...concern.examples.map(example => `    ・${example}`),
-  ])
+  return concerns.flatMap(concern => {
+    const next = nextStepText(concern, records)
+    return [
+      `  【${CONCERN_TEXT[concern.kind].label}】 ${concernDetailText(concern)}`,
+      ...concern.examples.map(example => `    ・${example}`),
+      ...(next === null ? [] : [`    → ${next}`]),
+    ]
+  })
 }
 
 function topTurnLines(records: readonly TurnRecord[]): string[] {
@@ -130,7 +135,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number): string[] 
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,
-    ...concernLines(concerns),
+    ...concernLines(concerns, records),
     '',
     `■ ${HEADING.groups}`,
     ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),

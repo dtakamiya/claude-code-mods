@@ -87,6 +87,7 @@
 | `UNPRICED_STALE_RATIO` = 0.3 | notes.ts | 単価不明が 3 割以上で単価表の陳腐化を注記 | 実測なし = 仮置き |
 | `SWITCH_NOTE_RECENT_TURNS` = 10（ターン） | notes.ts | 切替の注記を出すのは、直近この件数のターンの中に切替があるときだけ。ペインで見て決め直す前提（0.13.0 で追加） | 実測なし = 仮置き |
 | `LIVE_DRAFT_LIFETIME_MS` = 10 分（600,000 ms） | recorder.ts | 応答・ツール呼び出しが止まってから 10 分過ぎた未完了の下書きは、実行中の表示から外す。turn.complete が来ないまま中断されたターン用（0.13.0 で追加） | 実測なし = 仮置き |
+| `MAX_RECOVERABLE_TURNS` = 10（ターン） | nextstep.ts | モデル起因の過剰の「次の一手」で、Sonnet への切替の再構築コストを 1 ターンあたりの節約で回収するのにこのターン数を超えるときは「切替の元は取りにくい」と添える。回収ターン数は whatif.ts と同じ計算（0.18.0 で追加、#68） | 実測なし = 仮置き |
 | `CACHE_SAFE_EFFORT_MODELS` | switches.ts | effort 変更でキャッシュが維持されるモデル。出所は公式 prompt caching ドキュメント（取得 2026-10-15） | 公式記載 |
 
 未確認: advisor の費用が usage に載るか、fast mode の割増が取れるか（型ファイルに該当フィールドなし）。
