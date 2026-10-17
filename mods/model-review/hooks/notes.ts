@@ -3,6 +3,7 @@ import type { ReviewState, TurnRecord } from '../types'
 import { estimateRange, estimateTotal } from './analyze'
 import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
+import { UNKNOWN_MODEL } from './recorder'
 import { turnsSinceBaseline } from './state'
 import { findSwitches } from './switches'
 
@@ -41,11 +42,20 @@ function ttlNote(review: ReviewState): readonly string[] {
   return ['実コストが、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます']
 }
 
-function staleNote(records: readonly TurnRecord[], unpricedTurns: number, totalTurns: number): readonly string[] {
-  if (unpricedTurns / totalTurns < UNPRICED_STALE_RATIO) return []
-  const models = [...new Set(records.filter(record => record.costUsd === null).map(record => record.model))]
+function unpricedModelNames(review: ReviewState): readonly string[] {
+  const recent = review.turns.filter(record => record.costUsd === null).map(record => record.model)
+  const folded = (review.archived?.groups ?? []).filter(group => group.unpricedTurns > 0).map(group => group.model)
+  return [...new Set([...recent, ...folded])].map(name => (name === UNKNOWN_MODEL ? '不明（モデル名なし）' : name))
+}
+
+function staleNote(review: ReviewState, unpricedTurns: number, totalTurns: number): readonly string[] {
+  if (unpricedTurns === 0) return []
+  const models = unpricedModelNames(review).join('、')
+  if (unpricedTurns / totalTurns < UNPRICED_STALE_RATIO) {
+    return [`単価不明のモデル（${models}）の ${unpricedTurns} ターンは推定に含まれません。pricing.ts に単価を足すと含まれます`]
+  }
   return [
-    `単価不明のターンが ${unpricedTurns} / ${totalTurns} 件あります（モデル: ${models.join('、')}）。単価表が古い可能性があります（gateway・独自のモデル名のこともあります）。pricing.ts に単価を足すと推定に含まれます（取得日: ${PRICE_TABLE_FETCHED_AT}）`,
+    `単価不明のターンが ${unpricedTurns} / ${totalTurns} 件あります（モデル: ${models}）。単価表が古い可能性があります（gateway・独自のモデル名のこともあります）。pricing.ts に単価を足すと推定に含まれます（取得日: ${PRICE_TABLE_FETCHED_AT}）`,
   ]
 }
 
@@ -79,7 +89,7 @@ export function buildNotes(review: ReviewState, nowMs?: number): readonly string
   return [
     ...rebuildStreakNote(records),
     ...ttlNote(review),
-    ...staleNote(records, unpricedTurns, totalTurns),
+    ...staleNote(review, unpricedTurns, totalTurns),
     ...priceAgeNote(nowMs),
     ...switchNote(records),
   ]

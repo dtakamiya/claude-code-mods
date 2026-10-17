@@ -139,3 +139,33 @@ test('基準点ターン数を持たない旧い状態は、最初のターン�
   // Assert
   expect(notes).toHaveLength(1)
 })
+
+test('単価不明のモデル名は、3 割未満でも注記に出す（件数は畳んだぶんも含む）', () => {
+  // Arrange
+  const many = Array.from({ length: 9 }, (_, index) => ({ ...turn, turnId: `t${index}` }))
+  const state: ReviewState = {
+    turns: [{ ...turn, turnId: 'u', model: 'recent-mystery', costUsd: null }, ...many],
+    sessionCostUsd: { baseline: null, current: null },
+    archived: {
+      turns: 100,
+      subagents: 0,
+      advisorCalls: 0,
+      groups: [
+        { model: 'old-mystery', effort: null, turns: 1, unpricedTurns: 1, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, costUsd: null },
+      ],
+      pricedUsd: 0,
+      unpricedTurns: 1,
+      highUsd: 0,
+      sinceBaseline: { lowUsd: 0, highUsd: 0, cacheWrite: 0 },
+    },
+  }
+
+  // Act
+  const text = buildNotes(state).find(note => note.includes('単価不明')) ?? ''
+
+  // Assert
+  expect(text).toContain('recent-mystery')
+  expect(text).toContain('old-mystery')
+  expect(text).toContain('2 ターン')
+  expect(text).not.toContain('単価表が古い可能性')
+})

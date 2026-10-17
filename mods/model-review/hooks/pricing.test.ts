@@ -1,6 +1,19 @@
 import { test, expect } from 'claude-code/testing'
 
-import { HAIKU_REFERENCE_MODEL, cacheRebuildCostUsd, normalizeModelId, priceUsage, type TokenUsageLike } from './pricing'
+import {
+  HAIKU_REFERENCE_MODEL,
+  OPUS_REFERENCE_MODEL,
+  PRICE_TABLE_FETCHED_AT,
+  PRICE_TABLE_STALE_DAYS,
+  SONNET_REFERENCE_MODEL,
+  cacheRebuildCostUsd,
+  isThirdPartyModelId,
+  normalizeModelId,
+  priceUsage,
+  ratesFor,
+  type TokenUsageLike,
+} from './pricing'
+import { CACHE_SAFE_EFFORT_MODELS } from './switches'
 
 // 架空データのみ。
 const usage = (overrides: Partial<TokenUsageLike>): TokenUsageLike => ({
@@ -135,4 +148,43 @@ test('書込を 1 時間単価にした上限は、書込トークンの分だ�
 test('書込のない応答は、5 分でも 1 時間でも同じ額になる', () => {
   const plain = usage({ model: 'claude-opus-5-5', input_tokens: 1_000_000, output_tokens: 0 })
   expect(priceUsage(plain, '1h')).toBe(priceUsage(plain))
+})
+
+test('実在する各種表記（global・地域 Bedrock・Vertex の -vN@日付・[1m]）を単価表のキーに寄せる', () => {
+  expect(normalizeModelId('global.anthropic.claude-sonnet-4-5-20250929-v1:0')).toBe('claude-sonnet-4-5')
+  expect(normalizeModelId('eu.anthropic.claude-opus-4-1-20250805-v1:0')).toBe('claude-opus-4-1')
+  expect(normalizeModelId('apac.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe('claude-haiku-4-5')
+  expect(normalizeModelId('claude-opus-4-1-v2@20250805')).toBe('claude-opus-4-1')
+  expect(normalizeModelId('claude-sonnet-4-5@20250929')).toBe('claude-sonnet-4-5')
+  expect(normalizeModelId('claude-sonnet-5-5[1m]')).toBe('claude-sonnet-5-5')
+})
+
+test('第三者経由の表記は Bedrock（anthropic.）と Vertex（末尾 @YYYYMMDD）だけで、他の @ は含めない', () => {
+  expect(isThirdPartyModelId('us.anthropic.claude-opus-4-5-20251101-v1:0')).toBe(true)
+  expect(isThirdPartyModelId('claude-opus-4-5@20251101')).toBe(true)
+  expect(isThirdPartyModelId('claude-opus-4-5@20251101[1m]')).toBe(true)
+  expect(isThirdPartyModelId('claude-opus-5-5')).toBe(false)
+  expect(isThirdPartyModelId('my-gateway@team')).toBe(false)
+})
+
+test('参照モデルと effort 維持の一覧は、すべて単価表に引ける（世代交代で表から外れたら気付く）', () => {
+  for (const model of [HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, OPUS_REFERENCE_MODEL, ...CACHE_SAFE_EFFORT_MODELS]) {
+    expect(ratesFor(model, 0), model).not.toBeNull()
+  }
+})
+
+test('Haiku 5.5 の単価段は、プロンプト 100,000 tokens ちょうどまでが下の段', () => {
+  expect(ratesFor('claude-haiku-5-5', 100_000)?.input).toBe(0.1)
+  expect(ratesFor('claude-haiku-5-5', 100_001)?.input).toBe(0.5)
+})
+
+// 意図して時間で落ちるテスト: 単価表の取得から 2 倍の日数を過ぎたら、公式の価格表を取り直して更新を促す。
+test('単価表の取得日が古くなりすぎていない', () => {
+  const fetchedMs = Date.parse(PRICE_TABLE_FETCHED_AT)
+  const ageDays = (Date.now() - fetchedMs) / 86_400_000
+  expect(Date.now() > fetchedMs).toBe(true)
+  expect(
+    ageDays <= PRICE_TABLE_STALE_DAYS * 2,
+    `単価表の取得から ${Math.floor(ageDays)} 日経ちました。公式の価格表を取り直し、pricing.ts の単価と PRICE_TABLE_FETCHED_AT を更新してください`,
+  ).toBe(true)
 })

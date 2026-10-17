@@ -3,7 +3,7 @@
 // 長い中断によるキャッシュ切れ（TTL）とは区別できないので、金額はあくまで推定。
 import type { TurnRecord } from '../types'
 import { formatUsd } from './format'
-import { cacheRebuildCostUsd, normalizeModelId, ratesFor } from './pricing'
+import { cacheRebuildCostUsd, isThirdPartyModelId, normalizeModelId, ratesFor } from './pricing'
 import { UNKNOWN_MODEL } from './recorder'
 
 /** API キー・サブスク経由で、effort を変えてもキャッシュが維持されるモデル（公式ドキュメントの記載）。 */
@@ -13,8 +13,6 @@ export const CACHE_SAFE_EFFORT_MODELS: ReadonlySet<string> = new Set([
   'claude-haiku-5-5',
   'claude-fable-5-1',
 ])
-/** Bedrock（`anthropic.`）・Vertex（`@`）の表記。これらでは effort を変えるとキャッシュが維持されない。 */
-const THIRD_PARTY_MARKERS: readonly string[] = ['anthropic.', '@']
 export const SWITCH_EXAMPLE_LIMIT = 3
 
 type SwitchKind = 'model' | 'effort'
@@ -32,10 +30,8 @@ export type SwitchSummary = {
   readonly examples: readonly string[]
 }
 
-const isThirdPartyId = (model: string): boolean => THIRD_PARTY_MARKERS.some(marker => model.includes(marker))
-
 const keepsCacheOnEffortChange = (model: string): boolean =>
-  !isThirdPartyId(model) && CACHE_SAFE_EFFORT_MODELS.has(normalizeModelId(model))
+  !isThirdPartyModelId(model) && CACHE_SAFE_EFFORT_MODELS.has(normalizeModelId(model))
 
 /** 単価表にあるモデルか。単価表にないモデル（ゲートウェイ名など）はキャッシュの扱いを判断できない。 */
 const isPricedModel = (model: string): boolean => ratesFor(model, 0) !== null
