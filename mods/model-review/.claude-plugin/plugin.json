@@ -1,6 +1,6 @@
 {
   "name": "model-review",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）",
   "author": {
     "name": "dtakamiya"
@@ -24,6 +24,12 @@
       "title": "使用率の上限（%、0 で無効）",
       "description": "5h / 7d などの使用率がこの値に達したらトーストで 1 度知らせる。0 は無効。仮置き",
       "default": 0
+    },
+    "notifyOnSwitch": {
+      "type": "boolean",
+      "title": "モデル切替の直前にキャッシュ再構築の見積りを知らせる",
+      "description": "/model などで切り替える直前、キャッシュが温かいときだけトーストで見積りを出す。切替は止めない",
+      "default": true
     },
     "mutedConcerns": {
       "type": "string",

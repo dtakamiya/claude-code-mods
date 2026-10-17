@@ -9,6 +9,7 @@ import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 import { readMutedConcerns } from './mute'
+import { formatSwitchNotice, readNotifyOnSwitch } from './switchnotice'
 import { recordSpawn, resolveAgentType, type AgentTypes } from './agenttype'
 
 const PANE_ID = 'model-review'
@@ -59,6 +60,7 @@ export const register: Register = (on, options) => {
   const limits = readLimits(options)
   const showStatus = readShowStatus(options)
   const muted = readMutedConcerns(options)
+  const notifyOnSwitch = readNotifyOnSwitch(options)
   // 知らせ済みの上限と、直近に出した status 文。reload で消えるので、reload 後は超過中の上限をもう一度知らせうる。
   let notified: ReadonlySet<string> = new Set()
   let lastStatus: string | undefined
@@ -128,6 +130,24 @@ export const register: Register = (on, options) => {
     if (costUsd !== undefined) await update($, reviewAtom, state => withCostSample(state, costUsd))
     return next(e)
   })
+
+  // 切替の直前に、温かいキャッシュを捨てる見積りを知らせる。観察のみ: 結果は書き換えず、例外でも切替は止めない。
+  on('classic.PreModelSwitch', async ($, e, next) => {
+    if (notifyOnSwitch) {
+      await recordSafely(() => {
+        const text = formatSwitchNotice({
+          fromModel: e.from_model,
+          toModel: e.to_model,
+          contextTokens: e.context_tokens,
+          isCacheWarm: e.prompt_cache_warm,
+          estimatedCacheWriteUsd: e.estimated_cache_write_usd,
+          pricing: e.pricing,
+        })
+        if (text !== undefined) void $.ui.toast(text)
+      }, logDebug($))
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   // 種類の名前だけを覚える（prompt・description は読まない）。記録の失敗で spawn は止めない。
   on('agent.spawn', async ($, e, next) => {

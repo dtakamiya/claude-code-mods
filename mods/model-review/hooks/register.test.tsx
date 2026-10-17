@@ -815,3 +815,43 @@ test('ターンの外で plan mode の reminder が届いても、記録は変�
   // Assert
   expect(ran.text).not.toContain('plan mode のターン')
 })
+
+// 切替の直前トースト。classic.PreModelSwitch は観察のみで、結果は書き換えない。
+const PRE_SWITCH = {
+  hook_event_name: 'PreModelSwitch',
+  from_model: 'claude-opus-5-5',
+  to_model: 'claude-sonnet-5-5',
+  requested_model: 'sonnet',
+  source: 'command',
+  context_tokens: 120_000,
+  prompt_cache_warm: true,
+  cache_ttl: '5m',
+  estimated_cache_write_usd: 0.3,
+  pricing: 'catalog',
+} as never
+
+test('切替の直前: キャッシュが温かければトーストし、切替は止めない', async ($, on) => {
+  // Arrange
+  const ui = captureUi(on)
+  on('classic.PreModelSwitch', () => ({}) as never)
+
+  // Act
+  const result = await $.classic.PreModelSwitch(PRE_SWITCH)
+
+  // Assert
+  expect(ui.toasts).toHaveLength(1)
+  expect(ui.toasts[0]).toContain('120,000 tokens')
+  expect(result).toEqual({})
+})
+
+test('切替の直前: notifyOnSwitch を切るとトーストしない', { options: { notifyOnSwitch: false } }, async ($, on) => {
+  // Arrange
+  const ui = captureUi(on)
+  on('classic.PreModelSwitch', () => ({}) as never)
+
+  // Act
+  await $.classic.PreModelSwitch(PRE_SWITCH)
+
+  // Assert
+  expect(ui.toasts).toEqual([])
+})
