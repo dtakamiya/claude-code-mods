@@ -2,6 +2,7 @@
 // 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
+import { GROWTH_LABEL, growthView } from './growth'
 import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
@@ -56,6 +57,16 @@ function groupLine(group: ArchivedGroup): string {
     `書 ${facts.cacheWrite}`,
     `推定 ${facts.costText}`,
   ].join('  ')
+}
+
+function growthLines(records: readonly TurnRecord[], archived: ReviewState['archived']): string[] {
+  const view = growthView(records, archived)
+  if (view === null) return []
+  return [
+    ...(view.trend === null ? [] : [`${GROWTH_LABEL}: ${view.trend}`]),
+    ...(view.compact === null ? [] : [`compact: ${view.compact}`]),
+    ...(view.note === null ? [] : [`  ${view.note}`]),
+  ]
 }
 
 function costLines(review: ReviewState, records: readonly TurnRecord[]): string[] {
@@ -179,6 +190,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number, muted: Rea
     ...whatIfLines(records),
     `■ ${HEADING.cost}`,
     ...costLines(review, records),
+    ...growthLines(records, review.archived),
     ...advisorLines(records, review.archived),
     ...notes,
     ...archiveNoteLines(review),
