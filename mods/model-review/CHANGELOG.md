@@ -2,6 +2,9 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.25.0
+- モデル切替の直前に、キャッシュ再構築の見積りをトーストで知らせる（#71）。`classic.PreModelSwitch` を観察し、`prompt_cache_warm` が真で別のモデルへ替わるときだけ「温かいキャッシュを捨て、N tokens を書き直す見積り 約 $X」を出す（`switchnotice.ts` の純粋関数）。見積りは engine の `estimated_cache_write_usd`、`pricing` が `default` のときは「単価は仮定」と添える。切替は止めず（`permissionDecision` を返さず必ず `next(e)`）、例外でも切替は通す。`userConfig` に `notifyOnSwitch`（既定: オン）を追加。`cache_ttl` の記録は今回見送り。トーストは目視未確認。
+
 ## 0.24.1
 - 1 ターンの中でモデルが替わると最後のモデルにまとめて計上される問題を直した（#83）。`recorder.ts` が応答ごとにモデル別の内訳（トークン・推定コスト・応答数）を持ち、2 モデル以上が応答したターンだけ `TurnRecord.byModel` に残す（1 モデルのターンは状態を増やさない）。モデル × effort の表と畳み込み（`archive.ts`）は `byModel` があればモデルごとに分け、混ざったターンは各モデルの行に 1 件ずつ数える（行のターン数の合計はターン数より増えうる）。`byModel` のない古い記録は従来どおり。ターン開始時に `$.session.model()` を読み、応答のモデルが食い違った応答を数えて `divergedSteps` に残し、注記に「食い違った応答を含むターンが N 件（フォールバックなどの可能性。推定）」の 1 行を出す。原因は断定せず、指摘には使わない。Haiku / Sonnet 換算と過剰の判定は、これまでどおりターン単位（最後のモデル）のまま。見た目は目視未確認。
 
