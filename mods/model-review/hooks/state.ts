@@ -1,5 +1,6 @@
 // $.state に置く値（atom の初期値と、その書き換え）。すべて新しいオブジェクトを返す。
 import type { ReviewState, TurnRecord } from '../types'
+import { trimTurns } from './archive'
 
 export const EMPTY_REVIEW: ReviewState = {
   turns: [],
@@ -7,7 +8,7 @@ export const EMPTY_REVIEW: ReviewState = {
 }
 
 export function appendTurn(state: ReviewState, record: TurnRecord): ReviewState {
-  return { ...state, turns: [...state.turns, record] }
+  return trimTurns({ ...state, turns: [...state.turns, record] })
 }
 
 /** 有限な金額だけを受け付ける。NaN・Infinity は null と同じく無視する（状態を壊さない）。 */

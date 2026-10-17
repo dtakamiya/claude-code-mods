@@ -1,6 +1,6 @@
 // ペイン（pane-model.ts）とテキスト出力（report.ts）で共用する集計・文面の部品。$ にも JSX にも依存しない純粋関数。
 // 並びと見出しは各の組み立て側が持つ。ここには「同じ数字・同じ言い回し」だけを置く。
-import type { ReviewState, TurnRecord } from '../types'
+import type { ArchivedTurns, ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
 import { estimateRange, estimateTotal, type Concern, type ModelGroup } from './analyze'
 import { formatDuration, formatInt, formatUsd } from './format'
@@ -78,7 +78,8 @@ export const toolDetailText = (record: TurnRecord): string =>
     : `ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`
 
 /** サブエージェントのターン数。 */
-export const subagentCount = (records: readonly TurnRecord[]): number => records.filter(record => record.agentId !== null).length
+export const subagentCount = (records: readonly TurnRecord[], archived?: ArchivedTurns): number =>
+  records.filter(record => record.agentId !== null).length + (archived?.subagents ?? 0)
 
 export type EstimateFacts = {
   readonly costUsd: number
@@ -90,10 +91,18 @@ export type EstimateFacts = {
 }
 
 /** 推定の合計・単価不明の件数・幅をまとめて求める。 */
-export function estimateFacts(records: readonly TurnRecord[]): EstimateFacts {
-  const { costUsd, unpricedTurns } = estimateTotal(records)
-  const { lowUsd, highUsd } = estimateRange(records)
-  return { costUsd, unpricedTurns, allUnpriced: records.length > 0 && unpricedTurns === records.length, lowUsd, highUsd }
+export function estimateFacts(records: readonly TurnRecord[], archived?: ArchivedTurns): EstimateFacts {
+  const recent = estimateTotal(records)
+  const range = estimateRange(records)
+  const unpricedTurns = recent.unpricedTurns + (archived?.unpricedTurns ?? 0)
+  const turnCount = records.length + (archived?.turns ?? 0)
+  return {
+    costUsd: recent.costUsd + (archived?.pricedUsd ?? 0),
+    unpricedTurns,
+    allUnpriced: turnCount > 0 && unpricedTurns === turnCount,
+    lowUsd: range.lowUsd + (archived?.pricedUsd ?? 0),
+    highUsd: range.highUsd + (archived?.highUsd ?? 0),
+  }
 }
 
 /** 全ターン単価不明のときの推定の文面。 */
@@ -110,8 +119,8 @@ export const actualCostUsd = (review: ReviewState): number | null => {
 }
 
 /** advisor の呼び出し回数の文面（「2 回（費用が…）」）。0 回なら null。 */
-export function advisorCallText(records: readonly TurnRecord[]): string | null {
-  const calls = advisorCallTotal(records)
+export function advisorCallText(records: readonly TurnRecord[], archived?: ArchivedTurns): string | null {
+  const calls = advisorCallTotal(records) + (archived?.advisorCalls ?? 0)
   return calls === 0 ? null : `${calls} 回（費用は usage に載らず取得できないため、金額には含まれません）`
 }
 
