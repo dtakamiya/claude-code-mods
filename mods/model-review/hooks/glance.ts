@@ -1,7 +1,8 @@
 // status 行の常時表示と、上限超過トーストの判定。純粋関数（$ に触れない）。
 import { formatUsd } from './format'
+import { shortPace, subscriptionWindows, type Pace } from './pace'
 
-export type RateWindow = { readonly kind: string; readonly percentUsed: number }
+export type RateWindow = { readonly kind: string; readonly percentUsed: number; readonly resetsAt?: string }
 
 export type Glance = {
   /** 累計の実コスト（USD）。取れない環境では undefined。 */
@@ -40,13 +41,18 @@ const formatCostShort = (usd: number): string => `$${usd.toFixed(2)}`
 
 /**
  * status 行の 1 行。コストも使用率も無ければ undefined（行を消す）。
- * 使用率が空（サブスク外・初回前）のときはコストだけを出す。
+ * 使用率が空（サブスク外・初回前）のときはコストだけを出す（従来の表示のまま）。
+ * 使用率があるとき（サブスク）は金額を「API換算」とし、`paces` で上限に届く見込みがあれば「5h 72%（↑40分）」の形で添える。
  */
-export function formatStatus(glance: Glance): string | undefined {
+export function formatStatus(glance: Glance, paces: Readonly<Record<string, Pace>> = {}): string | undefined {
   const parts: string[] = []
-  if (glance.costUsd !== undefined && Number.isFinite(glance.costUsd)) parts.push(`実コスト ${formatCostShort(glance.costUsd)}`)
+  const costLabel = subscriptionWindows(glance.rateLimits).length > 0 ? 'API換算' : '実コスト'
+  if (glance.costUsd !== undefined && Number.isFinite(glance.costUsd)) parts.push(`${costLabel} ${formatCostShort(glance.costUsd)}`)
   for (const window of glance.rateLimits) {
-    if (Number.isFinite(window.percentUsed)) parts.push(`${rateLabel(window.kind)} ${formatPercent(window.percentUsed)}`)
+    if (!Number.isFinite(window.percentUsed)) continue
+    const pace = paces[window.kind]
+    const short = pace === undefined ? null : shortPace(pace)
+    parts.push(`${rateLabel(window.kind)} ${formatPercent(window.percentUsed)}${short === null ? '' : `（${short}）`}`)
   }
   return parts.length === 0 ? undefined : parts.join(' · ')
 }

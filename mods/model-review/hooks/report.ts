@@ -7,6 +7,7 @@ import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
+import type { SubscriptionView } from './pace'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
@@ -158,11 +159,22 @@ const CRITERIA_LINES = [
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
 ]
 
+/** サブスクの枠が取れているときだけ、コストの節の先頭に API 換算の注意と枠のペースを出す。 */
+function subscriptionLines(view: SubscriptionView | null): string[] {
+  if (view === null) return []
+  return [view.apiNote, ...view.lines.map(line => `枠: ${line}`), `  ${view.paceNote}`]
+}
+
 /**
  * テキストレポートの行。先頭はペインと同じ結論の 1 行。記録がなければ結論と案内の 2 行だけを返す。
  * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
  */
-export function buildReportLines(review: ReviewState, nowMs?: number, muted: ReadonlySet<ConcernKind> = new Set()): string[] {
+export function buildReportLines(
+  review: ReviewState,
+  nowMs?: number,
+  muted: ReadonlySet<ConcernKind> = new Set(),
+  subscription: SubscriptionView | null = null,
+): string[] {
   const records = review.turns
   if (records.length === 0) return [NO_RECORDS_CONCLUSION.text, NO_TURNS_LINE]
   const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
@@ -182,6 +194,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number, muted: Rea
     ...loopLines(records),
     ...whatIfLines(records),
     `■ ${HEADING.cost}`,
+    ...subscriptionLines(subscription),
     ...costLines(review, records),
     ...advisorLines(records, review.archived),
     ...notes,

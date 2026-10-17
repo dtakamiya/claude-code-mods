@@ -254,3 +254,26 @@ test('メインのターンが 20 件以上あれば、コストの節に費用�
   expect(rows.some(row => row.kind === 'kv' && row.label === '1 ターンあたりの費用の推移' && row.value.includes('$0.1900'))).toBe(true)
   expect(buildReportLines(withTurns(many.slice(0, 5), null, null)).join('\n')).not.toContain('費用の推移')
 })
+
+test('サブスクの枠があるときだけ、コストの節に API 換算の注意と枠のペースを出す（ペインも同じ）', () => {
+  // Arrange
+  const review = withTurns([turn()], null, null)
+  const view = {
+    apiNote: '金額は API 換算の参考値で、サブスクの請求額ではありません。',
+    lines: ['5h 72% · このペースで約 40 分で上限（目安） · リセットまで 1 時間 10 分'],
+    paceNote: 'ペースは目安です。',
+  }
+
+  // Act
+  const withView = buildReportLines(review, undefined, new Set(), view)
+  const without = buildReportLines(review)
+  const rows = buildPaneRows(review, {}, undefined, undefined, new Set(), view)
+
+  // Assert
+  expect(withView.join('\n')).toContain('請求額ではありません')
+  expect(withView.join('\n')).toContain('枠: 5h 72%')
+  expect(without).toEqual(buildReportLines(review, undefined, new Set(), null))
+  expect(without.join('\n')).not.toContain('API 換算')
+  expect(JSON.stringify(rows)).toContain('請求額ではありません')
+  expect(JSON.stringify(buildPaneRows(review))).not.toContain('API 換算')
+})

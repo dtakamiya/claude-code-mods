@@ -723,7 +723,7 @@ test('measure: コストと使用率を status 行に出し、context だけの�
   await $.session.measure(measure(['context'], 9, [99]))
   await $.session.measure(measure(['cost'], 1.234, [72]))
 
-  expect(ui.statuses).toEqual(['実コスト $1.23 · 5h 72%'])
+  expect(ui.statuses).toEqual(['API換算 $1.23 · 5h 72%'])
 })
 
 test('measure: 既定は上限が無効でトーストを出さない', async ($, on) => {
@@ -854,4 +854,23 @@ test('切替の直前: notifyOnSwitch を切るとトーストしない', { opti
 
   // Assert
   expect(ui.toasts).toEqual([])
+})
+
+test('measure: サブスクの枠は描き直さない測定でも覚え、レポートに API 換算の注意と枠の行を出す。枠が無ければ出さない', async ($, on) => {
+  answerEngine(on, () => 10, false)
+  captureUi(on)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  const before = await $.command.run(COMMAND_RUN)
+
+  await $.session.measure({
+    context: {},
+    rateLimits: [{ kind: 'five_hour', percentUsed: 72, resetsAt: new Date(CLOCK_START + 70 * 60000).toISOString() }],
+    changed: ['context'],
+  } as never)
+  const after = await $.command.run(COMMAND_RUN)
+
+  expect(before.text).not.toContain('API 換算')
+  expect(after.text).toContain('請求額ではありません')
+  expect(after.text).toContain('枠: 5h 72% · リセットまで 1 時間 10 分')
 })

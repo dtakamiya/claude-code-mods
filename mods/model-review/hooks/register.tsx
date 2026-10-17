@@ -7,8 +7,9 @@ import { beginTurn, finishTurn, liveDrafts, markPlanMode, recordStep, recordTool
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
-import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
+import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus, type RateWindow } from './glance'
 import { readMutedConcerns } from './mute'
+import { paceOf, recordRateSamples, subscriptionView, type RateHistory } from './pace'
 import { formatSwitchNotice, readNotifyOnSwitch } from './switchnotice'
 import { recordSpawn, resolveAgentType, type AgentTypes } from './agenttype'
 
@@ -64,6 +65,9 @@ export const register: Register = (on, options) => {
   // 知らせ済みの上限と、直近に出した status 文。reload で消えるので、reload 後は超過中の上限をもう一度知らせうる。
   let notified: ReadonlySet<string> = new Set()
   let lastStatus: string | undefined
+  // 枠（5h / 7d）の直近の測定と、最後に見た枠。ペースの目安用で、reload で消える（消えたらペースは出さず、リセットまでの時間だけ出す）。
+  let rateHistory: RateHistory = {}
+  let lastWindows: readonly RateWindow[] = []
   // 進行中のターンの下書き（ループごと）。値は差し替えるだけで、中身は書き換えない。
   let drafts: Drafts = {}
   // /compact（自動を含む）が通った後、まだ完了していないメインのターンに印を付けるための旗。
@@ -96,7 +100,8 @@ export const register: Register = (on, options) => {
       text => $.ui.log(text, { to: 'debug' }),
     )
     if (costUsd !== null) await update($, reviewAtom, state => withCostSample(state, costUsd))
-    const lines = buildReportLines(await read($, reviewAtom), await $.clock.now(), muted)
+    const nowMs = await $.clock.now()
+    const lines = buildReportLines(await read($, reviewAtom), nowMs, muted, subscriptionView(lastWindows, rateHistory, nowMs))
     if (mode === 'copy') {
       // コピー内容はテキストレポートそのもの（input・プロンプトは記録していないので含まれない）。
       const copied = await $.ui.copy({ text: lines.join('\n') })
@@ -109,12 +114,23 @@ export const register: Register = (on, options) => {
 
   on('session.measure', async ($, e, next) => {
     const costUsd = e.cost?.usd
+    // 枠の測定はペースの材料なので、描き直さない測定でも残す（ペイン・レポートが古い枠を見ないように）。
+    if (e.rateLimits.length > 0) {
+      try {
+        rateHistory = recordRateSamples(rateHistory, e.rateLimits, await $.clock.now())
+        lastWindows = e.rateLimits
+      } catch {
+        void $.ui.log(GLANCE_FAILED_TEXT, { to: 'debug' })
+      }
+    }
     // 表示は記録（await）より先に。記録の失敗や遅れで status 行が止まったり、古い値で上書きされたりしないように。
     if (needsRedraw(e.changed)) {
       try {
         const glance = { costUsd, rateLimits: e.rateLimits }
+        const nowMs = await $.clock.now()
         if (showStatus) {
-          const text = formatStatus(glance)
+          const paces = Object.fromEntries(e.rateLimits.map(window => [window.kind, paceOf(window, rateHistory[window.kind] ?? [], nowMs)]))
+          const text = formatStatus(glance, paces)
           if (text !== lastStatus) {
             lastStatus = text
             void $.ui.status(text)
@@ -252,7 +268,14 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const nowMs = await $.clock.now()
-    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs, e.props.bodyColumns, muted)
+    const rows = buildPaneRows(
+      await read($, reviewAtom),
+      liveDrafts(drafts, nowMs),
+      nowMs,
+      e.props.bodyColumns,
+      muted,
+      subscriptionView(lastWindows, rateHistory, nowMs),
+    )
     return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }

@@ -21,6 +21,7 @@ import {
 import { archiveNote, mergeGroups } from './archive'
 import { cellWidth, formatUsd, formatUsdRange } from './format'
 import type { Drafts, LoopDraft } from './recorder'
+import type { SubscriptionView } from './pace'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
 import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
@@ -143,6 +144,16 @@ function growthRows(records: ReviewState['turns'], archived: ReviewState['archiv
     { kind: 'kv', label: GROWTH_LABEL, value: view.trend, tone: 'plain' },
     ...(view.compact === null ? [] : [{ kind: 'kv', label: '  compact の前後', value: view.compact, tone: 'plain' } satisfies PaneRow]),
     { kind: 'note', text: view.note },
+  ]
+}
+
+/** サブスクの枠が取れているときだけ、API 換算の注意と枠のペースを出す。 */
+function subscriptionRows(view: SubscriptionView | null): PaneRow[] {
+  if (view === null) return []
+  return [
+    { kind: 'note', text: view.apiNote },
+    ...view.lines.map((line): PaneRow => ({ kind: 'kv', label: '枠', value: line, tone: 'plain' })),
+    { kind: 'note', text: view.paceNote },
   ]
 }
 
@@ -302,6 +313,7 @@ export function buildPaneRows(
   nowMs?: number,
   columns?: number,
   muted: ReadonlySet<ConcernKind> = new Set(),
+  subscription: SubscriptionView | null = null,
 ): PaneRow[] {
   const records = review.turns
   const live = liveRows(drafts)
@@ -334,6 +346,7 @@ export function buildPaneRows(
     ...loopRows(records),
     ...whatIfRows(records),
     { kind: 'heading', text: HEADING.cost },
+    ...subscriptionRows(subscription),
     ...costRows(review, estimate),
     ...breakdownRows(records, review.archived),
     ...growthRows(records, review.archived),

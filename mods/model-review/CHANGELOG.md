@@ -2,6 +2,9 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.28.0
+- サブスク利用者向けに、金額を「API 換算」と明示し、枠（5h / 7d）の消費ペースを出す（#73）。`session.measure` の `rateLimits` が空でないときだけ、status 行の金額を「API換算 $1.23」にし、ペインとテキストレポートのコストの節に「金額は API 換算の参考値で、サブスクの請求額ではありません」と各枠の行を出す（例: 5h 72% · このペースで約 40 分で上限（目安） · リセットまで 1 時間 10 分）。ペースは直近 30 分の測定の増え方から出す目安（`pace.ts` の純粋関数）で、測定が 1 回だけ・間隔が短い・増えていないときはリセットまでの時間だけにし、使用率が下がったらリセットをまたいだとみなして数え直す。status 行はリセットより先に上限へ届く見込みのときだけ「5h 72%（↑40分）」と添える。`rateLimits` が空の環境は従来の表示のまま。履歴はメモリのみ（reload で消える）。定数は `threshold-rationale.md` に仮置きとして追記。status 行・ペインの見た目は目視未確認。
+
 ## 0.27.0
 - モデル切替の直前に、キャッシュ再構築の見積りをトーストで知らせる（#71）。`classic.PreModelSwitch` を観察し、`prompt_cache_warm` が真で別のモデルへ替わるときだけ「温かいキャッシュを捨て、N tokens を書き直す見積り 約 $X」を出す（`switchnotice.ts` の純粋関数）。見積りは engine の `estimated_cache_write_usd`、`pricing` が `default` のときは「単価は仮定」と添える。切替は止めず（`permissionDecision` を返さず必ず `next(e)`）、例外でも切替は通す。`userConfig` に `notifyOnSwitch`（既定: オン）を追加。`cache_ttl` の記録は今回見送り。トーストは目視未確認。
 

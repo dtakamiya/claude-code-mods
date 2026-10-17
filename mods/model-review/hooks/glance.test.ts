@@ -8,8 +8,14 @@ const five = (percentUsed: number) => ({ kind: 'five_hour', percentUsed })
 
 test('formatStatus: コストと使用率を 1 行にする', () => {
   expect(formatStatus({ costUsd: 1.234, rateLimits: [five(72), { kind: 'seven_day', percentUsed: 8.5 }] })).toBe(
-    '実コスト $1.23 · 5h 72% · 7d 8.5%',
+    'API換算 $1.23 · 5h 72% · 7d 8.5%',
   )
+})
+
+test('formatStatus: ペースがあれば「5h 72%（↑40分）」、上限に届かない見込みなら付けない', () => {
+  const glance = { costUsd: 1, rateLimits: [five(72), { kind: 'seven_day', percentUsed: 8 }] }
+  const paces = { five_hour: { minutesToLimit: 40, minutesToReset: 70 }, seven_day: { minutesToLimit: 9000, minutesToReset: 100 } }
+  expect(formatStatus(glance, paces)).toBe('API換算 $1.00 · 5h 72%（↑40分） · 7d 8%')
 })
 
 test('formatStatus: rateLimits が空ならコストだけ、どちらも無ければ undefined', () => {
