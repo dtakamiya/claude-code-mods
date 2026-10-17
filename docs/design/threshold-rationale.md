@@ -67,6 +67,9 @@
 
 | 値 | 場所 | 使われ方 | 根拠の強さ |
 |---|---|---|---|
+| `PACE_WINDOW_MS` = 15 分 | pace.ts | 使用率の消費ペースを求める直近の測定の窓。これより古い測定は捨て、最後の測定がこれより古ければペースを出さない（0.27.0・#73） | 実測なし = 仮置き |
+| `PACE_MIN_SPAN_MS` = 2 分 | pace.ts | ペースを出すのに要る、最初と最後の測定の間隔。1 回の増分（1 ポイント）に左右されないため | 実測なし = 仮置き |
+| `PACE_MAX_POINTS` = 60 | pace.ts | 1 つの枠で覚える測定の最大数（メモリの上限） | 実測なし = 仮置き |
 | `GROWTH_WINDOW_TURNS` = 10 / `GROWTH_MIN_TURNS` = 20 / `COMPACT_MIN_SIDE_TURNS` = 3 | growth.ts | 費用の推移で比べる最初・直近のターン数、推移を出す最小のターン数（窓 2 つ分）、compact の前後に要る最小のターン数（0.26.0・#84）。表示のみで指摘にしない | 実測なし = 仮置き |
 | `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Opus 系の軽作業で、Sonnet 換算の差額がこれ未満ならモデル起因の過剰にしない（0.11.0 で Haiku 換算から変更。Sonnet・Haiku はモデルでは指摘せず、effort 起因だけ指摘する） | 実測なし = 仮置き |
 | plan mode のターン | analyze.ts | `TurnRecord.planMode` のターンはモデル起因の過剰（`isModelOverspec`）から外す。計画のためにわざと Opus を選ぶ使い方を「過剰」にしないため。effort 起因は外さない（0.25.0 で追加、#82） | 閾値なし（判定の除外） |

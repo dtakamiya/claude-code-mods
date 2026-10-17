@@ -32,21 +32,21 @@ export function needsRedraw(changed: readonly string[]): boolean {
   return changed.some(unit => UNITS_TO_REDRAW.includes(unit))
 }
 
-const rateLabel = (kind: string): string => RATE_LABELS[kind] ?? kind
-const formatPercent = (percent: number): string => `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`
+export const rateLabel = (kind: string): string => RATE_LABELS[kind] ?? kind
+export const formatPercent = (percent: number): string => `${Number.isInteger(percent) ? percent : percent.toFixed(1)}%`
 
 // status 行は短く。コストは 2 桁（レポートの 4 桁表示より粗くてよい）。
 const formatCostShort = (usd: number): string => `$${usd.toFixed(2)}`
 
 /**
  * status 行の 1 行。コストも使用率も無ければ undefined（行を消す）。
- * 使用率が空（サブスク外・初回前）のときはコストだけを出す。
+ * 使用率が空（サブスク外・初回前）のときはコストだけを出す。`hints` は枠の種類ごとの短い印（消費ペース）。
  */
-export function formatStatus(glance: Glance): string | undefined {
+export function formatStatus(glance: Glance, hints: ReadonlyMap<string, string> = new Map()): string | undefined {
   const parts: string[] = []
   if (glance.costUsd !== undefined && Number.isFinite(glance.costUsd)) parts.push(`実コスト ${formatCostShort(glance.costUsd)}`)
   for (const window of glance.rateLimits) {
-    if (Number.isFinite(window.percentUsed)) parts.push(`${rateLabel(window.kind)} ${formatPercent(window.percentUsed)}`)
+    if (Number.isFinite(window.percentUsed)) parts.push(`${rateLabel(window.kind)} ${formatPercent(window.percentUsed)}${hints.has(window.kind) ? `（${hints.get(window.kind)}）` : ''}`)
   }
   return parts.length === 0 ? undefined : parts.join(' · ')
 }

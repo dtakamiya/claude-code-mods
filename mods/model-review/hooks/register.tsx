@@ -9,6 +9,7 @@ import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 import { readMutedConcerns } from './mute'
+import { addRateSamples, paceHints, rateView, type RateSamples } from './pace'
 import { recordSpawn, resolveAgentType, type AgentTypes } from './agenttype'
 
 const PANE_ID = 'model-review'
@@ -68,6 +69,8 @@ export const register: Register = (on, options) => {
   let compactPending = false
   // agentId → サブエージェントの種類。reload で消えるので、消えた後は $.agent.list() で補う。
   let agentTypes: AgentTypes = {}
+  // 使用率の直近の測定（消費ペースの計算用）。reload で消えるので、reload 直後はペースが出ない。
+  let rateSamples: RateSamples = {}
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -94,7 +97,8 @@ export const register: Register = (on, options) => {
       text => $.ui.log(text, { to: 'debug' }),
     )
     if (costUsd !== null) await update($, reviewAtom, state => withCostSample(state, costUsd))
-    const lines = buildReportLines(await read($, reviewAtom), await $.clock.now(), muted)
+    const nowMs = await $.clock.now()
+    const lines = buildReportLines(await read($, reviewAtom), nowMs, muted, rateView(rateSamples, nowMs))
     if (mode === 'copy') {
       // コピー内容はテキストレポートそのもの（input・プロンプトは記録していないので含まれない）。
       const copied = await $.ui.copy({ text: lines.join('\n') })
@@ -111,8 +115,11 @@ export const register: Register = (on, options) => {
     if (needsRedraw(e.changed)) {
       try {
         const glance = { costUsd, rateLimits: e.rateLimits }
+        // 時刻が取れなければペースは出さない（測定は捨てずに残す）。
+        const nowMs = await $.clock.now().catch(() => undefined)
+        if (nowMs !== undefined && e.changed.includes('rateLimits')) rateSamples = addRateSamples(rateSamples, e.rateLimits, nowMs)
         if (showStatus) {
-          const text = formatStatus(glance)
+          const text = formatStatus(glance, nowMs === undefined ? undefined : paceHints(rateSamples, nowMs))
           if (text !== lastStatus) {
             lastStatus = text
             void $.ui.status(text)
@@ -232,7 +239,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const nowMs = await $.clock.now()
-    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs, e.props.bodyColumns, muted)
+    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs, e.props.bodyColumns, muted, rateView(rateSamples, nowMs))
     return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }
