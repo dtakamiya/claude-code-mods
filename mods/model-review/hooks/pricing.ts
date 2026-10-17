@@ -1,3 +1,5 @@
+import type { CostParts } from '../types'
+
 // 単価表。出典: https://platform.claude.com/docs/en/about-claude/pricing （PRICE_TABLE_FETCHED_AT に取得）。
 // 単位は USD / 100 万トークン（MTok）。$ には触れない純粋な表。単価が変わったらここだけを直す。
 // キャッシュ書き込みは 5 分単価を基本にする（TurnUsage は TTL 別の内訳を持たないため）。1 時間単価は上限の見積りにだけ使う。
@@ -124,14 +126,6 @@ export function ratesFor(model: string, promptTokens: number): Rates | null {
 }
 
 export type CacheWriteTtl = '5m' | '1h'
-
-/** 1 応答の推定コストの種類別の内訳（USD）。 */
-export type CostParts = {
-  readonly input: number
-  readonly output: number
-  readonly cacheRead: number
-  readonly cacheWrite: number
-}
 
 /**
  * 1 応答の推定コストを、トークンの種類ごとに分けたもの（USD）。単価表にないモデルは null（単価不明）。

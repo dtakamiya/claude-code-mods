@@ -51,6 +51,9 @@ function foldIntoGroups(groups: readonly ArchivedGroup[], record: TurnRecord): r
 
 /** 1 ターンを集計に足す。afterBaseline が true なら、実コストに入るターンとして別に積む。 */
 export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseline: boolean): ArchivedTurns {
+  // 内訳を持たない古い集計は、初めて畳むときに、すでに畳んでいた単価ありのターンを「内訳なし」として数え残す。
+  const legacyMissing = archive.costParts === undefined ? archive.turns - archive.unpricedTurns : 0
+  const baseParts = archive.costParts ?? ZERO_PARTS
   const low = record.costUsd ?? 0
   const high = record.costUsd === null ? 0 : (record.costUpperUsd ?? record.costUsd)
   return {
@@ -61,8 +64,8 @@ export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseli
     pricedUsd: archive.pricedUsd + low,
     unpricedTurns: archive.unpricedTurns + (record.costUsd === null ? 1 : 0),
     highUsd: archive.highUsd + high,
-    costParts: record.costParts == null ? (archive.costParts ?? ZERO_PARTS) : addParts(archive.costParts ?? ZERO_PARTS, record.costParts),
-    partsMissingTurns: (archive.partsMissingTurns ?? 0) + (record.costUsd !== null && record.costParts == null ? 1 : 0),
+    costParts: record.costParts == null ? baseParts : addParts(baseParts, record.costParts),
+    partsMissingTurns: (archive.partsMissingTurns ?? 0) + legacyMissing + (record.costUsd !== null && record.costParts == null ? 1 : 0),
     sinceBaseline: afterBaseline
       ? {
           lowUsd: archive.sinceBaseline.lowUsd + low,

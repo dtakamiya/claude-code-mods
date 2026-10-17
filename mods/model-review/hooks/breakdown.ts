@@ -13,11 +13,15 @@ export const addParts = (a: CostParts, b: CostParts): CostParts => ({
 
 /** 書込または出力がこの割合以上を占めるとき、見直しの手がかりを添える（仮置き）。 */
 export const BREAKDOWN_HINT_SHARE = 0.5
+/** 手がかりは、内訳に入ったターンがこの数以上あるときだけ出す。序盤は最初のキャッシュ書込が大きく、異常とは言えないため（仮置き）。 */
+export const BREAKDOWN_HINT_MIN_TURNS = 5
 
 export type CostBreakdown = {
   readonly parts: CostParts
   /** 内訳の合計（USD）。内訳を持つターンの推定コスト（下限）の合計と一致する。 */
   readonly totalUsd: number
+  /** 内訳に入ったターン数。 */
+  readonly includedTurns: number
   /** 単価不明、または内訳を持たない（古い記録の）ため、内訳から除いたターン数。 */
   readonly excludedTurns: number
 }
@@ -40,10 +44,9 @@ export function costBreakdown(records: readonly TurnRecord[], archived?: Archive
     { parts: archived?.costParts ?? ZERO_PARTS, excluded: archivedExcluded(archived) },
   )
   const totalUsd = sumParts(recent.parts)
-  return totalUsd > 0 ? { parts: recent.parts, totalUsd, excludedTurns: recent.excluded } : null
+  const includedTurns = records.length + (archived?.turns ?? 0) - recent.excluded
+  return totalUsd > 0 ? { parts: recent.parts, totalUsd, includedTurns, excludedTurns: recent.excluded } : null
 }
-
-const percent = (value: number, total: number): string => `${Math.round((value / total) * 100)}%`
 
 export const BREAKDOWN_LABEL = '内訳'
 
@@ -56,17 +59,24 @@ export function breakdownItems(breakdown: CostBreakdown): string {
     { label: '読込', value: parts.cacheRead },
     { label: '入力', value: parts.input },
   ].sort((a, b) => b.value - a.value)
-  return items.map(item => `${item.label} ${percent(item.value, totalUsd)}`).join(' · ')
+  // 合計が 100% になるよう、切り捨てた残りを小数部の大きい順に 1% ずつ配る。
+  const exact = items.map(item => (item.value / totalUsd) * 100)
+  const floors = exact.map(Math.floor)
+  const order = exact.map((value, index) => ({ index, rest: value - Math.floor(value) })).sort((a, b) => b.rest - a.rest)
+  const extra = 100 - floors.reduce((sum, value) => sum + value, 0)
+  const shares = floors.map((value, index) => value + (order.slice(0, extra).some(entry => entry.index === index) ? 1 : 0))
+  return items.map((item, index) => `${item.label} ${item.value > 0 && shares[index] === 0 ? '<1' : shares[index]}%`).join(' · ')
 }
 
 /** 書込や出力が大きいときだけ、関係する既存の指摘・注記を指す 1 行。大きくなければ null。 */
 export function breakdownHint(breakdown: CostBreakdown): string | null {
   const { parts, totalUsd } = breakdown
+  if (breakdown.includedTurns < BREAKDOWN_HINT_MIN_TURNS) return null
   if (parts.cacheWrite / totalUsd >= BREAKDOWN_HINT_SHARE) {
-    return '書込が大きい: プレフィックスが変わり続けている可能性（「キャッシュ書込が読込を上回るターンが連続」の注意・モデル切替・MCP・プラグインを確認）'
+    return '書込が大きい: プレフィックスが変わり続けている可能性（モデル・effort の切替、MCP・プラグインの変更を確認。注意欄に書込の連続が出ていればそれも参照）'
   }
   if (parts.output / totalUsd >= BREAKDOWN_HINT_SHARE) {
-    return '出力が大きい: effort や冗長な出力を見直す（過剰・不足の指摘を参照）'
+    return '出力が大きい: effort や冗長な出力を見直す'
   }
   return null
 }
