@@ -139,7 +139,7 @@ function concernRows(concerns: readonly Concern[], records: ReviewState['turns']
     return [
       { kind: 'badge', label: CONCERN_TEXT[concern.kind].label, tone: CONCERN_TONE[concern.kind], text: concernDetailText(concern) },
       ...concern.examples.map((text): PaneRow => ({ kind: 'example', text })),
-      ...(next === null ? [] : [{ kind: 'next', text: next } as const]),
+      ...(next === null ? [] : [{ kind: 'next', text: next } satisfies PaneRow]),
     ]
   })
 }

@@ -61,13 +61,18 @@ export type OverspecFacts = {
   readonly mainModelSavingsUsd: number | null
   /** サブエージェントにモデル起因の過剰があるか。 */
   readonly subagentModel: boolean
-  /** effort 起因の過剰ターンのモデル（重複なし）。 */
-  readonly effortModels: readonly string[]
+  /** メインループの effort 起因の過剰ターンのモデル（重複なし）。 */
+  readonly mainEffortModels: readonly string[]
+  /** サブエージェントに effort 起因の過剰があるか。 */
+  readonly subagentEffort: boolean
 }
 
 /** 不足の「次の一手」を作る材料。どちらの条件で該当したか。 */
 export type UnderspecFacts = {
-  readonly haikuLow: boolean
+  /** Haiku / low の重いターンが、メイン・サブエージェントのどちらにあるか。 */
+  readonly haikuLowMain: boolean
+  readonly haikuLowSubagent: boolean
+  /** Sonnet / low のエラー連続（メインのみ）。 */
   readonly sonnetLow: boolean
 }
 
@@ -332,7 +337,10 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
       mainModelTurns: mainModelTurns.length,
       mainModelSavingsUsd: sumKnown(mainModelTurns.map(sonnetSavingsUsd)),
       subagentModel: modelTurns.some(record => record.agentId !== null),
-      effortModels: [...new Set(overspec.filter(isEffortOverspec).map(record => record.model))],
+      mainEffortModels: [
+        ...new Set(overspec.filter(record => isEffortOverspec(record) && record.agentId === null).map(record => record.model)),
+      ],
+      subagentEffort: overspec.some(record => isEffortOverspec(record) && record.agentId !== null),
     },
   }
 }
@@ -380,7 +388,11 @@ function underspecConcern(records: readonly TurnRecord[]): Concern | null {
   if (concern === null) return null
   return {
     ...concern,
-    underspec: { haikuLow: underspec.some(isHaikuUnderspecTurn), sonnetLow: underspec.some(isSonnetLowFailure) },
+    underspec: {
+      haikuLowMain: underspec.some(record => isHaikuUnderspecTurn(record) && record.agentId === null),
+      haikuLowSubagent: underspec.some(record => isHaikuUnderspecTurn(record) && record.agentId !== null),
+      sonnetLow: underspec.some(isSonnetLowFailure),
+    },
   }
 }
 

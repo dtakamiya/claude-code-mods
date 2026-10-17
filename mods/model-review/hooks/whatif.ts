@@ -58,10 +58,6 @@ function optionFor(record: UsableRecord, currentUsd: number, model: string): Swi
   return { model, rebuildUsd, perTurnDeltaUsd, breakEvenTurns: breakEvenTurns(rebuildUsd, -perTurnDeltaUsd) }
 }
 
-/** 見積りの基準にする直近のメインのターンのモデル。基準にできるターンがなければ null。 */
-export function baseModelOf(records: readonly TurnRecord[]): string | null {
-  return [...records].reverse().find(isUsable)?.model ?? null
-}
 
 /**
  * 直近のメインループのターンを基準にした切替の見積り。基準にできるターンがなければ空。
