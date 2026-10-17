@@ -36,6 +36,8 @@ export type LoopDraft = {
   readonly editCount: number
   /** 最後に開始・応答・ツール呼び出しがあった時刻（ms）。取れなかったときは null。 */
   readonly lastActivityMs: number | null
+  /** turn.start を見て作った下書きか。false なら reload で下書きが消えた後に途中から拾った下書き。 */
+  readonly started: boolean
 }
 
 export type Drafts = Readonly<Record<string, LoopDraft>>
@@ -61,6 +63,8 @@ export type TurnEndInput = {
   readonly usage?: TokenUsageLike
   readonly durationMs: number
   readonly reason: TurnRecord['reason']
+  /** この終了が /compact の直後のターンか。 */
+  readonly afterCompact?: boolean
 }
 
 export type FinishedTurn = {
@@ -100,6 +104,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   toolCount: 0,
   editCount: 0,
   lastActivityMs: null,
+  started: false,
 })
 
 const draftOf = (drafts: Drafts, agentId: string | undefined, turnId: string): LoopDraft =>
@@ -114,7 +119,7 @@ const ZERO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as cons
 
 /** 同じループに残っていた未完了の下書きは置き換える（中断されたターンの残りを引きずらない）。 */
 export function beginTurn(drafts: Drafts, turn: { readonly turnId: string; readonly agentId?: string }, nowMs?: number): Drafts {
-  const started = { ...emptyDraft(turn.turnId, turn.agentId ?? null), lastActivityMs: nowMs ?? null }
+  const started = { ...emptyDraft(turn.turnId, turn.agentId ?? null), lastActivityMs: nowMs ?? null, started: true }
   return withDraft(drafts, turn.agentId, started)
 }
 
@@ -282,6 +287,8 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     firstStepCacheWrite: first.cacheWrite,
     firstStepPromptTokens: first.promptTokens,
     advisorCalls: draft.advisorCalls,
+    ...(end.afterCompact === true ? { afterCompact: true } : {}),
+    ...(draft.started ? {} : { partial: true }),
   }
   const remaining = Object.fromEntries(Object.entries(drafts).filter(([candidate]) => candidate !== key))
   return { drafts: remaining, record }

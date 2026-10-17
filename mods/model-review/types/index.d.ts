@@ -37,6 +37,10 @@ export type TurnRecord = {
   readonly firstStepPromptTokens?: number
   /** API が実行した advisor サーバーツールの呼び出し回数。 */
   readonly advisorCalls?: number
+  /** /compact（自動を含む）の直後のターン。必然的なキャッシュ再構築を含むので、書込多め・切替コストの判定から外す。0.14.2 で追加。 */
+  readonly afterCompact?: boolean
+  /** ターンの開始を見ていない（reload を跨いだ）記録。最初の応答の書込が実際と違うので、切替コストの基準から外す。0.14.2 で追加。 */
+  readonly partial?: boolean
 }
 
 export type ReviewState = {

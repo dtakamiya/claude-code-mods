@@ -25,8 +25,16 @@ export function withBaseline(state: ReviewState, costUsd: number | null): Review
   }
 }
 
+/**
+ * 直近値を書く。基準点より小さい値が来たら（セッション再開などで累計が巻き戻った）、基準点を取り直す。
+ * 取り直さないと実コストが負になり、Mod 未読込中の費用も混ざる。
+ */
 export function withCurrent(state: ReviewState, costUsd: number): ReviewState {
   if (!isUsableCost(costUsd)) return state
+  const { baseline } = state.sessionCostUsd
+  if (baseline !== null && costUsd < baseline) {
+    return { ...state, sessionCostUsd: { baseline: costUsd, current: costUsd, baselineTurns: state.turns.length } }
+  }
   return { ...state, sessionCostUsd: { ...state.sessionCostUsd, current: costUsd } }
 }
 

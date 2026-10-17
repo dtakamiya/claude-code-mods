@@ -80,3 +80,14 @@ test('書込と読込が同じターンは再構築と数えず、連続を切�
   // Assert
   expect(longestRebuildStreak(records)).toBe(1)
 })
+
+test('/compact 直後のターンは書込多めに数えず、連続も切る', () => {
+  // Arrange: 書込が読込を上回るターンが 3 回続くが、真ん中は compact 直後
+  const records = [turn(0, 10), turn(0, 10, { afterCompact: true }), turn(0, 10)]
+
+  // Act
+  const streak = longestRebuildStreak(records)
+
+  // Assert
+  expect(streak).toBe(1)
+})

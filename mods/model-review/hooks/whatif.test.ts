@@ -91,3 +91,14 @@ test('文面はモデル名・再構築・差額の符号・回収ターン数�
   // Assert
   expect(text).toBe('haiku-5-5 へ: 再構築 +$0.0575 · 1 ターンあたり -$0.4325 · 約 1 ターンで回収')
 })
+
+test('compact 直後・partial のターンは基準にしない', () => {
+  // Arrange
+  const records = [turn({ afterCompact: true }), turn({ partial: true })]
+
+  // Act
+  const options = estimateSwitchOptions(records)
+
+  // Assert
+  expect(options).toEqual([])
+})

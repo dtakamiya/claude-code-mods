@@ -415,3 +415,19 @@ test('中断されたターンは、寿命を過ぎるとペインの「実行�
   expect(isRunningRow(withinLifetime)).toBe(true)
   expect(isRunningRow(afterLifetime)).toBe(false)
 })
+
+test('開始を見ていない途中拾いのターンは partial、compact 直後は afterCompact の印が付く', () => {
+  // Arrange: reload で下書きが消え、step から拾い始めた
+  const midway = recordStep({}, { turnId: 't1', model: 'claude-sonnet-5-5', usage: sonnetUsage })
+  const started = recordStep(beginTurn({}, { turnId: 't2' }), { turnId: 't2', model: 'claude-sonnet-5-5', usage: sonnetUsage })
+
+  // Act
+  const partial = finishTurn(midway, { turnId: 't1', usage: sonnetUsage, durationMs: 1, reason: 'answer' })
+  const compacted = finishTurn(started, { turnId: 't2', usage: sonnetUsage, durationMs: 1, reason: 'answer', afterCompact: true })
+
+  // Assert
+  expect(partial.record.partial).toBe(true)
+  expect(partial.record.afterCompact).toBeUndefined()
+  expect(compacted.record.partial).toBeUndefined()
+  expect(compacted.record.afterCompact).toBe(true)
+})
