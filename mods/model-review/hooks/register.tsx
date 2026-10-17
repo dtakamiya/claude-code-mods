@@ -8,6 +8,7 @@ import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
+import { readMutedConcerns } from './mute'
 
 const PANE_ID = 'model-review'
 const PANE_TITLE = 'モデル振り返り'
@@ -56,6 +57,7 @@ const logDebug =
 export const register: Register = (on, options) => {
   const limits = readLimits(options)
   const showStatus = readShowStatus(options)
+  const muted = readMutedConcerns(options)
   // 知らせ済みの上限と、直近に出した status 文。reload で消えるので、reload 後は超過中の上限をもう一度知らせうる。
   let notified: ReadonlySet<string> = new Set()
   let lastStatus: string | undefined
@@ -89,7 +91,7 @@ export const register: Register = (on, options) => {
       text => $.ui.log(text, { to: 'debug' }),
     )
     if (costUsd !== null) await update($, reviewAtom, state => withCostSample(state, costUsd))
-    const lines = buildReportLines(await read($, reviewAtom), await $.clock.now())
+    const lines = buildReportLines(await read($, reviewAtom), await $.clock.now(), muted)
     if (mode === 'copy') {
       // コピー内容はテキストレポートそのもの（input・プロンプトは記録していないので含まれない）。
       const copied = await $.ui.copy({ text: lines.join('\n') })
@@ -194,7 +196,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const nowMs = await $.clock.now()
-    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs, e.props.bodyColumns)
+    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs, e.props.bodyColumns, muted)
     return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }
