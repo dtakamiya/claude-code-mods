@@ -239,3 +239,18 @@ test('数値の effort のターンがあれば、指摘の節に判定外の注
   expect(lines.some(line => line.includes('effort が数値のターン 1 件'))).toBe(true)
   expect(rows.some(row => row.kind === 'note' && row.text.includes('effort が数値のターン 1 件'))).toBe(true)
 })
+
+test('メインのターンが 20 件以上あれば、コストの節に費用の推移を出す（ペインと同じ値）。少なければ出さない', () => {
+  // Arrange
+  const many = Array.from({ length: 20 }, (_, index) => turn({ costUsd: index < 10 ? 0.04 : 0.19, firstStepPromptTokens: index < 10 ? 18_000 : 142_000 }))
+  const review = withTurns(many, null, null)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+  const rows = buildPaneRows(review, {}, 0, 80, new Set())
+
+  // Assert
+  expect(text).toContain('1 ターンあたりの費用の推移: 最初の 10 ターン $0.0400 → 直近 10 ターン $0.1900（プロンプト 18k → 142k tokens）')
+  expect(rows.some(row => row.kind === 'kv' && row.label === '1 ターンあたりの費用の推移' && row.value.includes('$0.1900'))).toBe(true)
+  expect(buildReportLines(withTurns(many.slice(0, 5), null, null)).join('\n')).not.toContain('費用の推移')
+})
