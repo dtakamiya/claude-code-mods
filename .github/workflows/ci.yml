@@ -1,0 +1,43 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  mods:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mod: [context-doctor, model-review, repeat-call-notice, session-recap]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate mods/${{ matrix.mod }}
+      - run: claude plugin test mods/${{ matrix.mod }}
+  version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 変更した mod の plugin.json の version が上がっているか
+        run: |
+          base="origin/${{ github.base_ref }}"
+          fail=0
+          for dir in mods/*/; do
+            mod=$(basename "$dir")
+            git diff --quiet "$base...HEAD" -- "mods/$mod" && continue
+            git cat-file -e "$base:mods/$mod/.claude-plugin/plugin.json" 2>/dev/null || continue
+            old=$(git show "$base:mods/$mod/.claude-plugin/plugin.json" | grep -o '"version": *"[^"]*"')
+            new=$(grep -o '"version": *"[^"]*"' "mods/$mod/.claude-plugin/plugin.json")
+            if [ "$old" = "$new" ]; then
+              echo "::error::mods/$mod を変更したが plugin.json の version が同じ ($new)"
+              fail=1
+            fi
+          done
+          exit $fail

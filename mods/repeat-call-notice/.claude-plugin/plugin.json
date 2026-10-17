@@ -1,1 +1,1 @@
-{ "name": "repeat-call-notice", "version": "0.1.0", "description": "1 ターンで同じツールを同じ入力で繰り返し呼んだことを、ターン終了時にトーストで知らせる（読み取り専用）", "author": { "name": "dtakamiya" } }
+{ "name": "repeat-call-notice", "version": "0.1.1", "description": "1 ターンで同じツールを同じ入力で繰り返し呼んだことを、ターン終了時にトーストで知らせる（読み取り専用）", "author": { "name": "dtakamiya" } }
