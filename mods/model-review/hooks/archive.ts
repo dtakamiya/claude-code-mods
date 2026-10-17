@@ -1,5 +1,6 @@
 // 上限を超えた古いターンを集計値に畳み込む。$ に触れない純粋関数。
 // turns を無制限に持つと、毎ターンの書き直しと描画ごとの全件再計算が増え続ける。
+import { ZERO_PARTS, addParts } from './breakdown'
 import type { ArchivedGroup, ArchivedTurns, ReviewState, TurnRecord } from '../types'
 
 /** turns に残す件数の上限（仮置き）。これを超えた分は古い順に集計へ畳む。 */
@@ -13,6 +14,8 @@ export const EMPTY_ARCHIVE: ArchivedTurns = {
   pricedUsd: 0,
   unpricedTurns: 0,
   highUsd: 0,
+  costParts: ZERO_PARTS,
+  partsMissingTurns: 0,
   sinceBaseline: { lowUsd: 0, highUsd: 0, cacheWrite: 0 },
 }
 
@@ -58,6 +61,8 @@ export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseli
     pricedUsd: archive.pricedUsd + low,
     unpricedTurns: archive.unpricedTurns + (record.costUsd === null ? 1 : 0),
     highUsd: archive.highUsd + high,
+    costParts: record.costParts == null ? (archive.costParts ?? ZERO_PARTS) : addParts(archive.costParts ?? ZERO_PARTS, record.costParts),
+    partsMissingTurns: (archive.partsMissingTurns ?? 0) + (record.costUsd !== null && record.costParts == null ? 1 : 0),
     sinceBaseline: afterBaseline
       ? {
           lowUsd: archive.sinceBaseline.lowUsd + low,

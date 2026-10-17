@@ -1,6 +1,7 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 // 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
+import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
@@ -61,12 +62,15 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   const estimateLine = estimate.allUnpriced
     ? `合計推定コスト: ${allUnpricedText(records.length + (review.archived?.turns ?? 0))}`
     : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
+  const view = breakdownView(records, review.archived)
+  const breakdownLines = view === null ? [] : [`${BREAKDOWN_LABEL}: ${view.items}`, ...(view.hint === null ? [] : [`  → ${view.hint}`]), `  ${view.note}`]
   const actual = actualCostUsd(review)
   if (actual === null) {
-    return [estimateLine, 'セッション実コスト: 取得できません（コストの記録がない環境）']
+    return [estimateLine, ...breakdownLines, 'セッション実コスト: 取得できません（コストの記録がない環境）']
   }
   return [
     estimateLine,
+    ...breakdownLines,
     `セッション実コスト（読み込み後）: ${formatUsd(actual)}`,
     `差（実コスト − 推定）: ${formatUsd(actual - estimate.costUsd)}（推定は単価表の値。キャッシュ書込みは 5 分単価で概算し、ターン外の要求は含まない）`,
   ]

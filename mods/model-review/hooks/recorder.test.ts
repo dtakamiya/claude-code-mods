@@ -14,6 +14,11 @@ import {
   type Drafts,
 } from './recorder'
 
+/** 浮動小数の合計の誤差を許す比較。 */
+const expectNear = (actual: number | null | undefined, expected: number): void => {
+  expect(Math.abs((actual ?? Number.NaN) - expected) < 1e-9).toBe(true)
+}
+
 // 架空データのみ。
 const sonnetUsage = {
   model: 'claude-sonnet-5-5',
@@ -54,6 +59,7 @@ test('メインループのターンは開始・step・ツール・終了の順�
     durationMs: 4_200,
     reason: 'answer',
     costUpperUsd: 3,
+    costParts: { input: 2, output: 1, cacheRead: 0, cacheWrite: 0 },
     haikuCostUsd: 0.75,
     sonnetCostUsd: 3,
     firstStepCacheWrite: 0,
@@ -430,4 +436,39 @@ test('開始を見ていない途中拾いのターンは partial、compact 直�
   expect(partial.record.afterCompact).toBeUndefined()
   expect(compacted.record.partial).toBeUndefined()
   expect(compacted.record.afterCompact).toBe(true)
+})
+
+test('内訳は応答ごとの単価段で足し、合計は costUsd と一致する。単価不明の応答を含むと null', () => {
+  // Arrange: 1 回目 Sonnet、2 回目 Haiku（10 万 tokens 以下の低い単価段）
+  const haikuUsage = { model: 'claude-haiku-5-5', input_tokens: 50_000, output_tokens: 10_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 20_000 }
+  let drafts = beginTurn({}, { turnId: 't-parts' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't-parts', model: 'claude-sonnet-5-5', usage: sonnetUsage })
+  drafts = recordStep(drafts, { turnId: 't-parts', model: 'claude-haiku-5-5', usage: haikuUsage })
+  const record = finishTurn(drafts, { turnId: 't-parts', usage: haikuUsage, durationMs: 1, reason: 'answer' }).record
+
+  // Assert
+  const parts = record.costParts
+  expectNear(parts?.input, 2 + (50_000 * 0.1) / 1e6)
+  expectNear(parts?.output, 1 + (10_000 * 0.5) / 1e6)
+  expectNear(parts?.cacheWrite, (20_000 * 0.125) / 1e6)
+  const sum = (parts?.input ?? 0) + (parts?.output ?? 0) + (parts?.cacheRead ?? 0) + (parts?.cacheWrite ?? 0)
+  expectNear(sum, record.costUsd ?? Number.NaN)
+
+  const unknown = { ...sonnetUsage, model: 'claude-unknown-9' }
+  const withUnknown = recordStep(beginTurn({}, { turnId: 't-u' }), { turnId: 't-u', model: unknown.model, usage: unknown })
+  expect(finishTurn(withUnknown, { turnId: 't-u', usage: unknown, durationMs: 1, reason: 'answer' }).record.costParts).toBeNull()
+})
+
+test('step が欠けているときの内訳は、終了時の usage から再計算して costUsd と一致する', () => {
+  // Arrange: step なし、終了時の usage だけ
+  const drafts = beginTurn({}, { turnId: 't-nostep' })
+
+  // Act
+  const record = finishTurn(drafts, { turnId: 't-nostep', usage: sonnetUsage, durationMs: 1, reason: 'answer' }).record
+
+  // Assert
+  expect(record.costParts).toEqual({ input: 2, output: 1, cacheRead: 0, cacheWrite: 0 })
+  expectNear(record.costUsd, 3)
 })

@@ -8,6 +8,14 @@ export type TokenCounts = {
   readonly cacheWrite: number
 }
 
+/** 推定コスト（USD）の、トークンの種類別の内訳。5 分単価で、応答ごとに単価段を判定して足した値。 */
+export type CostParts = {
+  readonly input: number
+  readonly output: number
+  readonly cacheRead: number
+  readonly cacheWrite: number
+}
+
 /** 完了したターン 1 件。agentId が null なら メインループ、値があればサブエージェントの 1 実行。 */
 export type TurnRecord = {
   readonly turnId: string
@@ -31,6 +39,8 @@ export type TurnRecord = {
   readonly costUpperUsd?: number | null
   /** 同じ応答を Sonnet 5.5 の単価で計算した推定コスト（USD）。0.5.0 で追加。単価不明の応答を含むとき null。 */
   readonly sonnetCostUsd?: number | null
+  /** costUsd の種類別の内訳（合計は costUsd と一致）。0.23.0 で追加。古い記録・単価不明のターンには無い（null）。 */
+  readonly costParts?: CostParts | null
   /** ターン最初の応答のキャッシュ書込トークン数。モデル切替の再構築コストの目安に使う（後続の追記分を含めない）。 */
   readonly firstStepCacheWrite?: number
   /** ターン最初の応答のプロンプト長（入力 + キャッシュ読込 + 書込）。単価段の判定に使う。 */
@@ -69,6 +79,10 @@ export type ArchivedTurns = {
   readonly unpricedTurns: number
   /** 推定の幅（5 分単価 〜 1 時間単価）。 */
   readonly highUsd: number
+  /** 内訳を持つターンの種類別の推定コストの合計。0.23.0 で追加。古い状態には無い。 */
+  readonly costParts?: CostParts
+  /** 単価はあるが内訳を持たない（0.23.0 より前に記録した）ターンの数。古い状態には無い。 */
+  readonly partsMissingTurns?: number
   /** 畳んだターンのうち、基準点より後に完了したぶん。実コストとの比較（TTL の注記）で使う。 */
   readonly sinceBaseline: { readonly lowUsd: number; readonly highUsd: number; readonly cacheWrite: number }
 }
