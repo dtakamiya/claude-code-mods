@@ -21,11 +21,13 @@ const turn = (index: number, costUsd: number | null, promptTokens: number | unde
   ...overrides,
 })
 
-/** 先頭 10 ターンは $0.04・18k、末尾は $0.19・142k の、伸びていく会話。 */
-const growing = (count: number): TurnRecord[] =>
-  Array.from({ length: count }, (_, index) =>
+/** 先頭 10 ターンは $0.04・18k、末尾は $0.19・142k の、伸びていく会話。最初に全文書込の高いターンが 1 つ付く（推移には入らない）。 */
+const growing = (count: number): TurnRecord[] => [
+  turn(-1, 0.5, 5_000),
+  ...Array.from({ length: count }, (_, index) =>
     index < GROWTH_WINDOW_TURNS ? turn(index, 0.04, 18_000) : index >= count - GROWTH_WINDOW_TURNS ? turn(index, 0.19, 142_000) : turn(index, 0.1, 60_000),
-  )
+  ),
+]
 
 test('最初の区間と直近の区間の 1 ターンあたりの費用とプロンプト長を並べる', () => {
   // Act
@@ -35,6 +37,17 @@ test('最初の区間と直近の区間の 1 ターンあたりの費用とプ�
   expect(view?.trend).toBe('1 ターンあたり $0.0400 → $0.1900（プロンプト 18k → 142k tokens）')
   expect(view?.compact).toBeNull()
   expect(view?.note).toBeNull()
+})
+
+test('中断したターン・プロンプト長 0 のターンは平均に入れない', () => {
+  // Arrange
+  const records = [
+    ...growing(GROWTH_MIN_TURNS).map((record, index) => (index === 7 ? { ...record, firstStepPromptTokens: 0 } : record)),
+    turn(99, 0.001, 1_000, { reason: 'aborted' }),
+  ]
+
+  // Act / Assert
+  expect(growthView(records)?.trend).toBe('1 ターンあたり $0.0400 → $0.1900（プロンプト 18k → 142k tokens）')
 })
 
 test('ターン数が足りないときは出さない', () => {
@@ -76,7 +89,7 @@ test('compact の後だけで推移を見て、前後を別の行に並べる。
 
   // Assert
   expect(view?.trend).toBeNull()
-  expect(view?.compact).toBe('compact の前 $0.2000 → 後 $0.0600（1 ターンあたり（プロンプト 150k → 20k tokens）。compact の直後のターンは除く）')
+  expect(view?.compact).toBe('1 ターンあたり compact の前 $0.2000 → 後 $0.0600（プロンプト 150k → 20k tokens）（compact の直後のターンは除く）')
 })
 
 test('compact の前後どちらかが少なすぎるときは前後の比較を出さない', () => {
