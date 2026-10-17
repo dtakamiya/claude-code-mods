@@ -368,9 +368,12 @@ test('Pane の末尾に「/model-review で更新」を dim の 1 行で出す',
 })
 
 test('記録処理が例外を投げても、tool.call は通り、debug ログに固定文言だけを残す', async ($, on) => {
-  // Arrange: 時計を答えないので、記録の時刻取得で例外になる。
+  // Arrange: 時計が入力由来の文字列を含む例外を投げる。ログはその中身を出さない固定文言だけになる。
   const logs: string[] = []
   answerEngine(on, () => 0, false, false)
+  on('clock.now', () => {
+    throw new Error('PRIVATE-PATH')
+  })
   on('ui.log', (_$, e) => {
     logs.push((e as { text: string }).text)
     return { value: undefined } as never
@@ -382,8 +385,7 @@ test('記録処理が例外を投げても、tool.call は通り、debug ログ�
 
   // Assert: ツールの結果は変わらず、ログに入力由来の文字列は出ない。
   expect(called).toEqual({ result: { text: 'ok', isError: false } })
-  expect(logs.some(text => text.includes('記録に失敗した'))).toBe(true)
-  expect(logs.join('\n')).not.toContain('PRIVATE-PATH')
+  expect(logs).toEqual(['model-review: 記録に失敗したため、この更新を記録しなかった'])
 })
 
 test('未完了のターンは、最後の動きから 10 分までペインに出て、過ぎると消える（固定時刻）', async ($, on) => {
