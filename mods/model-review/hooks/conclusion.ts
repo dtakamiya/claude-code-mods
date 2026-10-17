@@ -1,8 +1,6 @@
 // 結論の 1 行。ペイン（pane-model.ts）とテキストレポート（report.ts）が同じ関数から作る。
-import { findConcerns, type Concern, type ConcernKind } from './analyze'
+import type { Concern, ConcernKind } from './analyze'
 import { CONCERN_TEXT, CONCLUSION_NONE_TEXT, CONCLUSION_NO_RECORDS_TEXT } from './labels'
-import { buildNotes } from './notes'
-import type { ReviewState } from '../types'
 
 export type Tone = 'success' | 'warning' | 'error' | 'suggestion' | 'plain'
 export type Conclusion = { text: string; tone: Tone }
@@ -46,10 +44,4 @@ export function conclusionOf(concerns: readonly Concern[], alertCount: number): 
     text: `${CONCLUSION_MARK_CONCERN} 結論: 見直し候補 ${total} 件（${parts}）${alertSuffix(alertCount)}`,
     tone: worstConcernTone(present),
   }
-}
-
-/** 記録の有無も含め、レビュー状態から結論を作る。ペインとテキストの先頭行はこれ。 */
-export function conclusionOfReview(review: ReviewState, nowMs?: number): Conclusion {
-  if (review.turns.length === 0) return NO_RECORDS_CONCLUSION
-  return conclusionOf(findConcerns(review.turns), buildNotes(review, nowMs).length)
 }

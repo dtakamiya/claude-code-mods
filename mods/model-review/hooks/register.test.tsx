@@ -155,9 +155,10 @@ test('コピーに失敗したら理由を返し、記録がなければ結論�
   expect(copied).toEqual(['結論: まだ記録がありません\n記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'])
 })
 
-test('未知の引数は使い方を返し、何もコピーしない', async ($, on) => {
+test('copy 以外の引数は従来どおりペインを開き、何もコピーしない', async ($, on) => {
   // Arrange
-  answerEngine(on, () => 0, false)
+  const opened: unknown[] = []
+  answerEngine(on, () => 0, true, true, opened)
   const copied: string[] = []
   answerCopy(on, copied)
   await $.session.start(SESSION_START)
@@ -166,7 +167,8 @@ test('未知の引数は使い方を返し、何もコピーしない', async ($
   const ran = await $.command.run({ ...(COMMAND_RUN as object), args: 'save' } as never)
 
   // Assert
-  expect(ran.text).toContain('使い方')
+  expect(ran.text).toContain('ペインを開きました')
+  expect(opened).toHaveLength(1)
   expect(copied).toHaveLength(0)
 })
 

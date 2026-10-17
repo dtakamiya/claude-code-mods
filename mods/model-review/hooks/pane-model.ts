@@ -37,7 +37,6 @@ import {
 } from './summary'
 
 export const BAR_WIDTH = 14
-export { ALERT_LABEL, type Tone }
 const MODEL_ID_PREFIX = 'claude-'
 
 export type Tier = 'haiku' | 'sonnet' | 'opus' | 'other'

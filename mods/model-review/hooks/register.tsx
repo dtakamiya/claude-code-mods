@@ -6,7 +6,7 @@ import { EMPTY_REVIEW, appendTurn, withBaseline, withCostSample } from './state'
 import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
-import { COPIED_TEXT, USAGE_TEXT, copyFailedText, parseCommandMode } from './copy'
+import { COPIED_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 
 const PANE_ID = 'model-review'
@@ -80,7 +80,6 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'model-review' }, async ($, e) => {
     const mode = parseCommandMode(e.args)
-    if (mode === 'unknown') return { text: USAGE_TEXT }
     const costUsd = await readCostUsd(
       () => $.session.usage(),
       text => $.ui.log(text, { to: 'debug' }),

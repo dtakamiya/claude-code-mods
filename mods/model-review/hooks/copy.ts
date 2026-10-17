@@ -1,15 +1,12 @@
 // `/model-review copy` の引数判定と応答文。`$` に触れない純粋関数。
-export type CommandMode = 'open' | 'copy' | 'unknown'
+export type CommandMode = 'open' | 'copy'
 
 const COPY_ARG = 'copy'
 
-/** 引数なしはペイン（またはテキスト）、`copy` はクリップボード。それ以外は案内を返すため unknown。 */
+/** `copy` だけがクリップボード。それ以外（引数なしを含む）は従来どおりペイン（またはテキスト）。 */
 export function parseCommandMode(args: string): CommandMode {
-  const word = args.trim().toLowerCase()
-  if (word === '') return 'open'
-  return word === COPY_ARG ? 'copy' : 'unknown'
+  return args.trim().toLowerCase() === COPY_ARG ? 'copy' : 'open'
 }
 
-export const USAGE_TEXT = '使い方: /model-review（ペインを開く） / /model-review copy（テキストレポートをクリップボードへ）'
 export const COPIED_TEXT = 'テキストレポートをクリップボードにコピーしました。'
 export const copyFailedText = (reason: string): string => `コピーできませんでした: ${reason}`
