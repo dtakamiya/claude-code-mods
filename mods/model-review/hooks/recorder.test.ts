@@ -9,6 +9,7 @@ import {
   beginTurn,
   finishTurn,
   liveDrafts,
+  markPlanMode,
   recordStep,
   recordTool,
   type Drafts,
@@ -578,4 +579,30 @@ test('日付違いの別表記は同じモデルとして 1 行にまとめ、�
   // Assert
   expect('byModel' in record).toBe(false)
   expect('divergedSteps' in record).toBe(false)
+})
+
+test('plan mode の印は進行中のメインのターンだけに付き、記録に残る', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0)
+  drafts = beginTurn(drafts, { turnId: 's1', agentId: 'a1' }, 0)
+
+  // Act
+  drafts = markPlanMode(drafts, undefined)
+  drafts = markPlanMode(drafts, 'a1')
+  const main = finishTurn(drafts, { turnId: 't1', durationMs: 10, reason: 'answer' })
+  const sub = finishTurn(main.drafts, { turnId: 's1', agentId: 'a1', durationMs: 10, reason: 'answer' })
+
+  // Assert
+  expect(main.record.planMode).toBe(true)
+  expect('planMode' in sub.record).toBe(false)
+})
+
+test('進行中のターンがないときの plan mode の印は何もせず、印のないターンは planMode を持たない', () => {
+  // Arrange / Act
+  const untouched = markPlanMode({}, undefined)
+  const { record } = finishTurn(beginTurn({}, { turnId: 't1' }, 0), { turnId: 't1', durationMs: 10, reason: 'answer' })
+
+  // Assert
+  expect(untouched).toEqual({})
+  expect('planMode' in record).toBe(false)
 })

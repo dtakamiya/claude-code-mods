@@ -782,6 +782,40 @@ test('agent.spawn で覚えた種類は turn.complete の記録に載り、spawn
   expect(ran.text).not.toContain('SECRET-PROMPT')
 })
 
+test('plan mode の reminder を見たメインのターンに印を付け、reminder の結果は変えない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  on('prompt.attachment', (_$, e) => ({ text: e.text }))
+  await $.session.start(SESSION_START)
+  const plan = { type: 'plan_mode', text: 'PLAN-REMINDER', origin: { kind: 'engine' }, detail: { reminder: 'full', planFilePath: '/secret/PLAN.md', signal: null } } as never
+
+  // Act
+  await $.turn.start({ text: '', turnId: 'turn-plan' } as never)
+  const attached = await $.prompt.attachment(plan)
+  await $.turn.complete({ answer: '', durationMs: 100, isAborted: false, turnId: 'turn-plan', reason: 'answer', usage: SONNET_USAGE } as never)
+  const ran = await $.command.run({ ...(COMMAND_RUN as object), args: 'text' } as never)
+
+  // Assert: 結果は書き換えず、注記には件数だけが出る（計画ファイルのパスは出ない）。
+  expect(attached.text).toBe('PLAN-REMINDER')
+  expect(ran.text).toContain('plan mode のターンが 1 件')
+  expect(ran.text).not.toContain('PLAN.md')
+})
+
+test('ターンの外で plan mode の reminder が届いても、記録は変わらない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  on('prompt.attachment', (_$, e) => ({ text: e.text }))
+  await $.session.start(SESSION_START)
+
+  // Act
+  await $.prompt.attachment({ type: 'plan_mode', text: 'x', origin: { kind: 'engine' }, detail: { reminder: 'sparse', planFilePath: '', signal: null } } as never)
+  await runMainTurn($)
+  const ran = await $.command.run({ ...(COMMAND_RUN as object), args: 'text' } as never)
+
+  // Assert
+  expect(ran.text).not.toContain('plan mode のターン')
+})
+
 // 切替の直前トースト。classic.PreModelSwitch は観察のみで、結果は書き換えない。
 const PRE_SWITCH = {
   hook_event_name: 'PreModelSwitch',

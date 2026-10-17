@@ -3,7 +3,7 @@ import type { Register, SessionUsage } from 'claude-code'
 
 import { PaneBody } from './pane'
 import { EMPTY_REVIEW, appendTurn, stampTurn, withBaseline, withCostSample } from './state'
-import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
+import { beginTurn, finishTurn, liveDrafts, markPlanMode, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
@@ -234,6 +234,14 @@ export const register: Register = (on, options) => {
     }, logDebug($))
     return next(e)
   })
+
+  // plan mode の reminder を見たら進行中のメインのターンに印を付ける。観察のみで、結果は書き換えず next(e) をそのまま返す。
+  on('prompt.attachment', { type: 'plan_mode' }, async ($, e, next) => {
+    await recordSafely(() => {
+      drafts = markPlanMode(drafts, e.agentId)
+    }, logDebug($))
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   // compact が実際に通ったら（skip でなければ）、次に完了するメインのターンを再構築の対象外にする。
   on('session.compact', async ($, e, next) => {

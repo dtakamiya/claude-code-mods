@@ -2,6 +2,7 @@
 // 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
+import { GROWTH_LABEL, growthView } from './growth'
 import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
@@ -65,13 +66,16 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
     : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
   const view = breakdownView(records, review.archived)
   const breakdownLines = view === null ? [] : [`${BREAKDOWN_LABEL}: ${view.items}`, ...(view.hint === null ? [] : [`  → ${view.hint}`]), `  ${view.note}`]
+  const growth = growthView(records, review.archived?.turns)
+  const growthLines = growth === null ? [] : [`${GROWTH_LABEL}: ${growth.trend}`, ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]), `  ${growth.note}`]
   const actual = actualCostUsd(review)
   if (actual === null) {
-    return [estimateLine, ...breakdownLines, 'セッション実コスト: 取得できません（コストの記録がない環境）']
+    return [estimateLine, ...breakdownLines, ...growthLines, 'セッション実コスト: 取得できません（コストの記録がない環境）']
   }
   return [
     estimateLine,
     ...breakdownLines,
+    ...growthLines,
     `セッション実コスト（読み込み後）: ${formatUsd(actual)}`,
     `差（実コスト − 推定）: ${formatUsd(actual - estimate.costUsd)}（推定は単価表の値。キャッシュ書込みは 5 分単価で概算し、ターン外の要求は含まない）`,
   ]

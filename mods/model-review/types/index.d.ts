@@ -70,6 +70,8 @@ export type TurnRecord = {
   readonly byModel?: readonly ModelShare[]
   /** 応答のモデルが、ターン開始時のセッションのモデルと食い違った応答の数（フォールバックなどの可能性。推定）。0 のときは持たない。0.24.1 で追加。 */
   readonly divergedSteps?: number
+  /** plan mode 中に走ったメインのターン（`prompt.attachment` の plan_mode を見て印を付ける。真偽だけで、計画ファイルのパスは持たない）。モデル起因の過剰から外す。0.25.0 で追加。持たないときは false 扱い。 */
+  readonly planMode?: boolean
 }
 
 /** 畳み込んだ古いターンの、モデル × effort 別の集計。ModelGroup（hooks/analyze.ts）と同じ形。 */
