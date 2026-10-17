@@ -50,7 +50,7 @@ export const loopLabel = (kind: LoopKind): string => LOOP_LABEL[kind]
 
 export function describeLoop(summary: LoopSummary): string {
   const hit = summary.hitRate === null ? 'ヒット -' : `ヒット ${Math.round(summary.hitRate * 100)}%`
-  const agents = summary.kind === 'subagent' ? `（${summary.agents} 種）` : ''
+  const agents = summary.kind === 'subagent' ? `（${summary.agents} 実行）` : ''
   const unpriced = summary.unpricedTurns > 0 ? `（単価不明 ${summary.unpricedTurns} ターンを除く）` : ''
   return [
     `ターン ${summary.turns}${agents}`,

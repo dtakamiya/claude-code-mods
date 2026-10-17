@@ -230,7 +230,7 @@ test('単価不明のターンが 3 割以上なら、単価表が古い可能�
   expect(notes.some(text => text.includes('単価表が古い可能性') && text.includes('2026-10-15'))).toBe(true)
 })
 
-test('advisor の呼び出しがあれば回数を出し、金額には含まれない旨を未確認と明記する', () => {
+test('advisor の呼び出しがあれば回数を出し、金額には含まれない旨を明記する', () => {
   // Arrange
   const rows = rowsOf([turn({ toolCount: 5, advisorCalls: 2 })])
 
@@ -239,7 +239,7 @@ test('advisor の呼び出しがあれば回数を出し、金額には含まれ
 
   // Assert
   expect(kv?.kind === 'kv' ? kv.value : '').toContain('2 回')
-  expect(kv?.kind === 'kv' ? kv.value : '').toContain('未確認')
+  expect(kv?.kind === 'kv' ? kv.value : '').toContain('含まれません')
 })
 
 test('fast mode の割増が推定に含まれない旨を、常に注記する', () => {

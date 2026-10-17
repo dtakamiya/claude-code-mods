@@ -19,7 +19,7 @@ const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
 })
 
 test('メインとサブエージェントに分けて、ターン数・トークン・ヒット率・コストを集計する', () => {
-  // Arrange: サブエージェントは 2 種（a1 が 2 ターン、a2 が 1 ターン）。
+  // Arrange: サブエージェントは 2 実行（a1 が 2 ターン、a2 が 1 ターン）。
   const records = [
     turn({ turnId: 'm1' }),
     turn({ turnId: 's1', agentId: 'a1', tokens: { input: 500, output: 10, cacheRead: 0, cacheWrite: 500 }, costUsd: 0.2 }),
@@ -57,7 +57,7 @@ test('ヒット率はサブエージェントがメインより 20 ポイント�
   expect(subagentHitRateLow(summarizeLoops([main]))).toBe(false)
 })
 
-test('文面はヒット率・読書トークン・推定コストを含み、サブエージェントには種類数を付ける', () => {
+test('文面はヒット率・読書トークン・推定コストを含み、サブエージェントには実行数（spawn ごとの id の数）を付ける', () => {
   // Arrange
   const [main, sub] = summarizeLoops([turn(), turn({ turnId: 's', agentId: 'a1' })])
 
@@ -67,5 +67,5 @@ test('文面はヒット率・読書トークン・推定コストを含み、�
 
   // Assert
   expect(mainText).toBe('ターン 1 · ヒット 80% · キャッシュ 読 800 / 書 100 · 推定 $0.5000')
-  expect(subText).toContain('ターン 1（1 種）')
+  expect(subText).toContain('ターン 1（1 実行）')
 })

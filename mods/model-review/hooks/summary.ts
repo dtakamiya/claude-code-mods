@@ -112,7 +112,7 @@ export const actualCostUsd = (review: ReviewState): number | null => {
 /** advisor の呼び出し回数の文面（「2 回（費用が…）」）。0 回なら null。 */
 export function advisorCallText(records: readonly TurnRecord[]): string | null {
   const calls = advisorCallTotal(records)
-  return calls === 0 ? null : `${calls} 回（費用が usage に載るかは未確認。金額には含めていません）`
+  return calls === 0 ? null : `${calls} 回（費用は usage に載らず取得できないため、金額には含まれません）`
 }
 
 export type LoopRow = { readonly label: string; readonly detail: string }
