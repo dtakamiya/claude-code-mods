@@ -2,7 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
-import { ALERT_LABEL, BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
+import { ALERT_LABEL } from './conclusion'
+import { BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
 // 架空データのみ。

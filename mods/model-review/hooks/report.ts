@@ -6,6 +6,7 @@ import { formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
+import { NO_RECORDS_CONCLUSION, conclusionOf } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import {
   HEAVY_TOOL_CALLS,
@@ -117,15 +118,19 @@ const CRITERIA_LINES = [
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
 ]
 
-/** ペインに表示する行。記録がなければ案内の 1 行だけを返す。 */
+/** テキストレポートの行。先頭はペインと同じ結論の 1 行。記録がなければ結論と案内の 2 行だけを返す。 */
 export function buildReportLines(review: ReviewState, nowMs?: number): string[] {
   const records = review.turns
-  if (records.length === 0) return [NO_TURNS_LINE]
+  if (records.length === 0) return [NO_RECORDS_CONCLUSION.text, NO_TURNS_LINE]
+  const concerns = findConcerns(records)
+  const notes = buildNotes(review, nowMs)
   return [
+    conclusionOf(concerns, notes.length).text,
+    '',
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,
-    ...concernLines(findConcerns(records)),
+    ...concernLines(concerns),
     '',
     `■ ${HEADING.groups}`,
     ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),
@@ -136,7 +141,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number): string[] 
     `■ ${HEADING.cost}`,
     ...costLines(review, records),
     ...advisorLines(records, review.archived),
-    ...buildNotes(review, nowMs),
+    ...notes,
     ...archiveNoteLines(review),
     ALWAYS_NOTE,
     '',

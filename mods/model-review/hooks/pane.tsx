@@ -1,7 +1,8 @@
 // 行モデル → Box / Text。ロジックを持たない（色とグリフの対応だけ）。色はテーマキーで、生の色名は使わない。
 import type { Elements } from 'claude-code'
 
-import { BAR_WIDTH, type PaneRow, type Tier, type Tone } from './pane-model'
+import { type Tone } from './conclusion'
+import { BAR_WIDTH, type PaneRow, type Tier } from './pane-model'
 
 type Ui = Pick<Elements['terminal'], 'Box' | 'Text'>
 

@@ -33,14 +33,17 @@ const PANE_PROPS = {
  * 本体の hook の下で答える engine の既定値。`usd` は呼ばれた時点の累計コスト（テストが書き換える）。
  * undefined を返すと cost を載せない（起動時に取れない環境）。
  */
-function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean, withClock = true) {
+function answerEngine(on: On, usd: () => number | undefined, isPlaced: boolean, withClock = true, opened: unknown[] = []) {
   on('session.start', () => ({ cwd: SESSION_CWD }))
   on('command.register', () => ({ value: {} as never }))
   on('session.usage', () => {
     const current = usd()
     return { value: { cost: current === undefined ? undefined : { usd: current } } as unknown as SessionUsage }
   })
-  on('ui.open', () => ({ value: isPlaced ? { isPlaced: true } : { isPlaced: false, reason: 'narrow' } }))
+  on('ui.open', (_$, e) => {
+    opened.push(e)
+    return { value: isPlaced ? { isPlaced: true } : { isPlaced: false, reason: 'narrow' } }
+  })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   // 時計を答えないと、記録の途中（時刻の取得）で例外が出る。例外耐性のテストで使う。
@@ -88,6 +91,85 @@ test('ターンの終了後、/model-review は対象ターン数と推定コス
   expect(ran.text).toContain('対象: 1 ターン')
   expect(ran.text).toContain('claude-sonnet-5-5  effort -')
   expect(ran.text).toContain('推定 $3.0000')
+})
+
+/** ui.copy を答え、コピーされた文字列を記録する。 */
+function answerCopy(on: On, copied: string[], result: { isCopied: true } | { isCopied: false; reason: 'no-clipboard' } = { isCopied: true }) {
+  on('ui.copy', (_$, e) => {
+    copied.push(e.text)
+    return { value: result } as never
+  })
+}
+const COMMAND_COPY = { ...(COMMAND_RUN as object), args: 'copy' } as never
+
+test('/model-review copy は、ペインが置ける画面でもテキストレポートだけをクリップボードに入れる', async ($, on) => {
+  // Arrange
+  const opened: unknown[] = []
+  answerEngine(on, () => 10, true, true, opened)
+  const copied: string[] = []
+  answerCopy(on, copied)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+
+  // Act
+  const ran = await $.command.run(COMMAND_COPY)
+
+  // Assert
+  expect(ran.text).toContain('コピーしました')
+  expect(copied).toHaveLength(1)
+  expect(copied[0]).toContain('対象: 1 ターン')
+  expect(copied[0]?.split('\n')[0]).toMatch(/結論:/)
+  expect(opened).toHaveLength(0)
+})
+
+test('コピー内容は isPlaced が偽のときの通常出力と同じ（入力・プロンプトを含まない）', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  const copied: string[] = []
+  answerCopy(on, copied)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+
+  // Act
+  const plain = await $.command.run(COMMAND_RUN)
+  await $.command.run(COMMAND_COPY)
+
+  // Assert
+  expect(copied[0]).toBe(plain.text)
+  expect(copied[0]).not.toContain('/x')
+  expect(plain.text?.split('\n')[0]).toMatch(/^[▲✓] 結論:/)
+})
+
+test('コピーに失敗したら理由を返し、記録がなければ結論と案内だけをコピーする', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 0, false)
+  const copied: string[] = []
+  answerCopy(on, copied, { isCopied: false, reason: 'no-clipboard' })
+  await $.session.start(SESSION_START)
+
+  // Act
+  const ran = await $.command.run(COMMAND_COPY)
+
+  // Assert
+  expect(ran.text).toContain('コピーできませんでした: no-clipboard')
+  expect(copied).toEqual(['結論: まだ記録がありません\n記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'])
+})
+
+test('copy 以外の引数は従来どおりペインを開き、何もコピーしない', async ($, on) => {
+  // Arrange
+  const opened: unknown[] = []
+  answerEngine(on, () => 0, true, true, opened)
+  const copied: string[] = []
+  answerCopy(on, copied)
+  await $.session.start(SESSION_START)
+
+  // Act
+  const ran = await $.command.run({ ...(COMMAND_RUN as object), args: 'save' } as never)
+
+  // Assert
+  expect(ran.text).toContain('ペインを開きました')
+  expect(opened).toHaveLength(1)
+  expect(copied).toHaveLength(0)
 })
 
 test('基準点から現在までの実コストと、推定との差を表示する', async ($, on) => {
