@@ -117,7 +117,7 @@ export const register: Register = (on, options) => {
         const glance = { costUsd, rateLimits: e.rateLimits }
         // 時刻が取れなければペースは出さない（測定は捨てずに残す）。
         const nowMs = await $.clock.now().catch(() => undefined)
-        if (nowMs !== undefined && e.changed.includes('rateLimits')) rateSamples = addRateSamples(rateSamples, e.rateLimits, nowMs)
+        if (nowMs !== undefined && e.rateLimits.length > 0) rateSamples = addRateSamples(rateSamples, e.rateLimits, nowMs)
         if (showStatus) {
           const text = formatStatus(glance, nowMs === undefined ? undefined : paceHints(rateSamples, nowMs))
           if (text !== lastStatus) {

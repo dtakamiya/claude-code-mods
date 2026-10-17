@@ -91,15 +91,74 @@ test('最後の測定が古いときは、いまのペースとは言わない',
   expect(stale.etaMs).toBeNull()
 })
 
-test('有限でない使用率は無視し、今回の測定に無い枠は落とす', () => {
+test('有限でない使用率は無視し、今回の測定に無い枠は前の測定のまま残す', () => {
   // Arrange
   const first = addRateSamples({}, [five(10), { kind: 'seven_day', percentUsed: 5 }], T0)
 
   // Act
   const next = addRateSamples(first, [five(Number.NaN)], T0 + MIN)
+  const partial = addRateSamples(first, [five(12)], T0 + MIN)
 
   // Assert
-  expect(Object.keys(next)).toEqual([])
+  expect(Object.keys(next).sort()).toEqual(['five_hour', 'seven_day'])
+  expect(next.five_hour?.points).toHaveLength(1)
+  expect(partial.seven_day?.points).toHaveLength(1)
+  expect(partial.five_hour?.points).toHaveLength(2)
+})
+
+test('リセット時刻の数秒の揺れでは測定を捨てない', () => {
+  // Arrange
+  const jittered = new Date(Date.parse(RESET) + 3_000).toISOString()
+
+  // Act
+  const samples = addRateSamples(addRateSamples({}, [five(60)], T0), [five(62, jittered)], T0 + 5 * MIN)
+
+  // Assert
+  expect(samples.five_hour?.points).toHaveLength(2)
+})
+
+test('リセット時刻を過ぎた枠は、次の報告まで古い値を出さない', () => {
+  // Arrange
+  const samples = addRateSamples({}, [five(72)], T0)
+
+  // Act / Assert
+  expect(ratePaces(samples, T0 + 71 * MIN)).toEqual([])
+  expect(rateView(samples, T0 + 71 * MIN)).toBeNull()
+})
+
+test('増えていない時間も含めてペースを出す（増えた直後の値だけで楽観しない）', () => {
+  // Arrange: 5 分で 60% → 62%。その後 5 分増えなければ、10 分で 2% のペース。
+  const samples = addRateSamples(addRateSamples({}, [five(60)], T0), [five(62)], T0 + 5 * MIN)
+
+  // Act
+  const atLast = ratePaces(samples, T0 + 5 * MIN)[0]!
+  const later = ratePaces(samples, T0 + 10 * MIN)[0]!
+
+  // Assert
+  expect(later.etaMs!).toBeGreaterThan(atLast.etaMs!)
+})
+
+test('100% に達していれば、ペースの文ではなく「上限に達しています」と示し、印は出さない', () => {
+  // Arrange
+  const samples = addRateSamples(addRateSamples({}, [five(98)], T0), [five(100)], T0 + 10 * MIN)
+
+  // Act
+  const pace = ratePaces(samples, T0 + 10 * MIN)[0]!
+
+  // Assert
+  expect(paceLine(pace)).toBe('5h 100% · 上限に達しています · リセットまで 1 時間')
+  expect(paceHints(samples, T0 + 10 * MIN).size).toBe(0)
+})
+
+test('知らない種類の枠名（空白を含む）でも、行の本文にラベルが混ざらない', () => {
+  // Arrange
+  const samples = addRateSamples({}, [{ kind: 'seven_day opus', percentUsed: 40, resetsAt: RESET }], T0)
+
+  // Act
+  const view = rateView(samples, T0)
+
+  // Assert
+  expect(view?.rows[0]).toEqual({ label: 'seven_day opus', text: '40% · リセットまで 1 時間 10 分' })
 })
 
 test('status 行には短い印だけを添え、印がなければ今までと同じ表示（サブスク外も同じ）', () => {
