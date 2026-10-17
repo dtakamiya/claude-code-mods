@@ -1,0 +1,45 @@
+# model-review
+
+セッションで使ったモデル・effort・トークン・推定コストを集計し、モデル選択の妥当性（過剰・不足・委譲・キャッシュ・切替）を観察として表示する mod。**読み取り専用**で、書込・コマンド実行・モデル以外の通信は行わない。
+
+## 使い方
+
+```
+/plugin install model-review --marketplace dtakamiya/claude-code-mods
+/model-review
+```
+
+- `/model-review` でペイン「モデル振り返り」を開く。ペインを置けない画面では同じ内容をテキストで返す。
+- 記録されるのは、この mod の読み込み後に完了したターンだけ。過去のセッションは遡れない。
+- 指摘は「参考の観察」で、モデル選択の誤りを断定しない。
+
+## 表示する内容
+
+- モデル × effort ごとのターン数、トークン、キャッシュのヒット率、推定コスト。
+- 指摘: 過剰（軽作業に重いモデル／effort）、不足（重い作業・エラー連続に軽いモデル／low）、委譲（メインが多くのツールを使うのにサブエージェント未使用）、サブエージェントの比重、キャッシュの再構築。
+- 切替の注記（直近のモデル・effort の切替と、キャッシュへの影響の見積り）。
+- 高コストのターン上位、Haiku・Sonnet 換算の差額、単価不明のモデル名。
+
+しきい値の一覧と根拠の強さは `docs/design/threshold-rationale.md`。いずれも実測の裏付けがない仮置き。
+
+## 推定の限界
+
+- コストは `TurnUsage` のトークン数に単価表を掛けた**推定**。請求額ではない。
+- **advisor の費用と fast mode の割増は含まれない**（`TurnUsage` に載らないため。Q-009）。推定は過小になりうる。ペインの advisor 表示は回数のみ。
+- キャッシュ書込は TTL の内訳がなく、5 分単価を基本に 1 時間単価を上限とする幅で示す。
+- 単価表にないモデルは「単価不明」として名前を画面に出し、合計から除く。単価表の取得日から 60 日を過ぎると改定の確認を促す注記が出る。
+- 長いセッションでは、古い 500 ターンより前を集計値に畳み込む。件数・コスト・モデル別は全体を含み、指摘・切替・ループ別・高コスト順は直近 500 ターンが対象。
+- 実コスト（`$.session.usage` の累計）が取れない環境では推定のみを表示する。
+
+## 単価表の更新手順
+
+1. 公式の価格表（https://platform.claude.com/docs/en/about-claude/pricing）を取得する。
+2. `hooks/pricing.ts` の `RATE_TABLE` と `PRICE_TABLE_FETCHED_AT` を更新する。
+3. 新世代が出たら `HAIKU_REFERENCE_MODEL` / `SONNET_REFERENCE_MODEL` / `OPUS_REFERENCE_MODEL` を差し替える（`pricing.test.ts` が、参照モデルと `CACHE_SAFE_EFFORT_MODELS` が表に引けることを確認する）。
+4. `.claude-plugin/plugin.json` の version を上げ、`CHANGELOG.md` に書く。
+
+`pricing.test.ts` の「単価表の取得日が古くなりすぎていない」は、取得から 120 日で意図して落ちる。落ちたら上の手順で更新する。
+
+## 開発
+
+`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。
