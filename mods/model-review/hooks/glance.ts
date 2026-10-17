@@ -75,5 +75,8 @@ export function evaluateAlerts(glance: Glance, limits: Limits, notified: Readonl
     }
   }
   const alerts = [...exceeded].filter(([key]) => !notified.has(key)).map(([, text]) => text)
-  return { alerts, notified: new Set(exceeded.keys()) }
+  // コストが取れない測定では判断できないので、知らせ済みの印を保つ（戻ったときの再通知を防ぐ）。
+  const kept = new Set(exceeded.keys())
+  if (glance.costUsd === undefined && notified.has('cost')) kept.add('cost')
+  return { alerts, notified: kept }
 }

@@ -72,3 +72,10 @@ test('evaluateAlerts: 枠がリセットされて下回った後、再び超え�
 test('evaluateAlerts: rateLimits が空なら使用率の通知はない', () => {
   expect(evaluateAlerts({ costUsd: 1, rateLimits: [] }, { costUsd: null, ratePercent: 50 }, new Set()).alerts).toEqual([])
 })
+
+test('evaluateAlerts: コストが一時的に取れない測定でも、知らせ済みの印を保つ', () => {
+  const limits = { costUsd: 5, ratePercent: null }
+  const hit = evaluateAlerts({ costUsd: 6, rateLimits: [] }, limits, new Set())
+  const missing = evaluateAlerts({ rateLimits: [five(10)] }, limits, hit.notified)
+  expect(evaluateAlerts({ costUsd: 6.5, rateLimits: [] }, limits, missing.notified).alerts).toEqual([])
+})

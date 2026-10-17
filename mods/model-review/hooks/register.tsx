@@ -73,6 +73,7 @@ export const register: Register = (on, options) => {
       text => $.ui.log(text, { to: 'debug' }),
     )
     await update($, reviewAtom, state => withBaseline(state, costUsd))
+    lastStatus = undefined
     return next(e)
   })
 
@@ -89,7 +90,7 @@ export const register: Register = (on, options) => {
 
   on('session.measure', async ($, e, next) => {
     const costUsd = e.cost?.usd
-    if (costUsd !== undefined) await update($, reviewAtom, state => withCostSample(state, costUsd))
+    // 表示は記録（await）より先に。記録の失敗や遅れで status 行が止まったり、古い値で上書きされたりしないように。
     if (needsRedraw(e.changed)) {
       try {
         const glance = { costUsd, rateLimits: e.rateLimits }
@@ -107,6 +108,7 @@ export const register: Register = (on, options) => {
         void $.ui.log(GLANCE_FAILED_TEXT, { to: 'debug' })
       }
     }
+    if (costUsd !== undefined) await update($, reviewAtom, state => withCostSample(state, costUsd))
     return next(e)
   })
 
