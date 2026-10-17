@@ -1,6 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
+import { effortToRecord } from './effort'
 import {
   LIGHT_MAX_OUTPUT_TOKENS,
   LIGHT_MAX_TOOL_CALLS,
@@ -656,7 +657,7 @@ test('編集の割合が上限ちょうどなら、委譲を確認する（境�
 
 test('数値の effort は過剰の判定に入らず、文字列の effort とは別のグループに分かれる', () => {
   // Arrange
-  const numeric = repeat(MIN_OVERSPEC_TURNS, () => turn({ model: 'claude-opus-5-5', effort: 'n:32000', toolCount: 0 }))
+  const numeric = repeat(MIN_OVERSPEC_TURNS, () => turn({ model: 'claude-opus-5-5', effort: effortToRecord(32000), toolCount: 0 }))
   const text = [turn({ model: 'claude-opus-5-5', effort: '32000', toolCount: 0 })]
 
   // Act
@@ -664,6 +665,8 @@ test('数値の effort は過剰の判定に入らず、文字列の effort と�
   const groups = groupByModelEffort([...numeric, ...text])
 
   // Assert
-  expect(concerns.find(concern => concern.overspec?.mainEffortModels.length)).toBeUndefined()
-  expect(groups.map(group => group.effort).sort()).toEqual(['32000', 'n:32000'])
+  expect(concerns.find(concern => concern.kind === 'overspec')?.overspec?.mainEffortModels ?? []).toEqual([])
+  expect(groups).toHaveLength(2)
+  expect(groups.map(group => group.effort)).toContain(effortToRecord(32000))
+  expect(groups.map(group => group.effort)).toContain('32000')
 })

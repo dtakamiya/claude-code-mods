@@ -1,7 +1,7 @@
 // effort の表記。$ に触れない純粋関数。
 // 型の effort は 'low' | 'medium' | 'high' | 'xhigh' | 'max' | number。数値が届く条件は未検証で、
 // 公式に対応表がないため、数値は high などに読み替えず「数値の effort」として別に残す（過剰・不足の判定の対象外）。
-import type { TurnRecord } from '../types'
+import type { ArchivedTurns, TurnRecord } from '../types'
 
 /** 数値の effort を記録するときの接頭辞（文字列の effort と衝突させない）。 */
 const NUMERIC_PREFIX = 'n:'
@@ -16,8 +16,10 @@ export const isNumericEffort = (effort: string | null): boolean => effort !== nu
 export const effortText = (effort: string | null): string =>
   effort === null ? '-' : isNumericEffort(effort) ? `数値 ${effort.slice(NUMERIC_PREFIX.length)}` : effort
 
-/** 数値の effort のターンがあれば、判定に入れていないことを書いた 1 行。なければ null。 */
-export function numericEffortNote(records: readonly TurnRecord[]): string | null {
-  const count = records.filter(record => isNumericEffort(record.effort)).length
+/** 数値の effort のターンがあれば、判定に入れていないことを書いた 1 行。畳んだ分も数える。なければ null。 */
+export function numericEffortNote(records: readonly TurnRecord[], archived?: ArchivedTurns): string | null {
+  const count =
+    records.filter(record => isNumericEffort(record.effort)).length +
+    (archived?.groups ?? []).filter(group => isNumericEffort(group.effort)).reduce((sum, group) => sum + group.turns, 0)
   return count === 0 ? null : `effort が数値のターン ${count} 件は、effort による過剰・不足の判定に入れていません（数値は high などに読み替えません）`
 }

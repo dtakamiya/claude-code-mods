@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import { effortText, effortToRecord, isNumericEffort, numericEffortNote } from './effort'
-import type { TurnRecord } from '../types'
+import type { ArchivedTurns, TurnRecord } from '../types'
 
 const turnWith = (effort: string | null): TurnRecord => ({ effort }) as TurnRecord
 
@@ -29,4 +29,12 @@ test('数値の effort のターンがあるときだけ、判定に入れてい
   const note = numericEffortNote([turnWith('n:1'), turnWith('n:2'), turnWith('high')])
   expect(note).toContain('2 件')
   expect(note).toContain('読み替えません')
+})
+
+test('畳んだグループの数値 effort のターンも数える', () => {
+  const archived = {
+    turns: 5,
+    groups: [{ model: 'claude-opus-5-5', effort: 'n:32000', turns: 4 }],
+  } as unknown as ArchivedTurns
+  expect(numericEffortNote([turnWith('n:1')], archived)).toContain('5 件')
 })

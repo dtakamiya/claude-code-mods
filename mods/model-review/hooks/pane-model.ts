@@ -165,9 +165,14 @@ function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent:
 }
 
 /** 直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。止めている種類は最後に注記 1 行だけ。 */
-function concernRows(concerns: readonly Concern[], records: ReviewState['turns'], mutedLine: string | null): PaneRow[] {
+function concernRows(
+  concerns: readonly Concern[],
+  records: ReviewState['turns'],
+  mutedLine: string | null,
+  archived: ReviewState['archived'],
+): PaneRow[] {
   const { recent, past } = partitionByRecency(concerns)
-  const numericNote = numericEffortNote(records)
+  const numericNote = numericEffortNote(records, archived)
   return [
     ...(recent.length === 0
       ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow]
@@ -309,7 +314,7 @@ export function buildPaneRows(
     { kind: 'blank' },
     ...live,
     { kind: 'heading', text: CONCERN_DETAIL_HEADING },
-    ...concernRows(concerns, records, mutedLine),
+    ...concernRows(concerns, records, mutedLine, review.archived),
     { kind: 'blank' },
     { kind: 'heading', text: HEADING.groups },
     ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
