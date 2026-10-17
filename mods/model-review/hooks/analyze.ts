@@ -171,7 +171,7 @@ const isFailureTurn = (record: TurnRecord): boolean => record.reason === 'error'
 
 const isHeavyTurn = (record: TurnRecord): boolean =>
   record.toolCount >= HEAVY_TOOL_CALLS ||
-  (record.toolCount >= MIN_TOOLS_FOR_DURATION_HEAVY && record.durationMs >= LONG_TURN_MS)
+  (record.toolCount >= MIN_TOOLS_FOR_DURATION_HEAVY && record.durationMs !== undefined && record.durationMs >= LONG_TURN_MS)
 
 /** 重いターンだけを根拠にする。エラー終了は API 側の原因もありうるので、Haiku では単独の根拠にしない。 */
 const isHaikuUnderspecTurn = (record: TurnRecord): boolean =>
@@ -210,9 +210,11 @@ const underspecTurns = (records: readonly TurnRecord[]): readonly TurnRecord[] =
 
 const loopLabel = (record: TurnRecord): string => (record.agentId === null ? 'メイン' : 'サブエージェント')
 
+const durationPhrase = (record: TurnRecord): string => (record.durationMs === undefined ? '' : `・${formatDuration(record.durationMs)}`)
+
 const underspecLine = (record: TurnRecord): string =>
   isHeavyTurn(record)
-    ? `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回・${formatDuration(record.durationMs)} を ${record.model} / effort low で実行（終了理由 ${record.reason}）`
+    ? `[${loopLabel(record)}] ターン ${record.turnId}: ツール ${record.toolCount} 回${durationPhrase(record)} を ${record.model} / effort low で実行（終了理由 ${record.reason}）`
     : `[${loopLabel(record)}] ターン ${record.turnId}: エラー終了が連続（${record.model} / effort low）。API 側の原因の可能性もあります`
 
 function concernOf(

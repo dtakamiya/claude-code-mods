@@ -53,7 +53,7 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   const estimate = estimateFacts(records)
   const estimateLine = estimate.allUnpriced
     ? `合計推定コスト: ${allUnpricedText(records.length)}`
-    : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpricedExclusionText(estimate.unpricedTurns)}`
+    : `合計推定コスト: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
   const actual = actualCostUsd(review)
   if (actual === null) {
     return [estimateLine, 'セッション実コスト: 取得できません（コストの記録がない環境）']

@@ -3,6 +3,7 @@ import type { ReviewState, TurnRecord } from '../types'
 import { estimateRange, estimateTotal } from './analyze'
 import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
+import { turnsSinceBaseline } from './state'
 import { findSwitches } from './switches'
 
 /** 単価不明のターンがこの割合以上なら、単価表が古い可能性を注記する（仮置き）。 */
@@ -25,13 +26,15 @@ function rebuildStreakNote(records: readonly TurnRecord[]): readonly string[] {
   ]
 }
 
-function ttlNote(review: ReviewState, upperUsd: number): readonly string[] {
+/** 実コスト（基準点からの差）と同じターンだけで上限推定を取る。基準点より前のターンは実コストに入らないため、混ぜると偽陰性になる。 */
+function ttlNote(review: ReviewState): readonly string[] {
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) return []
+  const sinceBaseline = turnsSinceBaseline(review)
   const suspected = ttlUnderestimateSuspected({
     actualUsd: current - baseline,
-    estimateUsd: upperUsd,
-    cacheWriteTokens: cacheWriteTotal(review.turns),
+    estimateUsd: estimateRange(sinceBaseline).highUsd,
+    cacheWriteTokens: cacheWriteTotal(sinceBaseline),
   })
   if (!suspected) return []
   return ['実コストが、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます']
@@ -73,7 +76,7 @@ export function buildNotes(review: ReviewState, nowMs?: number): readonly string
   const { unpricedTurns } = estimateTotal(records)
   return [
     ...rebuildStreakNote(records),
-    ...ttlNote(review, estimateRange(records).highUsd),
+    ...ttlNote(review),
     ...staleNote(records, unpricedTurns),
     ...priceAgeNote(nowMs),
     ...switchNote(records),
