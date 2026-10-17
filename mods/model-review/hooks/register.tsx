@@ -189,7 +189,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {
     const nowMs = await $.clock.now()
-    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs)
+    const rows = buildPaneRows(await read($, reviewAtom), liveDrafts(drafts, nowMs), nowMs, e.props.bodyColumns)
     return <PaneBody ui={$.ui.resolve(e)} rows={rows} />
   })
 }
