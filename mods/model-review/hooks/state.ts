@@ -11,6 +11,23 @@ export function appendTurn(state: ReviewState, record: TurnRecord): ReviewState 
   return trimTurns({ ...state, turns: [...state.turns, record] })
 }
 
+/** これまでに完了したメインのターン数。畳んだぶんも含むので、畳んでも通し番号はずれない。 */
+export const mainTurnCount = (state: ReviewState): number =>
+  (state.archived === undefined ? 0 : state.archived.turns - state.archived.subagents) +
+  state.turns.filter(record => record.agentId === null).length
+
+/**
+ * 記録に通し番号と完了時刻を足す。サブエージェントは親（まだ完了していないメインのターン）の番号を持つ。
+ * 時刻は呼び出し側が $.clock.now() で取って渡す。有限でなければ時刻は付けない。
+ */
+export function stampTurn(state: ReviewState, record: TurnRecord, nowMs?: number): TurnRecord {
+  return {
+    ...record,
+    mainSeq: mainTurnCount(state) + 1,
+    ...(typeof nowMs === 'number' && Number.isFinite(nowMs) ? { completedAtMs: nowMs } : {}),
+  }
+}
+
 /** 有限な金額だけを受け付ける。NaN・Infinity は null と同じく無視する（状態を壊さない）。 */
 const isUsableCost = (costUsd: number | null): costUsd is number => costUsd !== null && Number.isFinite(costUsd)
 

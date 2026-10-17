@@ -3,6 +3,7 @@
 // 長い中断によるキャッシュ切れ（TTL）とは区別できないので、金額はあくまで推定。
 import type { TurnRecord } from '../types'
 import { formatUsd } from './format'
+import { turnRefText } from './turnref'
 import { cacheRebuildCostUsd, isThirdPartyModelId, normalizeModelId, ratesFor } from './pricing'
 import { UNKNOWN_MODEL } from './recorder'
 
@@ -49,15 +50,15 @@ function switchKind(prev: TurnRecord, current: TurnRecord): SwitchKind | null {
   return 'effort'
 }
 
-function describe(kind: SwitchKind, prev: TurnRecord, current: TurnRecord): string {
+function describe(kind: SwitchKind, prev: TurnRecord, current: TurnRecord, turnsAgo: number): string {
   const change =
     kind === 'model'
       ? `${prev.model} → ${current.model}`
       : `effort ${prev.effort ?? '-'} → ${current.effort ?? '-'}（${current.model}）`
-  return `ターン ${current.turnId}: ${change}`
+  return `${turnRefText(current, turnsAgo)}: ${change}`
 }
 
-function eventOf(prev: TurnRecord, current: TurnRecord): SwitchEvent | null {
+function eventOf(prev: TurnRecord, current: TurnRecord, turnsAgo: number): SwitchEvent | null {
   const kind = switchKind(prev, current)
   if (kind === null) return null
   // 0.3.0 の記録（firstStepCacheWrite なし）は不明（null）として扱い、0 円とは読ませない。
@@ -67,7 +68,7 @@ function eventOf(prev: TurnRecord, current: TurnRecord): SwitchEvent | null {
       ? null
       : cacheRebuildCostUsd(current.model, current.firstStepCacheWrite, current.firstStepPromptTokens)
   const costText = costUsd === null ? '' : ` · 再構築の推定 ${formatUsd(costUsd)}`
-  return { record: current, text: `${describe(kind, prev, current)}${costText}`, costUsd }
+  return { record: current, text: `${describe(kind, prev, current, turnsAgo)}${costText}`, costUsd }
 }
 
 /** メインループの切替を数える。サブエージェントのターンは対象外。 */
@@ -75,7 +76,7 @@ export function findSwitches(records: readonly TurnRecord[]): SwitchSummary {
   const main = records.filter(record => record.agentId === null)
   const chronological = main.flatMap((record, index) => {
     const prev = main[index - 1]
-    return prev === undefined ? [] : (eventOf(prev, record) ?? [])
+    return prev === undefined ? [] : (eventOf(prev, record, main.length - 1 - index) ?? [])
   })
   const events = [...chronological].sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1))
   const known = events.flatMap(event => event.costUsd ?? [])

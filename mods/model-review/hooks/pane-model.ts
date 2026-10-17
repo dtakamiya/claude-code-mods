@@ -7,6 +7,7 @@ import {
   LIGHT_MAX_OUTPUT_TOKENS,
   LIGHT_MAX_TOOL_CALLS,
   findConcerns,
+  mainTurnsAfter,
   groupByModelEffort,
   partitionByRecency,
   modelRank,
@@ -21,6 +22,7 @@ import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TE
 import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
+import { turnLabelText } from './turnref'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import {
   NO_TURNS_LINE,
@@ -164,14 +166,14 @@ function concernRows(concerns: readonly Concern[], records: ReviewState['turns']
   ]
 }
 
-function topTurnRows(records: ReviewState['turns']): PaneRow[] {
+function topTurnRows(records: ReviewState['turns'], nowMs?: number): PaneRow[] {
   const top = topCostTurns(records)
   if (top.length === 0) return []
   return [
     { kind: 'heading', text: HEADING.topTurns },
     ...top.map((record): PaneRow => ({
       kind: 'turn',
-      label: `${record.turnId} · ${turnOriginLabel(record)}`,
+      label: turnLabelText(record, mainTurnsAfter(records, record), turnOriginLabel(record), nowMs),
       model: shortModel(record.model),
       tier: tierOf(record.model),
       costText: formatUsd(record.costUsd),
@@ -298,7 +300,7 @@ export function buildPaneRows(
     { kind: 'heading', text: HEADING.groups },
     ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
     { kind: 'blank' },
-    ...topTurnRows(records),
+    ...topTurnRows(records, nowMs),
     ...loopRows(records),
     ...whatIfRows(records),
     { kind: 'heading', text: HEADING.cost },
