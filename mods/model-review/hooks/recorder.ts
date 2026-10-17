@@ -47,6 +47,8 @@ export type LoopDraft = {
   readonly sessionModel: string | null
   /** 応答のモデルがセッションのモデルと食い違った応答の数。 */
   readonly divergedSteps: number
+  /** plan mode の reminder をこのターンで見たか（メインのループだけ）。 */
+  readonly planMode: boolean
   /** turn.start を見て作った下書きか。false なら reload で下書きが消えた後に途中から拾った下書き。 */
   readonly started: boolean
 }
@@ -121,6 +123,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   byModel: [],
   sessionModel: null,
   divergedSteps: 0,
+  planMode: false,
   started: false,
 })
 
@@ -238,6 +241,16 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     divergedSteps: prev.divergedSteps + (step.agentId === undefined && isDiverged(prev.sessionModel, usage?.model ?? step.model) ? 1 : 0),
   }
   return withDraft(drafts, step.agentId, next)
+}
+
+/**
+ * plan mode の reminder を見たら、進行中のメインのターンに印を付ける。観察のみ（reminder の中身・計画ファイルのパスは読まない）。
+ * 進行中のメインの下書きがないとき（ターンの外で届いたとき）は何もしない。サブエージェントのループは対象外。
+ */
+export function markPlanMode(drafts: Drafts, agentId: string | undefined): Drafts {
+  const prev = drafts[MAIN_LOOP_KEY]
+  if (agentId !== undefined || prev === undefined) return drafts
+  return prev.planMode ? drafts : { ...drafts, [MAIN_LOOP_KEY]: { ...prev, planMode: true } }
 }
 
 export function recordTool(drafts: Drafts, call: ToolInput, nowMs?: number): Drafts {
@@ -366,6 +379,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     ...byModelField(draft, usage),
     ...(draft.divergedSteps > 0 ? { divergedSteps: draft.divergedSteps } : {}),
     ...(end.afterCompact === true ? { afterCompact: true } : {}),
+    ...(draft.planMode ? { planMode: true } : {}),
     ...agentTypeField(end),
     ...(draft.started ? {} : { partial: true }),
   }
