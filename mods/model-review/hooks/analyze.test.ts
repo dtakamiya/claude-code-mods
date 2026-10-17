@@ -670,3 +670,24 @@ test('数値の effort は過剰の判定に入らず、文字列の effort と�
   expect(groups.map(group => group.effort)).toContain(effortToRecord(32000))
   expect(groups.map(group => group.effort)).toContain('32000')
 })
+
+test('plan mode の Opus の軽作業は、モデル起因の過剰に数えない', () => {
+  // Arrange
+  const make = (planMode: boolean) =>
+    repeat(MIN_OVERSPEC_TURNS, index => turn({ turnId: `p-${index}`, model: 'claude-opus-5-5', effort: 'medium', toolCount: 2, costUsd: 0.5, sonnetCostUsd: 0.25, planMode }))
+
+  // Act / Assert
+  expect(findConcerns(make(true)).some(concern => concern.kind === 'overspec')).toBe(false)
+  expect(findConcerns(make(false)).some(concern => concern.kind === 'overspec')).toBe(true)
+})
+
+test('plan mode のターンでも、effort 起因の過剰は残る', () => {
+  // Arrange
+  const records = repeat(MIN_OVERSPEC_TURNS, index => turn({ turnId: `e-${index}`, model: 'claude-opus-5-5', effort: 'xhigh', toolCount: 2, costUsd: 0.5, sonnetCostUsd: 0.25, planMode: true }))
+
+  // Act
+  const concern = findConcerns(records).find(candidate => candidate.kind === 'overspec')
+
+  // Assert
+  expect(concern).toMatchObject({ kind: 'overspec', count: 3 })
+})

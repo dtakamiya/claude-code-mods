@@ -169,3 +169,13 @@ test('単価不明のモデル名は、3 割未満でも注記に出す（件数
   expect(text).toContain('2 ターン')
   expect(text).not.toContain('単価表が古い可能性')
 })
+
+test('plan mode のターンがあるときだけ、件数を 1 行で注記する', () => {
+  // Arrange
+  const withPlan: ReviewState = { ...review, turns: [turn, { ...turn, turnId: 't2', planMode: true }] }
+
+  // Act / Assert
+  expect(buildNotes(withPlan).filter(text => text.includes('plan mode'))).toHaveLength(1)
+  expect(buildNotes(withPlan).join('\n')).toContain('plan mode のターンが 1 件')
+  expect(buildNotes(review).filter(text => text.includes('plan mode'))).toHaveLength(0)
+})
