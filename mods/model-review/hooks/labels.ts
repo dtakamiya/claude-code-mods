@@ -1,5 +1,5 @@
 // ペインとテキスト出力で共用する見出し・用語。順序（ペインに合わせる）は両方の組み立て側で守る。
-import type { ConcernKind } from './analyze'
+import { RECENT_CONCERN_MAIN_TURNS, type ConcernKind } from './analyze'
 
 export const HEADING = {
   concerns: '妥当性（参考）',
@@ -23,6 +23,10 @@ export const CONCERN_TEXT: Readonly<Record<ConcernKind, { readonly label: string
 }
 
 export const NO_CONCERNS_TEXT = '指摘なし'
+/** 直近の窓より前にだけ該当した指摘の小見出し。結論の ▲ には数えない。 */
+export const PAST_CONCERNS_HEADING = `過去の指摘（メインの直近 ${RECENT_CONCERN_MAIN_TURNS} ターンには該当なし）`
+/** 結論行で、過去の指摘の種類数を示す語。 */
+export const PAST_CONCERNS_LABEL = '過去の指摘'
 
 /** ペイン先頭の結論行の文言（「結論: 」の後ろ）。 */
 export const CONCLUSION_NO_RECORDS_TEXT = 'まだ記録がありません'

@@ -5,7 +5,7 @@ import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, buildNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
-import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT } from './labels'
+import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
 import { NO_RECORDS_CONCLUSION, conclusionOf } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
@@ -15,6 +15,7 @@ import {
   LIGHT_MAX_TOOL_CALLS,
   findConcerns,
   groupByModelEffort,
+  partitionByRecency,
   topCostTurns,
   type Concern,
 } from './analyze'
@@ -67,16 +68,23 @@ function costLines(review: ReviewState, records: readonly TurnRecord[]): string[
   ]
 }
 
+/** 指摘 1 件の行。過去の指摘には「次の一手」を付けない（いま直す対象ではないため）。 */
+function oneConcernLines(concern: Concern, records: readonly TurnRecord[], withNext: boolean): string[] {
+  const next = withNext ? nextStepText(concern, records) : null
+  return [
+    `  【${CONCERN_TEXT[concern.kind].label}】 ${concernDetailText(concern)}`,
+    ...concern.examples.map(example => `    ・${example}`),
+    ...(next === null ? [] : [`    → ${next}`]),
+  ]
+}
+
+/** 直近の指摘を先に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。 */
 function concernLines(concerns: readonly Concern[], records: readonly TurnRecord[]): string[] {
-  if (concerns.length === 0) return [`  ${NO_CONCERNS_TEXT}`]
-  return concerns.flatMap(concern => {
-    const next = nextStepText(concern, records)
-    return [
-      `  【${CONCERN_TEXT[concern.kind].label}】 ${concernDetailText(concern)}`,
-      ...concern.examples.map(example => `    ・${example}`),
-      ...(next === null ? [] : [`    → ${next}`]),
-    ]
-  })
+  const { recent, past } = partitionByRecency(concerns)
+  return [
+    ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, records, true))),
+    ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, records, false))]),
+  ]
 }
 
 function topTurnLines(records: readonly TurnRecord[]): string[] {
