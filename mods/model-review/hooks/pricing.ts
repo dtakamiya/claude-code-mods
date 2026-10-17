@@ -1,3 +1,5 @@
+import type { CostParts } from '../types'
+
 // 単価表。出典: https://platform.claude.com/docs/en/about-claude/pricing （PRICE_TABLE_FETCHED_AT に取得）。
 // 単位は USD / 100 万トークン（MTok）。$ には触れない純粋な表。単価が変わったらここだけを直す。
 // キャッシュ書き込みは 5 分単価を基本にする（TurnUsage は TTL 別の内訳を持たないため）。1 時間単価は上限の見積りにだけ使う。
@@ -126,19 +128,29 @@ export function ratesFor(model: string, promptTokens: number): Rates | null {
 export type CacheWriteTtl = '5m' | '1h'
 
 /**
+ * 1 応答の推定コストを、トークンの種類ごとに分けたもの（USD）。単価表にないモデルは null（単価不明）。
+ * 単価段の判定・書込の単価は priceUsage と同じ（合計は priceUsage と一致する）。
+ */
+export function priceUsageParts(usage: TokenUsageLike, writeTtl: CacheWriteTtl = '5m'): CostParts | null {
+  const promptTokens = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+  const tierRates = ratesFor(usage.model, promptTokens)
+  if (!tierRates) return null
+  return {
+    input: (usage.input_tokens * tierRates.input) / TOKENS_PER_MTOK,
+    output: (usage.output_tokens * tierRates.output) / TOKENS_PER_MTOK,
+    cacheRead: (usage.cache_read_input_tokens * tierRates.cacheRead) / TOKENS_PER_MTOK,
+    cacheWrite:
+      (usage.cache_creation_input_tokens * (writeTtl === '1h' ? tierRates.cacheWrite1h : tierRates.cacheWrite)) / TOKENS_PER_MTOK,
+  }
+}
+
+/**
  * 1 応答の推定コスト（USD）。単価表にないモデルは null（単価不明）。プロンプト長は応答ごとに判定する。
  * writeTtl が '1h' なら、書込を 1 時間単価で計算した上限側の値になる（既定は 5 分単価）。
  */
 export function priceUsage(usage: TokenUsageLike, writeTtl: CacheWriteTtl = '5m'): number | null {
-  const promptTokens = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-  const tierRates = ratesFor(usage.model, promptTokens)
-  if (!tierRates) return null
-  const cost =
-    usage.input_tokens * tierRates.input +
-    usage.output_tokens * tierRates.output +
-    usage.cache_read_input_tokens * tierRates.cacheRead +
-    usage.cache_creation_input_tokens * (writeTtl === '1h' ? tierRates.cacheWrite1h : tierRates.cacheWrite)
-  return cost / TOKENS_PER_MTOK
+  const parts = priceUsageParts(usage, writeTtl)
+  return parts === null ? null : parts.input + parts.output + parts.cacheRead + parts.cacheWrite
 }
 
 /**

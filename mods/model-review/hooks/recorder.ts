@@ -1,7 +1,8 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
-import type { TurnRecord } from '../types'
-import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, type CacheWriteTtl, type TokenUsageLike } from './pricing'
+import type { CostParts, TurnRecord } from '../types'
+import { ZERO_PARTS, addParts } from './breakdown'
+import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, priceUsageParts, type CacheWriteTtl, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
 export const UNKNOWN_MODEL = 'unknown'
@@ -19,6 +20,8 @@ export type LoopDraft = {
   readonly stepTokenTotal: number
   /** 単価が分かっている応答の推定コストの合計。 */
   readonly pricedCostUsd: number
+  /** 単価が分かっている応答の推定コストの、種類別の合計（5 分単価）。 */
+  readonly pricedParts: CostParts
   /** 書込を 1 時間単価で計算した推定コストの合計（上限側）。 */
   readonly pricedUpperCostUsd: number
   /** 単価不明のモデルで応答した step があるか。 */
@@ -94,6 +97,7 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   stepCount: 0,
   stepTokenTotal: 0,
   pricedCostUsd: 0,
+  pricedParts: ZERO_PARTS,
   pricedUpperCostUsd: 0,
   hasUnpricedStep: false,
   haikuPricedCostUsd: 0,
@@ -160,6 +164,7 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
   const prev = draftOf(drafts, step.agentId, step.turnId)
   const usage = sanitizeUsage(step.usage)
   const priced = usage ? priceAs(usage, usage.model) : null
+  const parts = usage && usage.model !== null ? priceUsageParts({ ...usage, model: usage.model }) : null
   const pricedUpper = usage ? priceAs(usage, usage.model, '1h') : null
   const pricedAsHaiku = usage ? priceAs(usage, HAIKU_REFERENCE_MODEL) : null
   const pricedAsSonnet = usage ? priceAs(usage, SONNET_REFERENCE_MODEL) : null
@@ -171,6 +176,7 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     stepCount: prev.stepCount + 1,
     stepTokenTotal: prev.stepTokenTotal + (usage ? totalTokensOf(usage) : 0),
     pricedCostUsd: prev.pricedCostUsd + (priced ?? 0),
+    pricedParts: parts === null ? prev.pricedParts : addParts(prev.pricedParts, parts),
     pricedUpperCostUsd: prev.pricedUpperCostUsd + (pricedUpper ?? 0),
     hasUnpricedStep: prev.hasUnpricedStep || (usage !== null && priced === null),
     haikuPricedCostUsd: prev.haikuPricedCostUsd + (pricedAsHaiku ?? 0),
@@ -237,6 +243,14 @@ function costOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
   return resolveCost(draft, usage, draft.pricedCostUsd, turnUsage => priceAs(turnUsage, turnUsage.model))
 }
 
+/** costOf と同じ規則の、種類別の内訳。costUsd が null のターンは null。 */
+function partsOf(draft: LoopDraft, usage: SafeUsage | null): CostParts | null {
+  if (draft.hasUnpricedStep) return null
+  if (draft.stepCount > 0 && !isStepRecordIncomplete(draft, usage)) return draft.pricedParts
+  if (usage === null || usage.model === null) return null
+  return priceUsageParts({ ...usage, model: usage.model })
+}
+
 /** costOf と同じ規則で、キャッシュ書込を 1 時間単価にした推定コスト（上限側）。 */
 function upperCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
   return resolveCost(draft, usage, draft.pricedUpperCostUsd, turnUsage => priceAs(turnUsage, turnUsage.model, '1h'))
@@ -278,6 +292,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     tokens: tokenCountsOf(usage),
     costUsd: costOf(draft, usage),
     costUpperUsd: upperCostOf(draft, usage),
+    costParts: partsOf(draft, usage),
     toolCount: draft.toolCount,
     editCount: draft.editCount,
     durationMs: durationOf(end.durationMs),

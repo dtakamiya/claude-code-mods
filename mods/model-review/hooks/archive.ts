@@ -1,5 +1,6 @@
 // 上限を超えた古いターンを集計値に畳み込む。$ に触れない純粋関数。
 // turns を無制限に持つと、毎ターンの書き直しと描画ごとの全件再計算が増え続ける。
+import { ZERO_PARTS, addParts } from './breakdown'
 import type { ArchivedGroup, ArchivedTurns, ReviewState, TurnRecord } from '../types'
 
 /** turns に残す件数の上限（仮置き）。これを超えた分は古い順に集計へ畳む。 */
@@ -13,6 +14,8 @@ export const EMPTY_ARCHIVE: ArchivedTurns = {
   pricedUsd: 0,
   unpricedTurns: 0,
   highUsd: 0,
+  costParts: ZERO_PARTS,
+  partsMissingTurns: 0,
   sinceBaseline: { lowUsd: 0, highUsd: 0, cacheWrite: 0 },
 }
 
@@ -48,6 +51,9 @@ function foldIntoGroups(groups: readonly ArchivedGroup[], record: TurnRecord): r
 
 /** 1 ターンを集計に足す。afterBaseline が true なら、実コストに入るターンとして別に積む。 */
 export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseline: boolean): ArchivedTurns {
+  // 内訳を持たない古い集計は、初めて畳むときに、すでに畳んでいた単価ありのターンを「内訳なし」として数え残す。
+  const legacyMissing = archive.costParts === undefined ? archive.turns - archive.unpricedTurns : 0
+  const baseParts = archive.costParts ?? ZERO_PARTS
   const low = record.costUsd ?? 0
   const high = record.costUsd === null ? 0 : (record.costUpperUsd ?? record.costUsd)
   return {
@@ -58,6 +64,8 @@ export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseli
     pricedUsd: archive.pricedUsd + low,
     unpricedTurns: archive.unpricedTurns + (record.costUsd === null ? 1 : 0),
     highUsd: archive.highUsd + high,
+    costParts: record.costParts == null ? baseParts : addParts(baseParts, record.costParts),
+    partsMissingTurns: (archive.partsMissingTurns ?? 0) + legacyMissing + (record.costUsd !== null && record.costParts == null ? 1 : 0),
     sinceBaseline: afterBaseline
       ? {
           lowUsd: archive.sinceBaseline.lowUsd + low,

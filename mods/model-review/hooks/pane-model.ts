@@ -1,6 +1,7 @@
 // ペインの行モデルを組み立てる純粋関数。`$` にも JSX にも依存しない。描画は pane.tsx。
 // 集計と文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
 import type { ArchivedGroup, ReviewState } from '../types'
+import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
 import { applyMute } from './mute'
 import {
   HEAVY_TOOL_CALLS,
@@ -121,6 +122,16 @@ function groupRow(group: ArchivedGroup, totalUsd: number, columns: number | unde
     tokenText: `${facts.hit === null ? '' : `${facts.hit} · `}入力 ${facts.input} · 出力 ${facts.output}`,
     cacheText: `キャッシュ 読 ${facts.cacheRead} / 書 ${facts.cacheWrite}`,
   }
+}
+
+function breakdownRows(records: ReviewState['turns'], archived: ReviewState['archived']): PaneRow[] {
+  const view = breakdownView(records, archived)
+  if (view === null) return []
+  return [
+    { kind: 'kv', label: BREAKDOWN_LABEL, value: view.items, tone: 'plain' },
+    ...(view.hint === null ? [] : [{ kind: 'next', text: view.hint } satisfies PaneRow]),
+    { kind: 'note', text: view.note },
+  ]
 }
 
 function costRows(review: ReviewState, estimate: EstimateFacts): PaneRow[] {
@@ -305,6 +316,7 @@ export function buildPaneRows(
     ...whatIfRows(records),
     { kind: 'heading', text: HEADING.cost },
     ...costRows(review, estimate),
+    ...breakdownRows(records, review.archived),
     ...advisorRows(records, review.archived),
     ...glossaryRows(shownTerms(review, groups, concerns)),
     { kind: 'blank' },

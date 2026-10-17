@@ -10,10 +10,16 @@ import {
   isThirdPartyModelId,
   normalizeModelId,
   priceUsage,
+  priceUsageParts,
   ratesFor,
   type TokenUsageLike,
 } from './pricing'
 import { CACHE_SAFE_EFFORT_MODELS } from './switches'
+
+/** 浮動小数の合計の誤差を許す比較。 */
+const expectNear = (actual: number | null | undefined, expected: number): void => {
+  expect(Math.abs((actual ?? Number.NaN) - expected) < 1e-9).toBe(true)
+}
 
 // 架空データのみ。
 const usage = (overrides: Partial<TokenUsageLike>): TokenUsageLike => ({
@@ -187,4 +193,30 @@ test('単価表の取得日が古くなりすぎていない', () => {
     ageDays <= PRICE_TABLE_STALE_DAYS * 2,
     `単価表の取得から ${Math.floor(ageDays)} 日経ちました。公式の価格表を取り直し、pricing.ts の単価と PRICE_TABLE_FETCHED_AT を更新してください`,
   ).toBe(true)
+})
+
+test('priceUsageParts: 4 種の内訳の合計が priceUsage と一致する（5 分・1 時間とも）', () => {
+  const u = usage({ input_tokens: 1_000, output_tokens: 2_000, cache_read_input_tokens: 30_000, cache_creation_input_tokens: 4_000 })
+  for (const ttl of ['5m', '1h'] as const) {
+    const parts = priceUsageParts(u, ttl)
+    expect(parts).not.toBeNull()
+    const sum = (parts?.input ?? 0) + (parts?.output ?? 0) + (parts?.cacheRead ?? 0) + (parts?.cacheWrite ?? 0)
+    expectNear(sum, priceUsage(u, ttl) ?? Number.NaN)
+  }
+})
+
+test('priceUsageParts: 種類ごとの金額（Opus 5.5・5 分単価）', () => {
+  const parts = priceUsageParts(usage({ input_tokens: 1_000_000, output_tokens: 1_000_000, cache_read_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000 }))
+  expect(parts).toEqual({ input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 })
+})
+
+test('priceUsageParts: 単価不明のモデルは null', () => {
+  expect(priceUsageParts(usage({ model: 'claude-unknown-9', input_tokens: 10 }))).toBeNull()
+})
+
+test('priceUsageParts: Haiku 5.5 は応答ごとのプロンプト長で単価段を選ぶ', () => {
+  const low = priceUsageParts(usage({ model: 'claude-haiku-5-5', cache_read_input_tokens: 50_000, output_tokens: 1_000_000 }))
+  const high = priceUsageParts(usage({ model: 'claude-haiku-5-5', cache_read_input_tokens: 200_000, output_tokens: 1_000_000 }))
+  expectNear(low?.output, 0.5)
+  expectNear(high?.output, 2.5)
 })
