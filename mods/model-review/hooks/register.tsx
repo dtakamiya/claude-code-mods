@@ -6,7 +6,7 @@ import { EMPTY_REVIEW, appendTurn, withBaseline, withCostSample } from './state'
 import { beginTurn, finishTurn, liveDrafts, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
-import { COPIED_TEXT, copyFailedText, parseCommandMode } from './copy'
+import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
 import { evaluateAlerts, formatStatus, needsRedraw, readLimits, readShowStatus } from './glance'
 
 const PANE_ID = 'model-review'
@@ -68,6 +68,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'model-review',
       description: 'セッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）',
+      argumentHint: ARGUMENT_HINT,
     })
     const costUsd = await readCostUsd(
       () => $.session.usage(),
@@ -80,6 +81,9 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'model-review' }, async ($, e) => {
     const mode = parseCommandMode(e.args)
+    // 引数を間違えたときに黙ってペインを開かない。help・不明な引数は記録を読まずに返す。
+    if (mode === 'help') return { text: HELP_TEXT }
+    if (mode === 'unknown') return { text: UNKNOWN_ARG_TEXT }
     const costUsd = await readCostUsd(
       () => $.session.usage(),
       text => $.ui.log(text, { to: 'debug' }),
@@ -91,6 +95,7 @@ export const register: Register = (on, options) => {
       const copied = await $.ui.copy({ text: lines.join('\n') })
       return { text: copied.isCopied ? COPIED_TEXT : copyFailedText(copied.reason) }
     }
+    if (mode === 'text') return { text: lines.join('\n') }
     const opened = await $.ui.open({ id: PANE_ID, title: PANE_TITLE })
     return { text: opened.isPlaced ? PANE_OPENED_TEXT : lines.join('\n') }
   })
