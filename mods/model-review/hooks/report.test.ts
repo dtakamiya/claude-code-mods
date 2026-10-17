@@ -226,3 +226,16 @@ test('指摘がなければ「次の一手」の行は出さない', () => {
   expect(buildReportLines(review).some(line => line.includes(NEXT_STEP_PREFIX))).toBe(false)
   expect(buildPaneRows(review).some(row => row.kind === 'next')).toBe(false)
 })
+
+test('数値の effort のターンがあれば、指摘の節に判定外の注記を出す（ペインと同じ）', () => {
+  // Arrange
+  const review = withTurns([turn({ effort: 'n:32000' })], null, null)
+
+  // Act
+  const lines = buildReportLines(review)
+  const rows = buildPaneRows(review)
+
+  // Assert
+  expect(lines.some(line => line.includes('effort が数値のターン 1 件'))).toBe(true)
+  expect(rows.some(row => row.kind === 'note' && row.text.includes('effort が数値のターン 1 件'))).toBe(true)
+})

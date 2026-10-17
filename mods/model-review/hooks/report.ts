@@ -2,6 +2,7 @@
 // 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
 import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
+import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
@@ -87,11 +88,18 @@ function oneConcernLines(concern: Concern, records: readonly TurnRecord[], withN
 }
 
 /** 直近の指摘を先に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。止めている種類は最後に 1 行だけ。 */
-function concernLines(concerns: readonly Concern[], records: readonly TurnRecord[], mutedLine: string | null): string[] {
+function concernLines(
+  concerns: readonly Concern[],
+  records: readonly TurnRecord[],
+  mutedLine: string | null,
+  archived: ReviewState['archived'],
+): string[] {
   const { recent, past } = partitionByRecency(concerns)
+  const numericNote = numericEffortNote(records, archived)
   return [
     ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, records, true))),
     ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, records, false))]),
+    ...(numericNote === null ? [] : [`  ${numericNote}`]),
     ...(mutedLine === null ? [] : [`  ${mutedLine}`]),
   ]
 }
@@ -161,7 +169,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number, muted: Rea
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,
-    ...concernLines(concerns, records, mutedLine),
+    ...concernLines(concerns, records, mutedLine, review.archived),
     '',
     `■ ${HEADING.groups}`,
     ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),

@@ -1,6 +1,7 @@
 // 集計と妥当性の判定。$ に触れない純粋関数。判定は参考（LLM は使わず、閾値は下の名前付き定数）。
 import type { TokenCounts, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
+import { effortText } from './effort'
 import { formatDuration, formatInt, formatUsd } from './format'
 import { normalizeModelId } from './pricing'
 import { findSwitches } from './switches'
@@ -291,7 +292,7 @@ function overspecGroups(overspec: readonly TurnRecord[]): readonly OverspecGroup
         {
           loop: loopLabel(first),
           model: first.model,
-          effort: first.effort ?? '-',
+          effort: effortText(first.effort),
           turns,
           sonnetUsd: sumKnown(modelTurns.map(sonnetSavingsUsd)),
           haikuUsd: sumKnown(modelTurns.map(haikuSavingsUsd)),
