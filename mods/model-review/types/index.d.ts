@@ -21,7 +21,8 @@ export type TurnRecord = {
   readonly costUsd: number | null
   readonly toolCount: number
   readonly editCount: number
-  readonly durationMs: number
+  /** 所要時間（ms）。有限な非負数で取れなかったときは無し（undefined）。 */
+  readonly durationMs?: number
   readonly reason: 'answer' | 'aborted' | 'refusal' | 'error'
   // 以下は 0.4.0 で足した項目。0.3.0 で $.state に残った記録には無いので、読むときは `?? 0` などで補う。
   /** 同じ応答を Haiku 5.5 の単価で計算した推定コスト（USD）。応答ごとに単価段を判定して足す。単価不明の応答を含むとき null。 */
@@ -44,6 +45,8 @@ export type ReviewState = {
   readonly sessionCostUsd: {
     readonly baseline: number | null
     readonly current: number | null
+    /** 基準点を取った時点の turns の長さ。これより前のターンは実コストに入らない。古い状態では無いので 0 とみなす。 */
+    readonly baselineTurns?: number
   }
 }
 

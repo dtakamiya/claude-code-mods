@@ -89,3 +89,53 @@ test('直近ターンでの切替は、切替の注記を出す', () => {
   // Assert
   expect(notes).toHaveLength(1)
 })
+
+const TTL_MARK = '実コストが'
+const ttlNotesOf = (sessionCostUsd: ReviewState['sessionCostUsd'], turns: TurnRecord[]): string[] =>
+  buildNotes({ turns, sessionCostUsd }).filter(text => text.includes(TTL_MARK))
+/** 基準点より前に積んだ、上限推定だけが大きいターン（実コストには入らない）。 */
+const preBaselineTurn: TurnRecord = {
+  ...turn,
+  turnId: 'pre',
+  costUsd: 1,
+  costUpperUsd: 10,
+  tokens: { ...turn.tokens, cacheWrite: 100_000 },
+}
+/** 基準点より後のターン。実コストに入り、上限推定も小さい。 */
+const postBaselineTurn: TurnRecord = {
+  ...turn,
+  turnId: 'post',
+  costUsd: 0.1,
+  costUpperUsd: 0.1,
+  tokens: { ...turn.tokens, cacheWrite: 60_000 },
+}
+
+test('基準点が遅れたとき、基準点より前のターンは上限推定に入れず、後のターンだけで判定する', () => {
+  // Arrange: 基準点は 3 ターン目（index 3）の時点。実コスト 0.5 は後の 2 ターンの上限 0.2 を大きく超える。
+  const turns = [preBaselineTurn, preBaselineTurn, preBaselineTurn, postBaselineTurn, postBaselineTurn]
+
+  // Act
+  const notes = ttlNotesOf({ baseline: 5, current: 5.5, baselineTurns: 3 }, turns)
+
+  // Assert
+  expect(notes).toHaveLength(1)
+})
+
+test('基準点が未取得なら、キャッシュ書込が多くても実コストの注記は出さない', () => {
+  // Act
+  const notes = ttlNotesOf({ baseline: null, current: 5.5 }, [postBaselineTurn, postBaselineTurn])
+
+  // Assert
+  expect(notes).toEqual([])
+})
+
+test('基準点ターン数を持たない旧い状態は、最初のターンから基準点とみなす', () => {
+  // Arrange: 実コスト 0.5 は全ターンの上限 0.2 を超える。
+  const turns = [postBaselineTurn, postBaselineTurn]
+
+  // Act
+  const notes = ttlNotesOf({ baseline: 5, current: 5.5 }, turns)
+
+  // Assert
+  expect(notes).toHaveLength(1)
+})

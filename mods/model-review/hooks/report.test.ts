@@ -85,6 +85,18 @@ test('単価不明が一部のときは、除いた件数つきで合計を出�
   expect(text).toContain('単価不明 1 ターンを除く')
 })
 
+test('単価不明が 0 件のときは、除外の文言を出さない', () => {
+  // Arrange
+  const review = withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], null, null)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+
+  // Assert
+  expect(text).toContain('合計推定コスト: $0.5000')
+  expect(text).not.toContain('ターンを除く')
+})
+
 test('単価がわかるターンがなければ、高コストターンの見出しは出さない', () => {
   // Arrange
   const review = withTurns([turn({ model: 'claude-unlisted-9', costUsd: null })], null, null)
