@@ -72,6 +72,7 @@
 | `RESET_CHANGE_TOLERANCE_MS` = 5 分 | pace.ts | リセット時刻がこれ以上ずれたら別の枠（リセットをまたいだ）とみなして測定を捨てる。同じ枠での数秒の揺れで捨てないため | 実測なし = 仮置き |
 | `PACE_MAX_POINTS` = 60 | pace.ts | 1 つの枠で覚える測定の最大数（メモリの上限） | 実測なし = 仮置き |
 | `GROWTH_WINDOW_TURNS` = 10 / `GROWTH_MIN_TURNS` = 20 / `COMPACT_MIN_SIDE_TURNS` = 3 | growth.ts | 費用の推移で比べる最初・直近のターン数、推移を出す最小のターン数（窓 2 つ分）、compact の前後に要る最小のターン数（0.26.0・#84）。表示のみで指摘にしない | 実測なし = 仮置き |
+| `GROWTH_HINT_RATIO` = 3 / `GROWTH_HINT_PROMPT_RATIO` = 1.5 | growth.ts | 直近 10 ターンの平均が最初の 10 ターンの 3 倍以上で、プロンプト長も 1.5 倍以上のとき、費用の推移の下に /compact・/clear の候補を添える。表示のみ（0.29.0・#84 段階 2） | 実測なし = 仮置き |
 | `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Opus 系の軽作業で、Sonnet 換算の差額がこれ未満ならモデル起因の過剰にしない（0.11.0 で Haiku 換算から変更。Sonnet・Haiku はモデルでは指摘せず、effort 起因だけ指摘する） | 実測なし = 仮置き |
 | plan mode のターン | analyze.ts | `TurnRecord.planMode` のターンはモデル起因の過剰（`isModelOverspec`）から外す。計画のためにわざと Opus を選ぶ使い方を「過剰」にしないため。effort 起因は外さない（0.25.0 で追加、#82） | 閾値なし（判定の除外） |
 | `OVERSPEC_MIN_LIGHT_SHARE` = 0.5 | analyze.ts | 過剰は、同じループ × モデル × effort のターンのうち軽作業が半数以上あるグループだけを対象にする。重い作業の合間の短い応答（出力に思考分を含むため短くても難問とは限らない）を軽作業のモデルと誤認しないため（0.14.1 で追加、#40） | 実測なし = 仮置き |

@@ -73,7 +73,7 @@ function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscr
   const view = breakdownView(records, review.archived)
   const breakdownLines = view === null ? [] : [`${BREAKDOWN_LABEL}: ${view.items}`, ...(view.hint === null ? [] : [`  → ${view.hint}`]), `  ${view.note}`]
   const growth = growthView(records, review.archived?.turns)
-  const growthLines = growth === null ? [] : [`${GROWTH_LABEL}: ${growth.trend}`, ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]), `  ${growth.note}`]
+  const growthLines = growth === null ? [] : [`${GROWTH_LABEL}: ${growth.trend}`, ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]), ...(growth.hint === null ? [] : [`  → ${growth.hint}`]), `  ${growth.note}`]
   const actual = actualCostUsd(review)
   if (actual === null) {
     return [estimateLine, ...breakdownLines, ...growthLines, 'セッション実コスト: 取得できません（コストの記録がない環境）']
