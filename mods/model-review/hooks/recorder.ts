@@ -144,7 +144,8 @@ export function beginTurn(
   const started = {
     ...emptyDraft(turn.turnId, turn.agentId ?? null),
     lastActivityMs: nowMs ?? null,
-    sessionModel: typeof sessionModel === 'string' ? sessionModel : null,
+    // `opus` などのエイリアス・opusplan は応答のモデル ID と一致しないので、完全な ID（claude-…）のときだけ比べる。
+    sessionModel: typeof sessionModel === 'string' && sessionModel.startsWith('claude-') ? sessionModel : null,
     started: true,
   }
   return withDraft(drafts, turn.agentId, started)
@@ -184,8 +185,11 @@ const totalTokensOf = (usage: SafeUsage): number =>
   usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
 
 const addShare = (shares: readonly ModelShare[], model: string, usage: SafeUsage | null, priced: number | null): readonly ModelShare[] => {
+  // usage のない応答はトークンも費用も 0 なので、内訳の行を増やさない。
+  if (usage === null) return shares
   const tokens = tokenCountsOf(usage)
-  const found = shares.find(share => share.model === model)
+  // 日付違いなどの別表記は同じモデルとして数える（表記は最初のものを残す）。
+  const found = shares.find(share => normalizeModelId(share.model) === normalizeModelId(model))
   const base: ModelShare = found ?? { model, tokens: ZERO_TOKENS, costUsd: 0, steps: 0 }
   const next: ModelShare = {
     model,
@@ -195,8 +199,7 @@ const addShare = (shares: readonly ModelShare[], model: string, usage: SafeUsage
       cacheRead: base.tokens.cacheRead + tokens.cacheRead,
       cacheWrite: base.tokens.cacheWrite + tokens.cacheWrite,
     },
-    // usage がない応答は単価不明にしない（トークンも 0 のため）。
-    costUsd: base.costUsd === null || (usage !== null && priced === null) ? null : base.costUsd + (priced ?? 0),
+    costUsd: base.costUsd === null || priced === null ? null : base.costUsd + priced,
     steps: base.steps + 1,
   }
   return found === undefined ? [...shares, next] : shares.map(share => (share === found ? next : share))
@@ -232,7 +235,7 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     advisorCalls: prev.advisorCalls + countOf(step.advisorCalls),
     lastActivityMs: nowMs ?? prev.lastActivityMs,
     byModel: addShare(prev.byModel, usage?.model ?? step.model, usage, priced),
-    divergedSteps: prev.divergedSteps + (step.agentId === undefined && isDiverged(prev.sessionModel, step.model) ? 1 : 0),
+    divergedSteps: prev.divergedSteps + (step.agentId === undefined && isDiverged(prev.sessionModel, usage?.model ?? step.model) ? 1 : 0),
   }
   return withDraft(drafts, step.agentId, next)
 }

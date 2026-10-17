@@ -560,3 +560,22 @@ test('サブエージェントの応答は、セッションのモデルと違�
   // Assert
   expect('divergedSteps' in record).toBe(false)
 })
+
+test('日付違いの別表記は同じモデルとして 1 行にまとめ、エイリアスのセッションモデルは比べない', () => {
+  // Arrange
+  let drafts: Drafts = beginTurn({}, { turnId: 't1' }, 0, 'opus')
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5', usage: opusUsage })
+  drafts = recordStep(drafts, { turnId: 't1', model: 'claude-opus-5-5-20260101', usage: { ...opusUsage, model: 'claude-opus-5-5-20260101' } })
+  const { record } = finishTurn(drafts, {
+    turnId: 't1',
+    usage: { ...opusUsage, model: 'claude-opus-5-5-20260101', input_tokens: 2_000, output_tokens: 1_000 },
+    durationMs: 10,
+    reason: 'answer',
+  })
+
+  // Assert
+  expect('byModel' in record).toBe(false)
+  expect('divergedSteps' in record).toBe(false)
+})

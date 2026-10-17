@@ -85,7 +85,7 @@ function divergedNote(records: readonly TurnRecord[]): readonly string[] {
   const count = records.filter(record => (record.divergedSteps ?? 0) > 0).length
   if (count === 0) return []
   return [
-    `モデルがターン開始時のセッションのモデルと食い違った応答を含むターンが ${count} 件あります（フォールバックなどの可能性。推定で、原因は断定できません）。モデル × effort の表は、応答したモデルごとに分けて数えています`,
+    `モデルがターン開始時のセッションのモデルと食い違った応答を含むターンが ${count} 件あります（フォールバックなどの可能性。推定で、原因は断定できません）。応答したモデルの内訳を取れたターンは、モデル × effort の表でモデルごとに分けて数えています`,
   ]
 }
 

@@ -16,7 +16,6 @@ export type CostParts = {
   readonly cacheWrite: number
 }
 
-/** 完了したターン 1 件。agentId が null なら メインループ、値があればサブエージェントの 1 実行。 */
 /** 1 ターンの中の、モデルごとの内訳（0.24.1 で追加）。 */
 export type ModelShare = {
   readonly model: string
@@ -26,6 +25,7 @@ export type ModelShare = {
   readonly steps: number
 }
 
+/** 完了したターン 1 件。agentId が null なら メインループ、値があればサブエージェントの 1 実行。 */
 export type TurnRecord = {
   readonly turnId: string
   readonly agentId: string | null
