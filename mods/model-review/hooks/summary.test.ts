@@ -13,6 +13,7 @@ import {
   subagentCount,
   toolDetailText,
   turnOriginLabel,
+  unpricedExclusionText,
 } from './summary'
 
 // 架空データのみ。
@@ -87,6 +88,21 @@ test('推定は全ターン単価不明かどうかと、単価不明の件数�
   expect(facts.allUnpriced).toBe(false)
   expect(facts.unpricedTurns).toBe(1)
   expect(estimateFacts([turn({ costUsd: null })]).allUnpriced).toBe(true)
+})
+
+test('ターンが 0 件のときは、全ターン単価不明とはみなさない', () => {
+  // Act
+  const facts = estimateFacts([])
+
+  // Assert
+  expect(facts.allUnpriced).toBe(false)
+  expect(facts.unpricedTurns).toBe(0)
+})
+
+test('単価不明が 0 件のときは、除外の文面を出さない', () => {
+  // Act / Assert
+  expect(unpricedExclusionText(0)).toBe('')
+  expect(unpricedExclusionText(2)).toBe('（単価不明 2 ターンを除く）')
 })
 
 test('実コストは基準点と現在値の両方があるときだけ、読み込み後の差として返す', () => {

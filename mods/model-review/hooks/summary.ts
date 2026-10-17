@@ -72,7 +72,10 @@ export function groupFacts(group: ModelGroup): GroupFacts {
 export const turnOriginLabel = (record: TurnRecord): string => (record.agentId === null ? 'メイン' : 'サブエージェント')
 
 /** ツール回数と所要時間の文面（「ツール 3 回 · 2 分 5 秒」）。 */
-export const toolDetailText = (record: TurnRecord): string => `ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`
+export const toolDetailText = (record: TurnRecord): string =>
+  record.durationMs === undefined
+    ? `ツール ${record.toolCount} 回`
+    : `ツール ${record.toolCount} 回 · ${formatDuration(record.durationMs)}`
 
 /** サブエージェントのターン数。 */
 export const subagentCount = (records: readonly TurnRecord[]): number => records.filter(record => record.agentId !== null).length
@@ -90,14 +93,15 @@ export type EstimateFacts = {
 export function estimateFacts(records: readonly TurnRecord[]): EstimateFacts {
   const { costUsd, unpricedTurns } = estimateTotal(records)
   const { lowUsd, highUsd } = estimateRange(records)
-  return { costUsd, unpricedTurns, allUnpriced: unpricedTurns === records.length, lowUsd, highUsd }
+  return { costUsd, unpricedTurns, allUnpriced: records.length > 0 && unpricedTurns === records.length, lowUsd, highUsd }
 }
 
 /** 全ターン単価不明のときの推定の文面。 */
 export const allUnpricedText = (turnCount: number): string => `算出できません（全 ${turnCount} ターンが単価不明）`
 
-/** 単価不明のターンを合計から除いたことの文面。 */
-export const unpricedExclusionText = (unpricedTurns: number): string => `（単価不明 ${unpricedTurns} ターンを除く）`
+/** 単価不明のターンを合計から除いたことの文面。0 件なら空文字（除いたものがない）。 */
+export const unpricedExclusionText = (unpricedTurns: number): string =>
+  unpricedTurns > 0 ? `（単価不明 ${unpricedTurns} ターンを除く）` : ''
 
 /** 読み込み後の実コスト。基準点か現在値が取れなければ null。 */
 export const actualCostUsd = (review: ReviewState): number | null => {

@@ -60,8 +60,66 @@ test('起動時に基準点が取れなかったときは、後に取れたコ�
   const sampled = withCostSample(unset, 4.2)
 
   // Assert
-  expect(sampled.sessionCostUsd).toEqual({ baseline: 4.2, current: 4.2 })
+  expect(sampled.sessionCostUsd).toEqual({ baseline: 4.2, current: 4.2, baselineTurns: 0 })
   expect(unset.sessionCostUsd).toEqual({ baseline: null, current: null })
+})
+
+test('基準点が遅れて取れたときは、取った時点のターン数を残し、それより前のターンを区別できるようにする', () => {
+  // Arrange: 起動時は基準点が取れず、2 ターン完了した後に初めてコストが取れた。
+  const twoTurns = appendTurn(appendTurn(withBaseline(EMPTY_REVIEW, null), record), record)
+
+  // Act
+  const sampled = withCostSample(twoTurns, 4.2)
+
+  // Assert
+  expect(sampled.sessionCostUsd).toEqual({ baseline: 4.2, current: 4.2, baselineTurns: 2 })
+})
+
+test('NaN や Infinity の基準点は null と同じく無視し、状態を変えない', () => {
+  for (const broken of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    // Act
+    const result = withBaseline(EMPTY_REVIEW, broken)
+
+    // Assert
+    expect(result).toBe(EMPTY_REVIEW)
+  }
+})
+
+test('壊れた基準点を無視した後に来た有限の値が、基準点になる（壊れた値で固定されない）', () => {
+  // Arrange
+  const afterBroken = withBaseline(EMPTY_REVIEW, Number.NaN)
+
+  // Act
+  const repaired = withBaseline(afterBroken, 3.0)
+
+  // Assert
+  expect(repaired.sessionCostUsd.baseline).toBe(3.0)
+})
+
+test('有限でないコストの取得は、基準点も現在値も変えない', () => {
+  // Arrange
+  const started = withBaseline(EMPTY_REVIEW, 1.5)
+
+  // Act
+  const sampledNaN = withCostSample(started, Number.NaN)
+  const sampledInfinity = withCostSample(started, Number.POSITIVE_INFINITY)
+  const currentNaN = withCurrent(started, Number.NaN)
+
+  // Assert
+  expect(sampledNaN).toBe(started)
+  expect(sampledInfinity).toBe(started)
+  expect(currentNaN).toBe(started)
+})
+
+test('有限でない値で基準点を取れなかった状態から、後の有限の値で基準点を取れる', () => {
+  // Arrange: 起動時に NaN が来ても、基準点はまだ未設定のまま。
+  const broken = withCostSample(EMPTY_REVIEW, Number.NaN)
+
+  // Act
+  const sampled = withCostSample(broken, 2.0)
+
+  // Assert
+  expect(sampled.sessionCostUsd).toEqual({ baseline: 2.0, current: 2.0, baselineTurns: 0 })
 })
 
 test('基準点が設定済みなら、後のコストの取得は基準点を変えず、現在値だけ更新する', () => {
@@ -72,5 +130,5 @@ test('基準点が設定済みなら、後のコストの取得は基準点を�
   const sampled = withCostSample(started, 2.5)
 
   // Assert
-  expect(sampled.sessionCostUsd).toEqual({ baseline: 1.5, current: 2.5 })
+  expect(sampled.sessionCostUsd).toEqual({ baseline: 1.5, current: 2.5, baselineTurns: 0 })
 })

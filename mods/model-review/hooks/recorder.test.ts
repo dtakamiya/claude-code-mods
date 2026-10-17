@@ -118,7 +118,7 @@ test('開始を聞いていないターンは、終了の情報だけで記録�
   expect(finished.record).toMatchObject({ turnId: 'late', model: 'claude-sonnet-5-5', toolCount: 0, costUsd: 3, effort: null })
 })
 
-test('usage も step もないターンは、モデル不明・トークン 0・コスト 0 で記録する', () => {
+test('usage も step もないターンは、モデル不明・トークン 0 で、コストは 0 円ではなく不明（null）にする', () => {
   // Arrange
   const drafts: Drafts = {}
 
@@ -129,7 +129,10 @@ test('usage も step もないターンは、モデル不明・トークン 0・
   expect(finished.record).toMatchObject({
     model: UNKNOWN_MODEL,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    costUsd: 0,
+    costUsd: null,
+    costUpperUsd: null,
+    haikuCostUsd: null,
+    sonnetCostUsd: null,
     reason: 'aborted',
   })
 })
@@ -303,16 +306,63 @@ test('model が文字列でない usage は単価不明として扱い、例外�
   expect(endOnly.record.model).toBe(UNKNOWN_MODEL)
 })
 
-test('usage がオブジェクトでなければ、usage のないターンとして記録する', () => {
+test('usage がオブジェクトでなければ、usage のないターンとして記録し、コストは不明（null）にする', () => {
   // Act
   const finished = finishTurn({}, { turnId: 't12', usage: 'broken' as never, durationMs: 1, reason: 'answer' })
 
   // Assert
   expect(finished.record).toMatchObject({
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    costUsd: 0,
+    costUsd: null,
     firstStepPromptTokens: undefined,
   })
+})
+
+test('step の記録が欠けていれば（終了時の usage の方が多ければ）、ターン全体の usage で単価を再計算する', () => {
+  // Arrange: 応答は 1 回分（入力 50 万 tokens = Sonnet $1）しか届かず、終了時の usage は全体（入力 100 万 + 出力 10 万 = Sonnet $3）。
+  const partialStep = { ...sonnetUsage, input_tokens: 500_000, output_tokens: 0 }
+  let drafts = beginTurn({}, { turnId: 't16' })
+  drafts = recordStep(drafts, { turnId: 't16', model: 'claude-sonnet-5-5', usage: partialStep })
+
+  // Act
+  const finished = finishTurn(drafts, { turnId: 't16', usage: sonnetUsage, durationMs: 1, reason: 'answer' })
+
+  // Assert: 過少表示（$1）ではなく全体で計算した値を使う。Haiku 換算も全体から計算する（0.75）。
+  expect(finished.record.costUsd).toBe(3)
+  expect(finished.record.sonnetCostUsd).toBe(3)
+  expect(finished.record.haikuCostUsd).toBe(0.75)
+})
+
+test('advisor の呼び出し回数は、NaN・負数・小数・非数なら 0 として数える', () => {
+  // Arrange
+  const withAdvisorCalls = (advisorCalls: unknown): Drafts =>
+    recordStep(beginTurn({}, { turnId: 't17' }), { turnId: 't17', model: 'claude-sonnet-5-5', usage: sonnetUsage, advisorCalls: advisorCalls as number })
+
+  // Act
+  const invalid = finishTurn(withAdvisorCalls(Number.NaN), { turnId: 't17', durationMs: 1, reason: 'answer' })
+  const negative = finishTurn(withAdvisorCalls(-1), { turnId: 't17', durationMs: 1, reason: 'answer' })
+  const fractional = finishTurn(withAdvisorCalls(1.5), { turnId: 't17', durationMs: 1, reason: 'answer' })
+  const notNumber = finishTurn(withAdvisorCalls('2'), { turnId: 't17', durationMs: 1, reason: 'answer' })
+  const valid = finishTurn(withAdvisorCalls(2), { turnId: 't17', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(invalid.record.advisorCalls).toBe(0)
+  expect(negative.record.advisorCalls).toBe(0)
+  expect(fractional.record.advisorCalls).toBe(0)
+  expect(notNumber.record.advisorCalls).toBe(0)
+  expect(valid.record.advisorCalls).toBe(2)
+})
+
+test('所要時間が有限な非負数でなければ、所要時間を不明（undefined）として記録する', () => {
+  // Act
+  const notFinite = finishTurn({}, { turnId: 't18', usage: sonnetUsage, durationMs: Number.NaN, reason: 'answer' })
+  const negative = finishTurn({}, { turnId: 't19', usage: sonnetUsage, durationMs: -5, reason: 'answer' })
+  const zero = finishTurn({}, { turnId: 't20', usage: sonnetUsage, durationMs: 0, reason: 'answer' })
+
+  // Assert
+  expect(notFinite.record.durationMs).toBeUndefined()
+  expect(negative.record.durationMs).toBeUndefined()
+  expect(zero.record.durationMs).toBe(0)
 })
 
 test('動きが止まった未完了のターンは、寿命を過ぎると実行中の一覧から外れる', () => {
