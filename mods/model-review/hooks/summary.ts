@@ -2,11 +2,12 @@
 // 並びと見出しは各の組み立て側が持つ。ここには「同じ数字・同じ言い回し」だけを置く。
 import type { ArchivedTurns, ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
-import { estimateRange, estimateTotal, type Concern, type ModelGroup } from './analyze'
+import { estimateRange, estimateTotal, summarizeAgentTypes, type Concern, type ModelGroup } from './analyze'
 import { effortText } from './effort'
 import { formatDuration, formatInt, formatUsd } from './format'
 import { CONCERN_TEXT } from './labels'
-import { describeLoop, loopLabel, subagentHitRateLow, summarizeLoops, SUBAGENT_CACHE_NOTE } from './loops'
+import { UNKNOWN_AGENT_TYPE } from './agenttype'
+import { describeAgentType, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops, SUBAGENT_CACHE_NOTE } from './loops'
 import { advisorCallTotal } from './notes'
 import { describeOption, estimateSwitchOptions } from './whatif'
 
@@ -131,6 +132,7 @@ export function advisorCallText(records: readonly TurnRecord[], archived?: Archi
 export type LoopRow = { readonly label: string; readonly detail: string }
 
 export type LoopView = {
+  /** メイン → サブエージェント。サブエージェントの直後に、種類の名前が分かるものがあれば種類別の行（└ 種類名）を並べる。 */
   readonly rows: readonly LoopRow[]
   /** サブエージェントのヒット率が低いときの注記。低くなければ null。 */
   readonly subagentNote: string | null
@@ -140,8 +142,14 @@ export type LoopView = {
 export function loopView(records: readonly TurnRecord[]): LoopView | null {
   const summaries = summarizeLoops(records)
   if (summaries.length < 2) return null
+  const byType = summarizeAgentTypes(records)
+  // 種類が 1 つだけでも、名前が分かっていれば出す（どの種類かが分かる）。「種類不明」だけなら出さない。
+  const showTypes = byType.length >= 2 || (byType.length === 1 && byType[0]?.type !== UNKNOWN_AGENT_TYPE)
   return {
-    rows: summaries.map(summary => ({ label: loopLabel(summary.kind), detail: describeLoop(summary) })),
+    rows: summaries.flatMap(summary => [
+      { label: loopLabel(summary.kind), detail: describeLoop(summary) },
+      ...(summary.kind === 'subagent' && showTypes ? byType.map(type => ({ label: `└ ${type.type}`, detail: describeAgentType(type) })) : []),
+    ]),
     subagentNote: subagentHitRateLow(summaries) ? SUBAGENT_CACHE_NOTE : null,
   }
 }

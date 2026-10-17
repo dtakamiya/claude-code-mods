@@ -2,6 +2,7 @@
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { CostParts, TurnRecord } from '../types'
 import { ZERO_PARTS, addParts } from './breakdown'
+import { sanitizeAgentType } from './agenttype'
 import { effortToRecord } from './effort'
 import { HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, priceUsage, priceUsageParts, type CacheWriteTtl, type TokenUsageLike } from './pricing'
 
@@ -69,6 +70,8 @@ export type TurnEndInput = {
   readonly reason: TurnRecord['reason']
   /** この終了が /compact の直後のターンか。 */
   readonly afterCompact?: boolean
+  /** サブエージェントの種類（subagentType の名前だけ）。分からなければ無し。 */
+  readonly agentType?: string | null
 }
 
 export type FinishedTurn = {
@@ -280,6 +283,12 @@ function firstStepOf(
   return { cacheWrite: usage.cache_creation_input_tokens, promptTokens: promptTokensOf(usage) }
 }
 
+/** サブエージェントのターンで、使える種類の名前があるときだけ載せる。 */
+const agentTypeField = (end: TurnEndInput): { readonly agentType?: string } => {
+  const type = end.agentId === undefined ? null : sanitizeAgentType(end.agentType)
+  return type === null ? {} : { agentType: type }
+}
+
 export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
   const key = loopKey(end.agentId)
   const draft = draftOf(drafts, end.agentId, end.turnId)
@@ -304,6 +313,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     firstStepPromptTokens: first.promptTokens,
     advisorCalls: draft.advisorCalls,
     ...(end.afterCompact === true ? { afterCompact: true } : {}),
+    ...agentTypeField(end),
     ...(draft.started ? {} : { partial: true }),
   }
   const remaining = Object.fromEntries(Object.entries(drafts).filter(([candidate]) => candidate !== key))

@@ -757,3 +757,27 @@ test('measure: showStatus を切ると status 行に出さない', { options: { 
 
   expect(ui.statuses).toEqual([])
 })
+
+test('agent.spawn で覚えた種類は turn.complete の記録に載り、spawn を見ていないときは agent.list で補う。説明・プロンプトは出ない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  on('agent.spawn', (_$, e) => ({ model: 'claude-sonnet-5-5', agentId: e.description === 'x' ? 'sub-1' : 'sub-2' }) as never)
+  on('agent.list', () => ({ value: [{ id: 'sub-3', type: 'general-purpose' }] }) as never)
+  await $.session.start(SESSION_START)
+  await $.agent.spawn({ prompt: 'SECRET-PROMPT', description: 'x', subagentType: 'Explore' } as never)
+  await runMainTurn($)
+  const complete = (agentId: string, turnId: string) =>
+    $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, agentId, reason: 'answer', usage: SONNET_USAGE } as never)
+
+  // Act: spawn を見たサブ、spawn を見ていない（list にある）サブ、どちらにもないサブ。
+  await complete('sub-1', 's1')
+  await complete('sub-3', 's3')
+  await complete('sub-9', 's9')
+  const ran = await $.command.run(commandWith('text'))
+
+  // Assert
+  expect(ran.text).toContain('└ Explore')
+  expect(ran.text).toContain('└ general-purpose')
+  expect(ran.text).toContain('└ 種類不明')
+  expect(ran.text).not.toContain('SECRET-PROMPT')
+})
