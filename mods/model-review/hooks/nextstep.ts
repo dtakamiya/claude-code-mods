@@ -1,6 +1,6 @@
 // 指摘ごとの「次の一手」の候補（1 行）。$ に触れない純粋関数。ペインとテキストレポートで共用する。
 // 断定せず「候補」「目安」で書く。コマンド名は公式 docs で確認したもの（`/model [model]`・`/effort [level]`、
-// サブエージェント定義の frontmatter `model`、組み込みの Explore）だけを書く。
+// サブエージェント定義の frontmatter `model`、組み込みの Explore、`/model opusplan`）だけを書く。
 // `/model`・`/effort` はメインのセッションに効く。サブエージェント由来の指摘には定義側の設定を示す。
 import type { TurnRecord } from '../types'
 import { RANK_SONNET, RANK_UNRANKED, modelRank, type Concern, type OverspecFacts, type UnderspecFacts } from './analyze'
@@ -49,6 +49,14 @@ function mainModelPiece(facts: OverspecFacts, records: readonly TurnRecord[]): s
   return `軽作業が続くあいだは /model sonnet で Sonnet へ${detail}`
 }
 
+/** plan 外の Opus の過剰があり、plan mode も使っているセッションへの候補。公式 docs の opusplan（plan mode は opus、実行は sonnet）。 */
+function opusplanPiece(facts: OverspecFacts, records: readonly TurnRecord[]): string | null {
+  if (facts.mainModelTurns === 0 || !facts.planModeSeen) return null
+  const latest = latestMainModel(records)
+  if (latest !== null && isSonnetOrLighter(latest)) return null
+  return 'plan mode を使っているなら /model opusplan（plan mode は Opus、実行は Sonnet に自動で切替。切替のたびにキャッシュを再構築することがある）も候補'
+}
+
 function mainEffortPiece(facts: OverspecFacts): string | null {
   if (facts.mainEffortModels.length === 0) return null
   const cache = facts.mainEffortModels.every(keepsCacheOnEffortChange)
@@ -60,6 +68,7 @@ function mainEffortPiece(facts: OverspecFacts): string | null {
 function overspecStep(facts: OverspecFacts, records: readonly TurnRecord[]): string {
   const pieces = [
     mainModelPiece(facts, records),
+    opusplanPiece(facts, records),
     facts.subagentModel ? 'サブエージェントは定義の model を sonnet / haiku に' : null,
     mainEffortPiece(facts),
     facts.subagentEffort ? 'サブエージェントの effort は定義側の設定による' : null,

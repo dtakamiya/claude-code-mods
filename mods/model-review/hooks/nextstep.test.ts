@@ -218,7 +218,7 @@ test('どの候補も「候補: 」で始まり、断定・指示の言い回し
     count: 3,
     examples: [],
     amountUsd: null,
-    overspec: { mainModelTurns: 0, mainModelSavingsUsd: null, subagentModel: true, mainEffortModels: ['x'], subagentEffort: true },
+    overspec: { mainModelTurns: 0, mainModelSavingsUsd: null, planModeSeen: false, subagentModel: true, mainEffortModels: ['x'], subagentEffort: true },
   }
   const alreadySonnet = [...overspecRecords, turn({ turnId: 'after', model: 'claude-sonnet-5-5' })]
   const unknownRebuild = overspecRecords.map(record => ({ ...record, firstStepCacheWrite: undefined }))
@@ -238,4 +238,40 @@ test('どの候補も「候補: 」で始まり、断定・指示の言い回し
     expect(text?.startsWith(NEXT_STEP_PREFIX)).toBe(true)
     for (const word of ASSERTIVE_WORDS) expect(text).not.toContain(word)
   }
+})
+
+test('plan 外の Opus の過剰があり plan mode のターンもあるとき、/model opusplan を候補に添える', () => {
+  // Arrange: plan 外の軽作業が 3 ターン（過剰）と、plan mode のターン。直近のメインは Opus のまま。
+  const records = [...repeat(3, index => turn({ turnId: `t${index}` })), turn({ turnId: 'plan', planMode: true, toolCount: 0 })]
+
+  // Act
+  const text = nextStepText(concernOf(records, 'overspec'), records)
+
+  // Assert
+  expect(text).toContain('/model opusplan')
+  expect(text).toContain('キャッシュ')
+  expect(text?.startsWith(NEXT_STEP_PREFIX)).toBe(true)
+  for (const word of ASSERTIVE_WORDS) expect(text).not.toContain(word)
+})
+
+test('plan mode のターンがなければ opusplan は出さない', () => {
+  const records = repeat(3, index => turn({ turnId: `t${index}` }))
+
+  expect(nextStepText(concernOf(records, 'overspec'), records)).not.toContain('opusplan')
+})
+
+test('直近のメインがすでに Sonnet 以下なら opusplan は出さない', () => {
+  const records = [
+    ...repeat(3, index => turn({ turnId: `t${index}` })),
+    turn({ turnId: 'plan', planMode: true }),
+    turn({ turnId: 'now', model: 'claude-sonnet-5-5' }),
+  ]
+
+  expect(nextStepText(concernOf(records, 'overspec'), records)).not.toContain('opusplan')
+})
+
+test('古い plan mode のターンだけ（直近の窓の外）では opusplan を出さない', () => {
+  const records = [turn({ turnId: 'old-plan', planMode: true }), ...repeat(25, index => turn({ turnId: `t${index}` }))]
+
+  expect(nextStepText(concernOf(records, 'overspec'), records)).not.toContain('opusplan')
 })

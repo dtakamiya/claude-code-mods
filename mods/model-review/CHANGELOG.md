@@ -2,6 +2,9 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.30.0
+- plan 外で Opus 系の過剰があり、メインに plan mode のターンもあるとき、過剰の次の一手に `/model opusplan`（plan mode は opus、実行は sonnet。公式 docs の model-config で確認）を候補として添える（#82 の段階 2）。`OverspecFacts.planModeSeen`（メインの `planMode` のターンの有無）を `analyze.ts` で作り、`nextstep.ts` の `opusplanPiece` が文にする。直近のメインがすでに Sonnet 以下のときは出さない。断定せず「近い使い方」と書き、自動では実行しない。閾値なし。読取専用。見た目は目視未確認。
+
 ## 0.29.0
 - 会話が伸びて 1 ターンあたりの費用が上がったときに、次の一手の候補として `/compact`（文脈を捨ててよい区切りなら `/clear` も）を添える（#84 の段階 2）。直近 10 ターンの平均が最初の 10 ターンの `GROWTH_HINT_RATIO`（3）倍以上で、プロンプト長も 1.5 倍以上（`GROWTH_HINT_PROMPT_RATIO`）に伸びていて、畳み込み済みのターンがなく、直近の窓の中で compact していないときだけ、ペインとテキストレポートの費用の推移の下に出す（`growth.ts` の純粋関数）。「読込が減る目安」「最初の 1 回は書き直しの費用がかかる」「品質に響くことがあるので判断は任せる」と添え、▲ にはせず、自動では実行しない。モデル切替の候補（`whatif.ts`）との並べての比較は未実装。倍率は `threshold-rationale.md` に仮置きとして追記。見た目は目視未確認。
 

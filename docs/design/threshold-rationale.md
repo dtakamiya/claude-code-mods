@@ -75,6 +75,7 @@
 | `GROWTH_HINT_RATIO` = 3 / `GROWTH_HINT_PROMPT_RATIO` = 1.5 | growth.ts | 直近 10 ターンの平均が最初の 10 ターンの 3 倍以上で、プロンプト長も 1.5 倍以上のとき、費用の推移の下に /compact・/clear の候補を添える。表示のみ（0.29.0・#84 段階 2） | 実測なし = 仮置き |
 | `MIN_OVERSPEC_SAVINGS_USD` = 0.01 | analyze.ts | Opus 系の軽作業で、Sonnet 換算の差額がこれ未満ならモデル起因の過剰にしない（0.11.0 で Haiku 換算から変更。Sonnet・Haiku はモデルでは指摘せず、effort 起因だけ指摘する） | 実測なし = 仮置き |
 | plan mode のターン | analyze.ts | `TurnRecord.planMode` のターンはモデル起因の過剰（`isModelOverspec`）から外す。計画のためにわざと Opus を選ぶ使い方を「過剰」にしないため。effort 起因は外さない（0.25.0 で追加、#82） | 閾値なし（判定の除外） |
+| opusplan の候補 | nextstep.ts | plan 外のメインにモデル起因の過剰があり、メインに plan mode のターンもあり、直近のメインが Sonnet 以下でないとき、次の一手に `/model opusplan` を添える。断定しない（0.30.0 で追加、#82 段階 2） | 閾値なし（条件の組合せ） |
 | `OVERSPEC_MIN_LIGHT_SHARE` = 0.5 | analyze.ts | 過剰は、同じループ × モデル × effort のターンのうち軽作業が半数以上あるグループだけを対象にする。重い作業の合間の短い応答（出力に思考分を含むため短くても難問とは限らない）を軽作業のモデルと誤認しないため（0.14.1 で追加、#40） | 実測なし = 仮置き |
 | `DELEGATION_MAX_EDIT_SHARE` = 0.2 | analyze.ts | 委譲は、窓内のメインの編集系ツールがツール全体の 2 割を超える実装中心のときは指摘しない。読取中心の探索だけを対象にする（0.14.1 で追加、#40） | 実測なし = 仮置き |
 | `MIN_OVERSPEC_TURNS` = 3 | analyze.ts | 過剰は該当ターンが 3 件以上のときだけ指摘（1〜2 ターンの軽さは切替の根拠にならない）。中断・拒否のターンは軽作業にしない | 実測なし = 仮置き |

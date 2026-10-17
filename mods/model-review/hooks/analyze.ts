@@ -65,6 +65,8 @@ export type OverspecFacts = {
   /** メインループのモデル起因の過剰ターン数と、その Sonnet 換算の差額合計（分からなければ null）。 */
   readonly mainModelTurns: number
   readonly mainModelSavingsUsd: number | null
+  /** メインの直近の窓に plan mode のターンがあるか。plan 外の Opus の過剰と併せて `/model opusplan` の候補にする（#82 段階 2）。 */
+  readonly planModeSeen: boolean
   /** サブエージェントにモデル起因の過剰があるか。 */
   readonly subagentModel: boolean
   /** メインループの effort 起因の過剰ターンのモデル（重複なし）。 */
@@ -360,6 +362,10 @@ export function partitionByRecency(concerns: readonly Concern[]): { readonly rec
   }
 }
 
+/** メインの直近 RECENT_CONCERN_MAIN_TURNS ターン。古い plan mode の利用で候補を出し続けないため。 */
+const recentMainTurns = (records: readonly TurnRecord[]): readonly TurnRecord[] =>
+  records.filter(record => record.agentId === null).slice(-RECENT_CONCERN_MAIN_TURNS)
+
 function overspecConcern(records: readonly TurnRecord[]): Concern | null {
   const shares = lightShareByGroup(records)
   const overspec = records.filter(
@@ -380,6 +386,7 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
     overspec: {
       mainModelTurns: mainModelTurns.length,
       mainModelSavingsUsd: sumKnown(mainModelTurns.map(sonnetSavingsUsd)),
+      planModeSeen: recentMainTurns(records).some(record => record.planMode === true),
       subagentModel: modelTurns.some(record => record.agentId !== null),
       mainEffortModels: [
         ...new Set(overspec.filter(record => isEffortOverspec(record) && record.agentId === null).map(record => record.model)),
