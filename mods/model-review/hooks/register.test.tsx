@@ -473,3 +473,64 @@ test('記録（$.state）にはツールの入力（パス・コマンド）が�
     expect(ran.text).not.toContain(marker)
   }
 })
+
+// status 行・トーストは session.measure で出す。engine の下で ui.status / ui.toast を受けて記録する。
+function captureUi(on: On) {
+  const statuses: (string | undefined)[] = []
+  const toasts: string[] = []
+  on('session.measure', (_$, e) => ({ changed: e.changed }))
+  on('ui.status', (_$, e) => (statuses.push(e.text), { value: undefined as never }))
+  on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined as never }))
+  return { statuses, toasts }
+}
+const measure = (changed: string[], usd: number | undefined, percents: number[] = []) =>
+  ({
+    context: {},
+    rateLimits: percents.map(percentUsed => ({ kind: 'five_hour', percentUsed })),
+    cost: usd === undefined ? undefined : { usd },
+    changed,
+  }) as never
+
+test('measure: コストと使用率を status 行に出し、context だけの変化では描き直さない', async ($, on) => {
+  answerEngine(on, () => 0, false)
+  const ui = captureUi(on)
+  await $.session.start(SESSION_START)
+
+  await $.session.measure(measure(['cost', 'rateLimits'], 1.234, [72]))
+  await $.session.measure(measure(['context'], 9, [99]))
+  await $.session.measure(measure(['cost'], 1.234, [72]))
+
+  expect(ui.statuses).toEqual(['実コスト $1.23 · 5h 72%'])
+})
+
+test('measure: 既定は上限が無効でトーストを出さない', async ($, on) => {
+  answerEngine(on, () => 0, false)
+  const ui = captureUi(on)
+  await $.session.start(SESSION_START)
+
+  await $.session.measure(measure(['cost', 'rateLimits'], 999, [100]))
+
+  expect(ui.toasts).toEqual([])
+})
+
+test('measure: 上限を設定すると、超えたときに 1 度だけトーストする', { options: { costLimitUsd: 5, rateLimitPercent: 80 } }, async ($, on) => {
+  answerEngine(on, () => 0, false)
+  const ui = captureUi(on)
+  await $.session.start(SESSION_START)
+
+  await $.session.measure(measure(['cost', 'rateLimits'], 4, [50]))
+  await $.session.measure(measure(['cost', 'rateLimits'], 5.5, [85]))
+  await $.session.measure(measure(['cost', 'rateLimits'], 6, [90]))
+
+  expect(ui.toasts).toHaveLength(2)
+})
+
+test('measure: showStatus を切ると status 行に出さない', { options: { showStatus: false } }, async ($, on) => {
+  answerEngine(on, () => 0, false)
+  const ui = captureUi(on)
+  await $.session.start(SESSION_START)
+
+  await $.session.measure(measure(['cost'], 1, []))
+
+  expect(ui.statuses).toEqual([])
+})

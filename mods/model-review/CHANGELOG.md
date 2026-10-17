@@ -2,6 +2,9 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.16.0
+- status 行にセッションの実コストと使用率（5h / 7d）を常時表示し、設定した上限を超えたらトーストで 1 度知らせる（#48）。設定は `userConfig`（`showStatus` 既定オン、`costLimitUsd` / `rateLimitPercent` 既定 0 = 無効）。status 行・トーストは目視未確認。
+
 ## 0.15.1
 - 記録フックの例外で処理を止めない・時刻を一元化。並行・プライバシーのテストを追加（#45）。
 
