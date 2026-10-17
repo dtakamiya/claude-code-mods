@@ -24,6 +24,10 @@ export const DELEGATION_WINDOW_TURNS = 20
 export const MIN_TOOLS_FOR_DURATION_HEAVY = 3
 /** 過剰は、該当ターンがこの数以上あるときだけ指摘する。1〜2 ターンの軽さは切替の根拠にならない（仮置き）。 */
 export const MIN_OVERSPEC_TURNS = 3
+/** 委譲は、直近の窓でメインの編集系ツールがツール全体のこの割合を超えるとき（実装中心のセッション）は指摘しない。読取中心の探索だけを対象にする（仮置き）。 */
+export const DELEGATION_MAX_EDIT_SHARE = 0.2
+/** 過剰は、同じループ × モデル × effort のターンのうち軽作業がこの割合以上あるグループだけを対象にする。重い作業の合間の短い応答を、軽作業のモデルと誤認しないため（仮置き）。 */
+export const OVERSPEC_MIN_LIGHT_SHARE = 0.5
 /** サブエージェントが推定コストのこの割合以上を占め、かつ MIN_SUBAGENT_TURNS 以上あるとき指摘する（仮置き）。 */
 export const SUBAGENT_COST_SHARE = 0.5
 export const MIN_SUBAGENT_TURNS = 3
@@ -132,7 +136,7 @@ export function estimateTotal(records: readonly TurnRecord[]): { costUsd: number
   )
 }
 
-/** 中断・拒否のターンは出力が途中で切れているだけなので、軽作業とは見なさない。 */
+/** 中断・拒否のターンは出力が途中で切れているだけなので、軽作業とは見なさない。出力トークンには思考分も含まれる。 */
 const isLightTurn = (record: TurnRecord): boolean =>
   record.reason === 'answer' &&
   record.toolCount <= LIGHT_MAX_TOOL_CALLS &&
@@ -244,7 +248,7 @@ type OverspecGroup = {
 /** ループ × モデル × effort ごとにまとめる。差額は、モデル起因のターンだけで足す。 */
 function overspecGroups(overspec: readonly TurnRecord[]): readonly OverspecGroup[] {
   const byKey = overspec.reduce<Readonly<Record<string, readonly TurnRecord[]>>>((acc, record) => {
-    const key = [loopLabel(record), record.model, record.effort ?? '-'].join('\u0000')
+    const key = groupKeyOf(record)
     return { ...acc, [key]: [...(acc[key] ?? []), record] }
   }, {})
   return Object.values(byKey)
@@ -274,8 +278,23 @@ function overspecGroupLine(group: OverspecGroup): string {
   return `[${group.loop}] ${group.model} / effort ${group.effort}: 軽作業 ${group.turns.length} 件（ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下）${sonnet}${haiku}${latestText}`
 }
 
+const groupKeyOf = (record: TurnRecord): string => [loopLabel(record), record.model, record.effort ?? '-'].join('\u0000')
+
+/** グループごとの軽作業の割合。短い応答が重い作業の合間に混ざっているだけのグループを外すために使う。 */
+function lightShareByGroup(records: readonly TurnRecord[]): ReadonlyMap<string, number> {
+  const counts = records.reduce<Readonly<Record<string, { readonly light: number; readonly all: number }>>>((acc, record) => {
+    const key = groupKeyOf(record)
+    const prev = acc[key] ?? { light: 0, all: 0 }
+    return { ...acc, [key]: { light: prev.light + (isLightTurn(record) ? 1 : 0), all: prev.all + 1 } }
+  }, {})
+  return new Map(Object.entries(counts).map(([key, { light, all }]) => [key, light / all]))
+}
+
 function overspecConcern(records: readonly TurnRecord[]): Concern | null {
-  const overspec = records.filter(isOverspecTurn)
+  const shares = lightShareByGroup(records)
+  const overspec = records.filter(
+    record => isOverspecTurn(record) && (shares.get(groupKeyOf(record)) ?? 0) >= OVERSPEC_MIN_LIGHT_SHARE,
+  )
   if (overspec.length < MIN_OVERSPEC_TURNS) return null
   const amountUsd = sumKnown(overspec.filter(isModelOverspec).map(sonnetSavingsUsd))
   return concernOf('overspec', overspec.length, overspecGroups(overspec).map(overspecGroupLine), amountUsd)
@@ -287,8 +306,12 @@ function delegationConcern(records: readonly TurnRecord[]): Concern | null {
   const mainNonHaikuTools = recent
     .filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
     .reduce((sum, record) => sum + record.toolCount, 0)
+  const mainNonHaikuEdits = recent
+    .filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
+    .reduce((sum, record) => sum + record.editCount, 0)
   const usesSubagents = recent.some(record => record.agentId !== null)
   if (mainNonHaikuTools < MAIN_DELEGATION_MIN_TOOL_CALLS || usesSubagents) return null
+  if (mainNonHaikuEdits / mainNonHaikuTools > DELEGATION_MAX_EDIT_SHARE) return null
   return concernOf('delegation', 1, [
     `直近 ${DELEGATION_WINDOW_TURNS} ターンで、メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、サブエージェントを使っていない`,
   ])

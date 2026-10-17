@@ -21,6 +21,8 @@ import {
   DELEGATION_WINDOW_TURNS,
   LONG_TURN_MS,
   MIN_TOOLS_FOR_DURATION_HEAVY,
+  DELEGATION_MAX_EDIT_SHARE,
+  OVERSPEC_MIN_LIGHT_SHARE,
 } from './analyze'
 
 // 架空データのみ。既定値は「重い」側に寄らない軽い 1 ターン。
@@ -607,4 +609,47 @@ test('不足の例は新しいターンから順に並べ、直近の 3 件が�
   // Assert
   expect(underspec?.count).toBe(5)
   expect(underspec?.examples.map(line => line.match(/ターン (h\d)/)?.[1])).toEqual(['h4', 'h3', 'h2'])
+})
+
+test('重い作業が大半のグループに短い応答が混ざっていても、過剰として指摘しない', () => {
+  // Arrange: Opus / medium の 10 ターン中、軽作業は 3 件（30%）だけ。
+  const records = [
+    ...repeat(MIN_OVERSPEC_TURNS, index => turn({ turnId: `short${index}`, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 })),
+    ...repeat(7, index => turn({ turnId: `work${index}`, model: 'claude-opus-5-5', effort: 'medium', toolCount: 20, editCount: 5 })),
+  ]
+
+  // Act
+  const concerns = findConcerns(records)
+
+  // Assert
+  expect(3 / 10).toBeLessThan(OVERSPEC_MIN_LIGHT_SHARE)
+  expect(concerns.find(concern => concern.kind === 'overspec')).toBeUndefined()
+})
+
+test('軽作業がグループの半数以上なら、過剰として指摘する（境界）', () => {
+  // Arrange: 3 件 / 6 ターン = 50%。
+  const records = [
+    ...repeat(MIN_OVERSPEC_TURNS, index => turn({ turnId: `short${index}`, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 })),
+    ...repeat(3, index => turn({ turnId: `work${index}`, model: 'claude-opus-5-5', effort: 'medium', toolCount: 20 })),
+  ]
+
+  // Act / Assert
+  expect(findConcerns(records).find(concern => concern.kind === 'overspec')).toMatchObject({ count: 3 })
+})
+
+test('編集が多い実装中心の窓では、ツールが多くても委譲の指摘はしない', () => {
+  // Arrange: ツール 30 回のうち編集 10 回（33%）。
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, editCount: 10 })]
+
+  // Act / Assert
+  expect(10 / MAIN_DELEGATION_MIN_TOOL_CALLS).toBeGreaterThan(DELEGATION_MAX_EDIT_SHARE)
+  expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toBeUndefined()
+})
+
+test('編集の割合が上限ちょうどなら、委譲を確認する（境界）', () => {
+  // Arrange: ツール 30 回のうち編集 6 回（20%）。
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, editCount: 6 })]
+
+  // Act / Assert
+  expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toMatchObject({ count: 1 })
 })
