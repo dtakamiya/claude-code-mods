@@ -31,9 +31,9 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
       case 'title':
         return (
           <Text wrap="truncate-end">
-            <Text bold>{`${row.turns} ターン`}</Text>
-            {dim(`  ·  サブエージェント ${row.subagents}  ·  推定 `)}
+            {'推定 '}
             <Text bold>{row.costText}</Text>
+            {dim(`  ·  ${row.turns} ターン  ·  サブエージェント ${row.subagents}`)}
           </Text>
         )
       case 'conclusion':
@@ -56,8 +56,8 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
               <Text bold>{`  ${row.costText}`}</Text>
               {row.percentText === '' ? null : dim(`  ${row.percentText}`)}
             </Text>
-            <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.tokenText}`}</Text>
-            <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.cacheText}`}</Text>
+            <Text color="inactive" dimColor wrap="wrap">{`  ${row.tokenText}`}</Text>
+            <Text color="inactive" dimColor wrap="wrap">{`  ${row.cacheText}`}</Text>
           </Box>
         )
       case 'turn':
@@ -67,7 +67,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
               <Text bold color={TIER_COLOR[row.tier]}>{row.model}</Text>
               <Text bold>{`  ${row.costText}`}</Text>
             </Text>
-            <Text color="inactive" dimColor wrap="truncate-end">{`  ${row.label} · ${row.detail}`}</Text>
+            <Text color="inactive" dimColor wrap="wrap">{`  ${row.label} · ${row.detail}`}</Text>
           </Box>
         )
       case 'kv':
@@ -85,7 +85,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
           </Text>
         )
       case 'example':
-        return <Text color="inactive" dimColor wrap="truncate-end">{`  ・${row.text}`}</Text>
+        return <Text color="inactive" dimColor wrap="wrap">{`  ・${row.text}`}</Text>
       case 'ok':
         return (
           <Text>

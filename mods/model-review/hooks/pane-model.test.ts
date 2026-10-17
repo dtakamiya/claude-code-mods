@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
+import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL, BAR_WIDTH, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
@@ -89,14 +90,14 @@ test('グループごとにコスト割合を出し、1% 未満はバーを埋�
   expect(byTier.haiku).toMatchObject({ percentText: '<1%', filled: 0 })
 })
 
-test('妥当性セクションは内訳より上にあり、見出しに指摘件数が出る', () => {
+test('妥当性セクションは内訳より上にあり、見出しは件数を出さず「見直し候補の内訳」と書く', () => {
   // Act
   const heavy = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
   const rows = buildPaneRows(review([heavy('a'), heavy('b'), heavy('c')]))
 
   // Assert
   const headings = rows.flatMap(row => (row.kind === 'heading' ? [row.text] : []))
-  expect(headings[0]).toMatch(/^妥当性（参考）· 指摘 \d+ 件$/)
+  expect(headings[0]).toBe('妥当性（参考）· 見直し候補の内訳')
   expect(headings[1]).toContain('モデル × effort')
 })
 
@@ -357,20 +358,85 @@ const lightOpus = (turnId: string): TurnRecord =>
   turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', toolCount: 0, costUsd: 0.5, haikuCostUsd: 0.02, sonnetCostUsd: 0.25 })
 const glossaryRows = (rows: PaneRow[]): string[] => noteTexts(rows).filter(text => text.startsWith('用語'))
 
-test('先頭の結論は、指摘の件数を種類別に出す', () => {
+test('先頭の結論は、見直し候補の件数を種類別に出し、指摘ありの印「▲」を付ける', () => {
   // Act
   const [conclusion] = rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')])
 
   // Assert
-  expect(conclusion).toEqual({ kind: 'conclusion', text: '結論: 見直し候補 3 件（過剰 3）', tone: 'plain' })
+  expect(conclusion).toEqual({ kind: 'conclusion', text: '▲ 結論: 見直し候補 3 件（過剰 3）', tone: 'warning' })
 })
 
-test('指摘がなければ先頭の結論は「目立った指摘なし」', () => {
+test('指摘がなければ先頭の結論は「✓」と「目立った指摘なし」', () => {
   // Act
   const [conclusion] = rowsOf([turn({ toolCount: 5 })])
 
   // Assert
-  expect(conclusion).toEqual({ kind: 'conclusion', text: '結論: 目立った指摘なし', tone: 'success' })
+  expect(conclusion).toEqual({ kind: 'conclusion', text: '✓ 結論: 目立った指摘なし', tone: 'success' })
+})
+
+test('結論の色は見直し候補の最も重い種類に合わせる: 不足があれば error', () => {
+  // Arrange: 不足 2 件（Haiku の低 effort で重いツール）と過剰 3 件を同時に出す。
+  const heavyHaiku = (turnId: string) => turn({ turnId, model: 'claude-haiku-5-5', effort: 'low', toolCount: 12 })
+  const [conclusion] = rowsOf([heavyHaiku('h1'), heavyHaiku('h2'), lightOpus('a'), lightOpus('b'), lightOpus('c')])
+
+  // Assert
+  expect(conclusion).toMatchObject({ kind: 'conclusion', tone: 'error' })
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toMatch(/^▲ 結論: 見直し候補 \d+ 件/)
+})
+
+test('結論の色は委譲だけなら suggestion にする', () => {
+  // Arrange: 主系統のツールが閾値に達し、サブエージェントを使っていない Sonnet の 1 ターン。
+  const [conclusion] = rowsOf([turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS })])
+
+  // Assert
+  expect(conclusion).toMatchObject({ kind: 'conclusion', tone: 'suggestion' })
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain('委譲')
+})
+
+test('注意（状況に応じた警告）が 1 件以上あれば、結論行に「注意 N 件」を足す', () => {
+  // Arrange: 切替（モデル変更）で警告が出る記録。
+  const switched = [
+    turn({ turnId: 't1' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
+  ]
+  const rows = rowsOf(switched)
+  const alertCount = rows.filter(row => row.kind === 'badge' && row.label === ALERT_LABEL).length
+
+  // Act
+  const [conclusion] = rows
+
+  // Assert
+  expect(alertCount).toBeGreaterThan(0)
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain(`注意 ${alertCount} 件`)
+})
+
+test('注意がなければ、結論行に「注意」は出さない', () => {
+  // Act
+  const [conclusion] = rowsOf([turn({ toolCount: 5 })])
+
+  // Assert
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').not.toContain(ALERT_LABEL)
+})
+
+test('実コストが取れないときは「取得できませんでした（/model-review で再取得）」と出す', () => {
+  // Act
+  const rows = rowsOf([turn({})])
+
+  // Assert
+  expect(rows).toContainEqual({
+    kind: 'kv',
+    label: 'コスト',
+    value: '推定 $3.0000 / 実コスト 取得できませんでした（/model-review で再取得）',
+    tone: 'plain',
+  })
+})
+
+test('ペインの末尾に、dim の「/model-review で更新」の 1 行を出す', () => {
+  // Act
+  const rows = rowsOf([turn({})])
+
+  // Assert
+  expect(rows.at(-1)).toEqual({ kind: 'note', text: '/model-review で更新' })
 })
 
 test('用語行は、画面に出ている行の用語だけを末尾にまとめる', () => {

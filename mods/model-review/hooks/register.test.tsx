@@ -270,3 +270,94 @@ test('起動時に基準額が取れなくても、後に取れた時点を基�
   // Assert
   expect(second.text).toContain('セッション実コスト（読み込み後）: $3.0000')
 })
+
+const OPUS_USAGE = {
+  model: 'claude-opus-5-5',
+  input_tokens: 1_000_000,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+}
+
+/** 軽作業（ツール 0 回）の Opus のターンを 1 つ流す。過剰の例文を出すための記録。turn.step の結果は呼び出し側で差し替えておく。 */
+async function runLightOpusTurn($: Engine, turnId: string) {
+  await $.turn.start({ text: '', turnId } as never)
+  const stream = $.turn.step({ turnId, index: 0, model: 'claude-opus-5-5', effort: 'medium', messageCount: 1 } as never)
+  for await (const chunk of stream) void chunk
+  await stream.result
+  await $.turn.complete({ answer: '', durationMs: 1_000, isAborted: false, turnId, reason: 'answer', usage: OPUS_USAGE } as never)
+}
+
+test('Pane のタイトル行は推定コストを先頭に出し、ターン数とサブエージェント数はその後ろに置く', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_RUN)
+
+  // Act
+  const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+  const title = (await ui.findAll({ type: 'Text' })).find(element => element.text.includes('サブエージェント'))
+
+  // Assert
+  expect(title?.text).toMatch(/^推定 \$3\.0000 .*1 ターン.*サブエージェント 0/)
+  await ui.unmount()
+})
+
+test('Pane のトークン行・キャッシュ行・ターン行は切り詰めず折り返し、数値を末尾で消さない', async ($, on) => {
+  // Arrange: 完了したターンを 3 件流し、ターン行（コスト上位）とトークン行・キャッシュ行を出す。
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  for (const turnId of ['a', 'b', 'c']) {
+    await $.turn.start({ text: '', turnId } as never)
+    await $.turn.complete({ answer: '', durationMs: 1_000, isAborted: false, turnId, reason: 'answer', usage: SONNET_USAGE } as never)
+  }
+  await $.command.run(COMMAND_RUN)
+
+  // Act
+  const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+  const texts = await ui.findAll({ type: 'Text' })
+  const tokenRow = texts.find(element => element.text.includes('入力 '))
+  const cacheRow = texts.find(element => element.text.includes('キャッシュ 読'))
+  const turnRow = texts.find(element => element.text.startsWith('  a · '))
+
+  // Assert
+  expect(tokenRow?.props.wrap).toBe('wrap')
+  expect(cacheRow?.props.wrap).toBe('wrap')
+  expect(turnRow?.props.wrap).toBe('wrap')
+  await ui.unmount()
+})
+
+test('Pane の過剰の例文は切り詰めず折り返す', async ($, on) => {
+  // Arrange: 軽作業（ツール 0 回）に Opus を 3 回使い、過剰の例文を出す。
+  answerEngine(on, () => 10, true)
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: OPUS_USAGE } as never
+  })
+  await $.session.start(SESSION_START)
+  for (const turnId of ['a', 'b', 'c']) await runLightOpusTurn($, turnId)
+  await $.command.run(COMMAND_RUN)
+
+  // Act
+  const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+  const example = (await ui.findAll({ type: 'Text' })).find(element => element.text.startsWith('  ・'))
+
+  // Assert
+  expect(example?.props.wrap).toBe('wrap')
+  await ui.unmount()
+})
+
+test('Pane の末尾に「/model-review で更新」を dim の 1 行で出す', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_RUN)
+
+  // Act
+  const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+
+  // Assert
+  expect(await ui.find({ type: 'Text', text: /^\/model-review で更新$/ })).toBeDefined()
+  await ui.unmount()
+})

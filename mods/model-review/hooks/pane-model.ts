@@ -113,7 +113,7 @@ function costRows(review: ReviewState, estimate: EstimateFacts): PaneRow[] {
     : `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
   const actual = actualCostUsd(review)
   if (actual === null) {
-    return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimateText} / 実コスト 取得できません`, tone: 'plain' }]
+    return [{ kind: 'kv', label: 'コスト', value: `推定 ${estimateText} / 実コスト 取得できませんでした（/model-review で再取得）`, tone: 'plain' }]
   }
   const diff = actual - estimate.costUsd
   const diffText = `${diff >= 0 ? '+' : '-'}${formatUsd(Math.abs(diff))}`
@@ -175,13 +175,28 @@ function advisorRows(records: ReviewState['turns']): PaneRow[] {
 
 const NO_RECORDS_CONCLUSION: PaneRow = { kind: 'conclusion', text: `結論: ${CONCLUSION_NO_RECORDS_TEXT}`, tone: 'plain' }
 
-/** 結論の 1 行。件数のある種類だけ、ConcernKind の短い名前で並べる。 */
-function conclusionRow(concerns: readonly Concern[]): PaneRow {
+/** 件数のある指摘のうち最も重い種類の色。件数がなければ色なし。 */
+function worstConcernTone(present: readonly Concern[]): Tone {
+  const tones = new Set(present.map(concern => CONCERN_TONE[concern.kind]))
+  return CONCERN_SEVERITY.find(tone => tones.has(tone)) ?? 'plain'
+}
+
+/** 注意（buildNotes）が 1 件以上あるときだけ、結論行の末尾に件数を足す。 */
+const alertSuffix = (alertCount: number): string => (alertCount === 0 ? '' : ` · ${ALERT_LABEL} ${alertCount} 件`)
+
+/** 結論の 1 行。件数のある種類だけ、ConcernKind の短い名前で並べる。色は最も重い種類に合わせる。 */
+function conclusionRow(concerns: readonly Concern[], alertCount: number): PaneRow {
   const present = concerns.filter(concern => concern.count > 0)
   const total = present.reduce((sum, concern) => sum + concern.count, 0)
-  if (total === 0) return { kind: 'conclusion', text: `結論: ${CONCLUSION_NONE_TEXT}`, tone: 'success' }
+  if (total === 0) {
+    return { kind: 'conclusion', text: `${CONCLUSION_MARK_NONE} 結論: ${CONCLUSION_NONE_TEXT}${alertSuffix(alertCount)}`, tone: 'success' }
+  }
   const parts = present.map(concern => `${CONCERN_TEXT[concern.kind].label} ${concern.count}`).join(' / ')
-  return { kind: 'conclusion', text: `結論: 見直し候補 ${total} 件（${parts}）`, tone: 'plain' }
+  return {
+    kind: 'conclusion',
+    text: `${CONCLUSION_MARK_CONCERN} 結論: 見直し候補 ${total} 件（${parts}）${alertSuffix(alertCount)}`,
+    tone: worstConcernTone(present),
+  }
 }
 
 /** 画面に出る行と同じ条件で、説明すべき用語を選ぶ。 */
@@ -201,12 +216,17 @@ function glossaryRows(terms: readonly TermKey[]): PaneRow[] {
   return [{ kind: 'note', text: `用語  ${terms.map(term => TERM_TEXT[term]).join(' / ')}` }]
 }
 
-const concernHeading = (concerns: readonly Concern[]): string => {
-  const total = concerns.reduce((sum, concern) => sum + concern.count, 0)
-  return total === 0 ? HEADING.concerns : `${HEADING.concerns}· 指摘 ${total} 件`
-}
+/** 件数は結論行だけに出し、見出しは内訳であることを示す。 */
+const CONCERN_DETAIL_HEADING = `${HEADING.concerns}· 見直し候補の内訳`
 
 const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
+/** 実コストが取れなかったときの、ペイン末尾の案内。 */
+const REFRESH_NOTE = '/model-review で更新'
+/** 結論行の先頭の印。指摘ありは ▲、なしは ✓（色だけに頼らない）。 */
+const CONCLUSION_MARK_CONCERN = '▲'
+const CONCLUSION_MARK_NONE = '✓'
+/** 指摘の色の優先順。最も重い種類の色を結論行に使う。 */
+const CONCERN_SEVERITY: readonly Tone[] = ['error', 'warning', 'suggestion']
 
 const isStarted = (draft: LoopDraft): boolean => draft.stepCount > 0 || draft.toolCount > 0
 
@@ -235,8 +255,9 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
   const estimate = estimateFacts(records)
   const concerns = findConcerns(records)
   const groups = groupByModelEffort(records)
+  const notes = buildNotes(review, nowMs)
   return [
-    conclusionRow(concerns),
+    conclusionRow(concerns, notes.length),
     { kind: 'blank' },
     {
       kind: 'title',
@@ -246,7 +267,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     },
     { kind: 'blank' },
     ...live,
-    { kind: 'heading', text: concernHeading(concerns) },
+    { kind: 'heading', text: CONCERN_DETAIL_HEADING },
     ...concernRows(concerns),
     { kind: 'blank' },
     { kind: 'heading', text: HEADING.groups },
@@ -260,8 +281,9 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     ...advisorRows(records),
     ...glossaryRows(shownTerms(review, groups, concerns)),
     { kind: 'blank' },
-    ...buildNotes(review, nowMs).map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
+    ...notes.map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
     { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },
+    { kind: 'note', text: REFRESH_NOTE },
   ]
 }
