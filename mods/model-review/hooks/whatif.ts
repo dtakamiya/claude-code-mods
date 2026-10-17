@@ -40,6 +40,8 @@ const isUsable = (record: TurnRecord): record is UsableRecord =>
   record.agentId === null &&
   record.model !== UNKNOWN_MODEL &&
   record.costUsd !== null &&
+  record.partial !== true &&
+  record.afterCompact !== true &&
   typeof record.firstStepCacheWrite === 'number' &&
   (record.firstStepPromptTokens ?? 0) > 0
 

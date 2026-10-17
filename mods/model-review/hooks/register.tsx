@@ -30,6 +30,8 @@ async function readCostUsd(loadUsage: () => Promise<SessionUsage>, log: (text: s
 export const register: Register = on => {
   // 進行中のターンの下書き（ループごと）。値は差し替えるだけで、中身は書き換えない。
   let drafts: Drafts = {}
+  // /compact（自動を含む）が通った後、まだ完了していないメインのターンに印を付けるための旗。
+  let compactPending = false
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -100,11 +102,20 @@ export const register: Register = on => {
       usage: e.usage,
       durationMs: e.durationMs,
       reason: e.reason,
+      afterCompact: e.agentId === undefined && compactPending,
     })
+    if (e.agentId === undefined) compactPending = false
     drafts = finished.drafts
     await update($, reviewAtom, state => appendTurn(state, finished.record))
     $.ui.invalidate('ui.render')
     return next(e)
+  })
+
+  // compact が実際に通ったら（skip でなければ）、次に完了するメインのターンを再構築の対象外にする。
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) compactPending = true
+    return result
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e) => {

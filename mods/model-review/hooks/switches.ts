@@ -62,8 +62,9 @@ function eventOf(prev: TurnRecord, current: TurnRecord): SwitchEvent | null {
   const kind = switchKind(prev, current)
   if (kind === null) return null
   // 0.3.0 の記録（firstStepCacheWrite なし）は不明（null）として扱い、0 円とは読ませない。
+  // reload を跨いだ記録（partial）と compact 直後の記録は、書込が切替のせいと言えないので不明扱い。
   const costUsd =
-    current.firstStepCacheWrite === undefined
+    current.firstStepCacheWrite === undefined || current.partial === true || current.afterCompact === true
       ? null
       : cacheRebuildCostUsd(current.model, current.firstStepCacheWrite, current.firstStepPromptTokens)
   const costText = costUsd === null ? '' : ` · 再構築の推定 ${formatUsd(costUsd)}`

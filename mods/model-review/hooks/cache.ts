@@ -14,13 +14,14 @@ export function cacheHitRate(tokens: TokenCounts): number | null {
   return promptTokens === 0 ? null : tokens.cacheRead / promptTokens
 }
 
-/** メインループで、書込が読込を上回るターンの最長の連続回数。 */
+/** メインループで、書込が読込を上回るターンの最長の連続回数。/compact 直後のターンは必然的な再構築なので数えず、連続も切る。 */
 export function longestRebuildStreak(records: readonly TurnRecord[]): number {
   const scan = records
     .filter(record => record.agentId === null)
     .reduce(
       (acc, record) => {
-        const streak = record.tokens.cacheWrite > record.tokens.cacheRead ? acc.streak + 1 : 0
+        const rebuilt = record.afterCompact !== true && record.tokens.cacheWrite > record.tokens.cacheRead
+        const streak = rebuilt ? acc.streak + 1 : 0
         return { streak, longest: Math.max(acc.longest, streak) }
       },
       { streak: 0, longest: 0 },

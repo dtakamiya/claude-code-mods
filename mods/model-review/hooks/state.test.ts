@@ -132,3 +132,14 @@ test('基準点が設定済みなら、後のコストの取得は基準点を�
   // Assert
   expect(sampled.sessionCostUsd).toEqual({ baseline: 1.5, current: 2.5, baselineTurns: 0 })
 })
+
+test('累計が基準点より小さくなったら、基準点を取り直して実コストを負にしない', () => {
+  // Arrange: 再開などで累計が 5.0 から 1.0 に巻き戻った
+  const before = withCostSample(appendTurn(EMPTY_REVIEW, record), 5)
+
+  // Act
+  const after = withCurrent(before, 1)
+
+  // Assert
+  expect(after.sessionCostUsd).toEqual({ baseline: 1, current: 1, baselineTurns: 1 })
+})

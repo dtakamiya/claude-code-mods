@@ -142,3 +142,17 @@ test('単価不明のモデルへの切替は、数えるがコストは null �
   // Assert
   expect(summary).toMatchObject({ count: 1, costUsd: null })
 })
+
+test('compact 直後・reload を跨いだ（partial）ターンの切替は、再構築コストを推定しない', () => {
+  // Arrange
+  const base = turn({ turnId: 't1', model: 'claude-sonnet-5-5' })
+  const afterCompact = turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, afterCompact: true })
+  const partial = turn({ turnId: 't3', model: 'claude-sonnet-5-5', firstStepCacheWrite: 100_000, partial: true })
+
+  // Act
+  const summary = findSwitches([base, afterCompact, partial])
+
+  // Assert
+  expect(summary.count).toBe(2)
+  expect(summary.costUsd).toBeNull()
+})
