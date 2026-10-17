@@ -221,6 +221,57 @@ test('/model-review text はペインが置ける画面でもペインを開か�
   expect(opened).toHaveLength(0)
 })
 
+// Opus 5.5 の軽い 1 応答（ツールなし・出力 100 tokens）。Sonnet 換算の差額が過剰の下限を超えるよう入力を多めにする。
+const OPUS_LIGHT_USAGE = { ...SONNET_USAGE, model: 'claude-opus-5-5', input_tokens: 50_000, output_tokens: 100 }
+
+/** 応答（turn.step）を流さず、終了時の usage だけで Opus の軽作業のターンを 1 つ記録する。 */
+const completeLightOpusTurn = async ($: Engine, turnId: string) => {
+  await $.turn.start({ text: '', turnId } as never)
+  await $.turn.complete({ answer: '', durationMs: 1_000, isAborted: false, turnId, reason: 'answer', usage: OPUS_LIGHT_USAGE } as never)
+}
+
+test('設定 mutedConcerns の種類は結論の件数から外れ、テキストレポートに「止めている指摘」として件数つきで出る', { options: { mutedConcerns: 'overspec' } }, async ($, on) => {
+  // Arrange: Opus の軽作業 3 件で過剰になる記録。
+  answerEngine(on, () => 10, false)
+  await $.session.start(SESSION_START)
+  for (const id of ['o1', 'o2', 'o3']) await completeLightOpusTurn($, id)
+
+  // Act
+  const ran = await $.command.run(commandWith('text'))
+
+  // Assert
+  expect(ran.text?.startsWith('✓ 結論: 目立った指摘なし')).toBe(true)
+  expect(ran.text).toContain('止めている指摘（設定 mutedConcerns）: 過剰 3 / 3 件')
+  expect(ran.text).not.toContain('【過剰】')
+})
+
+test('同じ記録でも設定がなければ、過剰は結論と指摘の節に出る', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  await $.session.start(SESSION_START)
+  for (const id of ['o1', 'o2', 'o3']) await completeLightOpusTurn($, id)
+
+  // Act
+  const ran = await $.command.run(commandWith('text'))
+
+  // Assert
+  expect(ran.text?.startsWith('▲ 結論: 見直し候補 3 件（過剰 3）')).toBe(true)
+  expect(ran.text).toContain('【過剰】')
+})
+
+test('設定 mutedConcerns が既定（空）なら、「止めている指摘」は出ない', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, false)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+
+  // Act
+  const ran = await $.command.run(commandWith('text'))
+
+  // Assert
+  expect(ran.text).not.toContain('止めている指摘')
+})
+
 test('コマンドは引数のヒントつきで登録する', async ($, on) => {
   // Arrange
   const registered: unknown[] = []

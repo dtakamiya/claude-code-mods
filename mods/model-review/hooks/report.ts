@@ -1,6 +1,7 @@
 // ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
 // 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
+import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
 import { ALWAYS_NOTE, buildNotes } from './notes'
@@ -18,6 +19,7 @@ import {
   partitionByRecency,
   topCostTurns,
   type Concern,
+  type ConcernKind,
 } from './analyze'
 import {
   NO_TURNS_LINE,
@@ -78,12 +80,13 @@ function oneConcernLines(concern: Concern, records: readonly TurnRecord[], withN
   ]
 }
 
-/** 直近の指摘を先に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。 */
-function concernLines(concerns: readonly Concern[], records: readonly TurnRecord[]): string[] {
+/** 直近の指摘を先に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。止めている種類は最後に 1 行だけ。 */
+function concernLines(concerns: readonly Concern[], records: readonly TurnRecord[], mutedLine: string | null): string[] {
   const { recent, past } = partitionByRecency(concerns)
   return [
     ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, records, true))),
     ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, records, false))]),
+    ...(mutedLine === null ? [] : [`  ${mutedLine}`]),
   ]
 }
 
@@ -131,11 +134,14 @@ const CRITERIA_LINES = [
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
 ]
 
-/** テキストレポートの行。先頭はペインと同じ結論の 1 行。記録がなければ結論と案内の 2 行だけを返す。 */
-export function buildReportLines(review: ReviewState, nowMs?: number): string[] {
+/**
+ * テキストレポートの行。先頭はペインと同じ結論の 1 行。記録がなければ結論と案内の 2 行だけを返す。
+ * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
+ */
+export function buildReportLines(review: ReviewState, nowMs?: number, muted: ReadonlySet<ConcernKind> = new Set()): string[] {
   const records = review.turns
   if (records.length === 0) return [NO_RECORDS_CONCLUSION.text, NO_TURNS_LINE]
-  const concerns = findConcerns(records)
+  const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
   const notes = buildNotes(review, nowMs)
   return [
     conclusionOf(concerns, notes.length).text,
@@ -143,7 +149,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number): string[] 
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
     `■ ${HEADING.concerns}（ヒューリスティック）`,
-    ...concernLines(concerns, records),
+    ...concernLines(concerns, records, mutedLine),
     '',
     `■ ${HEADING.groups}`,
     ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),

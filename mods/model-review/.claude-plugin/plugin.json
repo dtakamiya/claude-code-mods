@@ -1,6 +1,6 @@
 {
   "name": "model-review",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）",
   "author": {
     "name": "dtakamiya"
@@ -24,6 +24,12 @@
       "title": "使用率の上限（%、0 で無効）",
       "description": "5h / 7d などの使用率がこの値に達したらトーストで 1 度知らせる。0 は無効。仮置き",
       "default": 0
+    },
+    "mutedConcerns": {
+      "type": "string",
+      "title": "止める指摘の種類（カンマ区切り、空で無効）",
+      "description": "意図して選んでいる設定の指摘を止める。overspec（過剰）・underspec（不足）・delegation（委譲）・subagent（サブ）・switch（切替）を、英名か短い名前でカンマ区切りに書く。例: overspec,delegation。止めた種類は結論の件数に入らず、指摘の節に「止めている指摘」の 1 行だけが残る。知らない名前は無視する",
+      "default": ""
     }
   }
 }

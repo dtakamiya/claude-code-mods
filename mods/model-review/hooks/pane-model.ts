@@ -1,6 +1,7 @@
 // ペインの行モデルを組み立てる純粋関数。`$` にも JSX にも依存しない。描画は pane.tsx。
 // 集計と文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
 import type { ArchivedGroup, ReviewState } from '../types'
+import { applyMute } from './mute'
 import {
   HEAVY_TOOL_CALLS,
   LIGHT_MAX_OUTPUT_TOKENS,
@@ -11,6 +12,7 @@ import {
   modelRank,
   topCostTurns,
   type Concern,
+  type ConcernKind,
 } from './analyze'
 import { archiveNote, mergeGroups } from './archive'
 import { cellWidth, formatUsd, formatUsdRange } from './format'
@@ -148,8 +150,8 @@ function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent:
   ]
 }
 
-/** 直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。 */
-function concernRows(concerns: readonly Concern[], records: ReviewState['turns']): PaneRow[] {
+/** 直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。止めている種類は最後に注記 1 行だけ。 */
+function concernRows(concerns: readonly Concern[], records: ReviewState['turns'], mutedLine: string | null): PaneRow[] {
   const { recent, past } = partitionByRecency(concerns)
   return [
     ...(recent.length === 0
@@ -158,6 +160,7 @@ function concernRows(concerns: readonly Concern[], records: ReviewState['turns']
     ...(past.length === 0
       ? []
       : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, records, false))]),
+    ...(mutedLine === null ? [] : [{ kind: 'note', text: mutedLine } satisfies PaneRow]),
   ]
 }
 
@@ -257,8 +260,17 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
-/** `columns` はペイン本文の桁数（bodyColumns）。バー幅を合わせる。省略時は最大幅。 */
-export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: number, columns?: number): PaneRow[] {
+/**
+ * `columns` はペイン本文の桁数（bodyColumns）。バー幅を合わせる。省略時は最大幅。
+ * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
+ */
+export function buildPaneRows(
+  review: ReviewState,
+  drafts: Drafts = {},
+  nowMs?: number,
+  columns?: number,
+  muted: ReadonlySet<ConcernKind> = new Set(),
+): PaneRow[] {
   const records = review.turns
   const live = liveRows(drafts)
   if (records.length === 0) {
@@ -266,7 +278,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     return [{ kind: 'conclusion', ...NO_RECORDS_CONCLUSION }, ...body]
   }
   const estimate = estimateFacts(records, review.archived)
-  const concerns = findConcerns(records)
+  const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
   const groups = mergeGroups(review.archived, groupByModelEffort(records))
   const notes = buildNotes(review, nowMs)
   return [
@@ -281,7 +293,7 @@ export function buildPaneRows(review: ReviewState, drafts: Drafts = {}, nowMs?: 
     { kind: 'blank' },
     ...live,
     { kind: 'heading', text: CONCERN_DETAIL_HEADING },
-    ...concernRows(concerns, records),
+    ...concernRows(concerns, records, mutedLine),
     { kind: 'blank' },
     { kind: 'heading', text: HEADING.groups },
     ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
