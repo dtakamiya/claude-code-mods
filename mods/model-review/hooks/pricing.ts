@@ -1,6 +1,8 @@
 import type { CostParts } from '../types'
 
 // 単価表。出典: https://platform.claude.com/docs/en/about-claude/pricing （PRICE_TABLE_FETCHED_AT に取得）。
+// モデル ID・状態の出典: https://platform.claude.com/docs/en/about-claude/models/overview と
+// https://platform.claude.com/docs/en/about-claude/model-deprecations （いずれも 2026-10-19 取得）。
 // 単位は USD / 100 万トークン（MTok）。$ には触れない純粋な表。単価が変わったらここだけを直す。
 // キャッシュ書き込みは 5 分単価を基本にする（TurnUsage は TTL 別の内訳を持たないため）。1 時間単価は上限の見積りにだけ使う。
 
@@ -28,7 +30,7 @@ export type TokenUsageLike = {
 }
 
 /** 単価表を取得した日。ペインの注記で共用する。単価を直したらここも更新する。 */
-export const PRICE_TABLE_FETCHED_AT = '2026-10-15'
+export const PRICE_TABLE_FETCHED_AT = '2026-10-19'
 /** 単価表の取得日からこの日数を超えたら、価格表の改定を確認するよう注記する（仮置き）。 */
 export const PRICE_TABLE_STALE_DAYS = 60
 /** 「Haiku なら」の差額を出すときの基準モデル。 */
@@ -73,11 +75,16 @@ const RATE_TABLE: ReadonlyMap<string, readonly RateTier[]> = new Map<string, rea
   ['claude-opus-4-6', single(OPUS_5)],
   ['claude-opus-4-5', single(OPUS_5)],
   ['claude-opus-4-1', single(OPUS_4)],
+  // Opus 4 / Sonnet 4 は公式で Retired（2026-06-15）だが、Bedrock / Vertex で今も使えるため単価を残す。
+  // 公式の正式 ID は claude-opus-4-20250514 / claude-sonnet-4-20250514 で、日付を除くと `-4` になる。
+  // `-0` 表記は公式に記載がないが、既存の記録との互換のために残す。
+  ['claude-opus-4', single(OPUS_4)],
   ['claude-opus-4-0', single(OPUS_4)],
   ['claude-sonnet-5-5', single(SONNET_5_5)],
   ['claude-sonnet-5', single(SONNET_5)],
   ['claude-sonnet-4-6', single(SONNET_4)],
   ['claude-sonnet-4-5', single(SONNET_4)],
+  ['claude-sonnet-4', single(SONNET_4)],
   ['claude-sonnet-4-0', single(SONNET_4)],
   [
     'claude-haiku-5-5',

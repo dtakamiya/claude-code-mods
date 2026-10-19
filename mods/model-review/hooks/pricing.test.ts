@@ -40,6 +40,22 @@ test('日付サフィックス・Bedrock 接頭辞・バージョン・[1m] を�
   expect(normalizeModelId('  Claude-Haiku-5-5 ')).toBe('claude-haiku-5-5')
 })
 
+test('公式の正式 ID（日付付き）の claude-opus-4 / claude-sonnet-4 も単価が引ける', () => {
+  // Arrange
+  const opus = usage({ model: 'claude-opus-4-20250514', input_tokens: 1_000_000 })
+  const sonnet = usage({ model: 'claude-sonnet-4-20250514', input_tokens: 1_000_000 })
+
+  // Act
+  const opusCost = priceUsage(opus)
+  const sonnetCost = priceUsage(sonnet)
+
+  // Assert
+  expect(normalizeModelId('claude-opus-4-20250514')).toBe('claude-opus-4')
+  expect(normalizeModelId('claude-sonnet-4-20250514')).toBe('claude-sonnet-4')
+  expectNear(opusCost, 15)
+  expectNear(sonnetCost, 3)
+})
+
 test('単価表にないモデルはコストを null（単価不明）にする', () => {
   // Arrange
   const unknown = usage({ model: 'claude-unlisted-9', input_tokens: 1_000 })
