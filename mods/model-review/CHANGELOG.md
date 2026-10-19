@@ -2,6 +2,9 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.30.1
+- 公式の正式 ID `claude-opus-4-20250514` / `claude-sonnet-4-20250514` が、日付を除くと `claude-opus-4` / `claude-sonnet-4` になり単価表に無く「単価不明」になる不具合を直した。`RATE_TABLE` に両キーを足した（既存の `-0` キーは互換のため残す）。単価の数値は変えていない（公式と全件一致を 2026-10-19 に確認）。`PRICE_TABLE_FETCHED_AT` を 2026-10-19 に更新。読取専用。ロジックのみで見た目の変更なし。
+
 ## 0.30.0
 - plan 外で Opus 系の過剰があり、メインに plan mode のターンもあるとき、過剰の次の一手に `/model opusplan`（plan mode は opus、実行は sonnet。公式 docs の model-config で確認）を候補として添える（#82 の段階 2）。`OverspecFacts.planModeSeen`（メインの `planMode` のターンの有無）を `analyze.ts` で作り、`nextstep.ts` の `opusplanPiece` が文にする。直近のメインがすでに Sonnet 以下のときは出さない。断定せず「近い使い方」と書き、自動では実行しない。閾値なし。読取専用。見た目は目視未確認。
 

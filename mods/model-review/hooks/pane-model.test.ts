@@ -315,7 +315,7 @@ test('単価不明のターンが 3 割以上なら、単価表が古い可能�
   const notes = noteTexts(rows)
 
   // Assert
-  expect(notes.some(text => text.includes('単価表が古い可能性') && text.includes('2026-10-15'))).toBe(true)
+  expect(notes.some(text => text.includes('単価表が古い可能性') && text.includes('2026-10-19'))).toBe(true)
 })
 
 test('advisor の呼び出しがあれば回数を出し、金額には含まれない旨を明記する', () => {
