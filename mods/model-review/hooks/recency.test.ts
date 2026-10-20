@@ -64,14 +64,14 @@ test('序盤に過剰 → Sonnet に切替 → 窓のぶん軽作業なし で�
 
   // Act
   const concerns = findConcerns(records)
-  const conclusion = conclusionOf(concerns, 0)
+  const conclusion = conclusionOf(concerns, [])
 
   // Assert
   expect(kindsOf(concerns)).toEqual(['overspec', 'switch'])
   expect(concerns.find(concern => concern.kind === 'overspec')?.lastTurnsAgo).toBe(RECENT_CONCERN_MAIN_TURNS + 1)
   expect(concerns.find(concern => concern.kind === 'switch')?.lastTurnsAgo).toBe(RECENT_CONCERN_MAIN_TURNS)
   expect(concerns.some(isRecentConcern)).toBe(false)
-  expect(conclusion).toEqual({ text: '✓ 結論: 目立った指摘なし（過去の指摘 2 種）', tone: 'success' })
+  expect(conclusion).toEqual({ text: '✓ 問題なし · 結論: 目立った指摘なし（過去の指摘 2 種）', tone: 'success' })
 })
 
 test('窓の中に該当がまだあれば ▲ のまま', () => {
@@ -85,7 +85,7 @@ test('窓の中に該当がまだあれば ▲ のまま', () => {
   // Assert
   expect(overspec?.lastTurnsAgo).toBe(RECENT_CONCERN_MAIN_TURNS - 1)
   expect(overspec !== undefined && isRecentConcern(overspec)).toBe(true)
-  expect(conclusionOf(concerns, 0).text).toBe('▲ 結論: 見直し候補 4 件（過剰 3 / 切替 1）')
+  expect(conclusionOf(concerns, []).text).toBe('▲ 要確認 · 結論: 見直し候補 4 件（過剰 3 / 切替 1）')
 })
 
 test('最新のターンで該当すれば「最後は最新のターン」、それより前なら「N ターン前」を説明に添える', () => {
@@ -108,10 +108,10 @@ test('直近と過去の指摘が混ざるとき、結論は直近の種類だ�
   const past: Concern = { kind: 'underspec', count: 2, examples: [], amountUsd: null, lastTurnsAgo: RECENT_CONCERN_MAIN_TURNS }
 
   // Act
-  const conclusion = conclusionOf([past, recent], 1)
+  const conclusion = conclusionOf([past, recent], [{ kind: 'switch', text: '切替の推定' }])
 
   // Assert
-  expect(conclusion).toEqual({ text: '▲ 結論: 見直し候補 1 件（委譲 1） · 過去の指摘 1 種 · 注意 1 件', tone: 'suggestion' })
+  expect(conclusion).toEqual({ text: '△ 参考 · 結論: 見直し候補 1 件（委譲 1） · 過去の指摘 1 種 · 注意 1 件', tone: 'suggestion' })
 })
 
 test('委譲は直近の窓だけで判定するので、何ターン前かを付けず常に直近として扱う', () => {

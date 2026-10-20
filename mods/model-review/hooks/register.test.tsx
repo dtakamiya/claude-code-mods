@@ -147,7 +147,7 @@ test('コピー内容は isPlaced が偽のときの通常出力と同じ（入�
   // Assert
   expect(copied[0]).toBe(plain.text)
   expect(copied[0]).not.toContain('/x')
-  expect(plain.text?.split('\n')[0]).toMatch(/^[▲✓] 結論:/)
+  expect(plain.text?.split('\n')[0]).toMatch(/^[✖▲△？✓] \S+ · 結論:/)
 })
 
 test('コピーに失敗したら理由を返し、記録がなければ結論と案内だけをコピーする', async ($, on) => {
@@ -240,7 +240,7 @@ test('設定 mutedConcerns の種類は結論の件数から外れ、テキス�
   const ran = await $.command.run(commandWith('text'))
 
   // Assert
-  expect(ran.text?.startsWith('✓ 結論: 目立った指摘なし')).toBe(true)
+  expect(ran.text?.startsWith('✓ 問題なし · 結論: 目立った指摘なし')).toBe(true)
   expect(ran.text).toContain('止めている指摘（設定 mutedConcerns）: 過剰 3 / 3 件')
   expect(ran.text).not.toContain('【過剰】')
 })
@@ -255,7 +255,7 @@ test('同じ記録でも設定がなければ、過剰は結論と指摘の節�
   const ran = await $.command.run(commandWith('text'))
 
   // Assert
-  expect(ran.text?.startsWith('▲ 結論: 見直し候補 3 件（過剰 3）')).toBe(true)
+  expect(ran.text?.startsWith('▲ 要確認 · 結論: 見直し候補 3 件（過剰 3）')).toBe(true)
   expect(ran.text).toContain('【過剰】')
 })
 

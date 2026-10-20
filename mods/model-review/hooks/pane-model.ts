@@ -23,26 +23,28 @@ import { archiveNote, mergeGroups } from './archive'
 import { cellWidth, formatUsd, formatUsdRange } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
-import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, conclusionOf, type Tone } from './conclusion'
+import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
 import { turnLabelText } from './turnref'
-import { ALWAYS_NOTE, buildNotes } from './notes'
+import { ALWAYS_NOTE, buildNotes, splitNotes } from './notes'
 import {
   NO_TURNS_LINE,
   actualCostUsd,
   advisorCallText,
-  allUnpricedText,
+  buildVerdict,
   concernDetailText,
+  costDiff,
   describeSwitchOptions,
   estimateFacts,
+  estimateRangeText,
   groupFacts,
   hitRateText,
   loopView,
+  signedUsdText,
   subagentCount,
   toolDetailText,
   turnOriginLabel,
-  unpricedExclusionText,
   type EstimateFacts,
 } from './summary'
 
@@ -158,17 +160,12 @@ function rateRows(rate: RateView | null): PaneRow[] {
 
 function costRows(review: ReviewState, estimate: EstimateFacts, isSubscription: boolean): PaneRow[] {
   const estimateWord = isSubscription ? 'API 換算の推定' : '推定'
-  const unpriced = estimate.unpricedTurns > 0 ? ` ${unpricedExclusionText(estimate.unpricedTurns)}` : ''
-  const estimateText = estimate.allUnpriced
-    ? allUnpricedText(estimate.unpricedTurns)
-    : `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
-  const actual = actualCostUsd(review)
-  if (actual === null) {
+  const estimateText = estimateRangeText(estimate)
+  const diff = costDiff(review)
+  if (diff === null) {
     return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実コスト 取得できませんでした（/model-review で再取得）`, tone: 'plain' }]
   }
-  const diff = actual - estimate.costUsd
-  const diffText = `${diff >= 0 ? '+' : '-'}${formatUsd(Math.abs(diff))}`
-  return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実 ${formatUsd(actual)}（読み込み後）/ 差 ${diffText}`, tone: 'plain' }]
+  return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実 ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }]
 }
 
 /** 直近の指摘は種類の色と「次の一手」つき。過去の指摘は色なし（plain）で、次の一手を付けない。 */
@@ -257,11 +254,6 @@ function archiveNoteRows(review: ReviewState): PaneRow[] {
   return text === null ? [] : [{ kind: 'note', text }]
 }
 
-const conclusionRow = (concerns: readonly Concern[], alertCount: number): PaneRow => ({
-  kind: 'conclusion',
-  ...conclusionOf(concerns, alertCount),
-})
-
 /** 画面に出る行と同じ条件で、説明すべき用語を選ぶ。 */
 function shownTerms(review: ReviewState, groups: readonly ArchivedGroup[], concerns: readonly Concern[]): TermKey[] {
   const hasActual = actualCostUsd(review) !== null
@@ -324,9 +316,9 @@ export function buildPaneRows(
   const estimate = estimateFacts(records, review.archived)
   const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
   const groups = mergeGroups(review.archived, groupByModelEffort(records))
-  const notes = buildNotes(review, nowMs)
+  const { alerts, reliability } = splitNotes(buildNotes(review, nowMs))
   return [
-    conclusionRow(concerns, notes.length),
+    { kind: 'conclusion', ...buildVerdict(review, concerns, alerts) },
     { kind: 'blank' },
     {
       kind: 'title',
@@ -353,7 +345,8 @@ export function buildPaneRows(
     ...advisorRows(records, review.archived),
     ...glossaryRows(shownTerms(review, groups, concerns)),
     { kind: 'blank' },
-    ...notes.map((text): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text })),
+    ...alerts.map((note): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text: note.text })),
+    ...reliability.map((note): PaneRow => ({ kind: 'note', text: note.text })),
     ...archiveNoteRows(review),
     { kind: 'note', text: ALWAYS_NOTE },
     { kind: 'note', text: CRITERIA_NOTE },

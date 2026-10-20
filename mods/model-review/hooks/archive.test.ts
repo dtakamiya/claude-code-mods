@@ -96,7 +96,7 @@ test('畳んだことはペインとレポートに注記し、件数は畳ん�
   expect(rows).toContainEqual({ kind: 'note', text: note })
   expect(lines).toContain(note)
   expect(rows.find(row => row.kind === 'title')).toMatchObject({ turns: MAX_TURNS + 40 })
-  expect(lines[2]).toContain(`${MAX_TURNS + 40} ターン`)
+  expect(lines.find(line => line.startsWith('対象:'))).toContain(`${MAX_TURNS + 40} ターン`)
   expect(archiveNote(undefined)).toBeNull()
 })
 
@@ -109,7 +109,7 @@ test('単価不明の割合は、畳んだぶんを含めて判定する', () =>
   const review = [...old, ...recent].reduce(appendTurn, EMPTY_REVIEW)
 
   // Act
-  const notes = buildNotes(review)
+  const notes = buildNotes(review).map(note => note.text)
 
   // Assert: 400 / 900 = 44% なので、直近だけ見ると出ない注記が出る
   expect(notes.some(text => text.includes('単価不明のターンが 400 / 900 件'))).toBe(true)
@@ -181,6 +181,6 @@ test('食い違った応答があるターンは注記に 1 行出し、なけ�
   const diverged = { ...EMPTY_REVIEW, turns: [{ ...turnAt(1), divergedSteps: 2 }] }
 
   // Act / Assert
-  expect(buildNotes(plain).some(note => note.includes('食い違った'))).toBe(false)
-  expect(buildNotes(diverged).filter(note => note.includes('食い違った')).length).toBe(1)
+  expect(buildNotes(plain).map(note => note.text).some(note => note.includes('食い違った'))).toBe(false)
+  expect(buildNotes(diverged).map(note => note.text).filter(note => note.includes('食い違った')).length).toBe(1)
 })

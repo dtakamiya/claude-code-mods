@@ -4,11 +4,13 @@ import type { ArchivedTurns, ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
 import { estimateRange, estimateTotal, summarizeAgentTypes, type Concern, type ModelGroup } from './analyze'
 import { effortText } from './effort'
-import { formatDuration, formatInt, formatUsd } from './format'
+import { formatDuration, formatInt, formatUsd, formatUsdRange } from './format'
 import { CONCERN_TEXT } from './labels'
 import { UNKNOWN_AGENT_TYPE } from './agenttype'
 import { describeAgentType, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops, SUBAGENT_CACHE_NOTE } from './loops'
-import { advisorCallTotal } from './notes'
+import { conclusionOf, type Conclusion } from './conclusion'
+import { advisorCallTotal, type Note } from './notes'
+import { turnsSinceBaseline } from './state'
 import { describeOption, estimateSwitchOptions } from './whatif'
 
 export const NO_TURNS_LINE = '記録されたターンはまだありません。この Mod の読み込み後に完了したターンが対象です。'
@@ -121,6 +123,57 @@ export const unpricedExclusionText = (unpricedTurns: number): string =>
 export const actualCostUsd = (review: ReviewState): number | null => {
   const { baseline, current } = review.sessionCostUsd
   return baseline === null || current === null ? null : current - baseline
+}
+
+export type CostDiff = {
+  /** 読み込み後の実コスト。 */
+  readonly actualUsd: number
+  /** 実コストに入るターン（基準点より後に完了したもの。畳んだぶんを含む）の推定。 */
+  readonly estimateUsd: number
+  /** 実コスト − 推定。+ は推定より実額が大きい。 */
+  readonly diffUsd: number
+}
+
+/**
+ * 実コストと推定の差。実コストは基準点からの差なので、推定も基準点より後のターンだけで比べる
+ * （読み込み前のターンを混ぜると、差が過大・符号が逆になる）。実コストが取れなければ null。
+ */
+export function costDiff(review: ReviewState): CostDiff | null {
+  const actualUsd = actualCostUsd(review)
+  if (actualUsd === null) return null
+  const estimateUsd = estimateTotal(turnsSinceBaseline(review)).costUsd + (review.archived?.sinceBaseline.lowUsd ?? 0)
+  return { actualUsd, estimateUsd, diffUsd: actualUsd - estimateUsd }
+}
+
+/** 符号つきの金額（`+$0.3839` / `-$0.0187`）。0 は + とする。 */
+export const signedUsdText = (usd: number): string => `${usd >= 0 ? '+' : '-'}${formatUsd(Math.abs(usd))}`
+
+/** 差の向きの説明。差がちょうど 0 なら空文字。 */
+const diffDirectionText = (diffUsd: number): string => (diffUsd > 0 ? '（実が大きい）' : diffUsd < 0 ? '（推定が大きい）' : '')
+
+/** 合計推定の文面。全ターン単価不明なら理由、単価不明のターンがあれば除いたことを添える。 */
+export function estimateRangeText(estimate: EstimateFacts): string {
+  if (estimate.allUnpriced) return allUnpricedText(estimate.unpricedTurns)
+  const unpriced = estimate.unpricedTurns > 0 ? ` ${unpricedExclusionText(estimate.unpricedTurns)}` : ''
+  return `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
+}
+
+/** 金額の 1 行（推定の幅 · 実額 · 差）。テキスト出力の結論の次に出す。 */
+export function moneyLineText(review: ReviewState, isSubscription: boolean): string {
+  const estimate = estimateFacts(review.turns, review.archived)
+  const word = isSubscription ? 'API 換算の推定' : '推定'
+  const diff = costDiff(review)
+  const actualPart =
+    diff === null
+      ? '実コスト 取得できません'
+      : `実 ${formatUsd(diff.actualUsd)}（読み込み後）· 差 ${signedUsdText(diff.diffUsd)}${diffDirectionText(diff.diffUsd)}`
+  return `金額: ${word} ${estimateRangeText(estimate)} · ${actualPart}`
+}
+
+/** 結論の 1 行（状態）。`alerts` は動的な警告だけ（信頼度の注記は含めない）。 */
+export function buildVerdict(review: ReviewState, concerns: readonly Concern[], alerts: readonly Note[]): Conclusion {
+  const facts = estimateFacts(review.turns, review.archived)
+  return conclusionOf(concerns, alerts, { unpricedTurns: facts.unpricedTurns, totalTurns: review.turns.length + (review.archived?.turns ?? 0) })
 }
 
 /** advisor の呼び出し回数の文面（「2 回（費用が…）」）。0 回なら null。 */

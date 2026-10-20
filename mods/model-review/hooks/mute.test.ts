@@ -87,7 +87,7 @@ test('止めた種類は結論行の件数に入らず、指摘の節には「�
   const rows = buildPaneRows(state, {}, undefined, undefined, muted)
 
   // Assert: 結論は ✓、指摘の節は「指摘なし」と止めている 1 行。過剰の行・バッジ・次の一手は出ない。
-  expect(lines[0]).toBe('✓ 結論: 目立った指摘なし')
+  expect(lines[0]).toBe('✓ 問題なし · 結論: 目立った指摘なし')
   expect(lines).toContain(`  ${NO_CONCERNS_TEXT}`)
   expect(lines).toContain('  止めている指摘（設定 mutedConcerns）: 過剰 3 / 3 件')
   expect(lines.some(line => line.startsWith('  【過剰】'))).toBe(false)
@@ -106,7 +106,7 @@ test('止めていない種類はそのまま出し、止めている種類に�
   const lines = buildReportLines(state, undefined, muted)
 
   // Assert
-  expect(lines[0]).toBe('▲ 結論: 見直し候補 3 件（過剰 3）')
+  expect(lines[0]).toBe('▲ 要確認 · 結論: 見直し候補 3 件（過剰 3）')
   expect(lines.some(line => line.startsWith('  【過剰】'))).toBe(true)
   expect(lines).toContain('  止めている指摘（設定 mutedConcerns）: 委譲')
 })

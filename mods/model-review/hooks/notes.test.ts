@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
-import { buildNotes } from './notes'
+import { buildNotes, splitNotes, type NoteKind } from './notes'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 
 // 架空データのみ。
@@ -21,8 +21,11 @@ const review: ReviewState = { turns: [turn], sessionCostUsd: { baseline: null, c
 
 const MS_PER_DAY = 86_400_000
 const fetchedMs = Date.parse(PRICE_TABLE_FETCHED_AT)
+/** 注記の本文だけ（種類の確認は kindsOf）。 */
+const textsOf = (state: ReviewState, nowMs?: number): string[] => buildNotes(state, nowMs).map(note => note.text)
+const kindsOf = (state: ReviewState, nowMs?: number): NoteKind[] => buildNotes(state, nowMs).map(note => note.kind)
 const ageNotes = (nowMs: number | undefined): string[] =>
-  buildNotes(review, nowMs).filter(text => text.includes('単価表の取得から'))
+  textsOf(review, nowMs).filter(text => text.includes('単価表の取得から'))
 
 test('単価表の取得から基準日数を超えたら、経過日数と取得日つきで注記する', () => {
   // Arrange: 基準の翌日。
@@ -62,7 +65,7 @@ const recordsSwitchingAt = (total: number, switchAt: number): TurnRecord[] =>
     model: index < switchAt ? SONNET_MODEL : OPUS_MODEL,
   }))
 const switchNotesOf = (turns: TurnRecord[]): string[] =>
-  buildNotes({ turns, sessionCostUsd: { baseline: null, current: null } }).filter(text => text.includes(SWITCH_NOTE_MARK))
+  textsOf({ turns, sessionCostUsd: { baseline: null, current: null } }).filter(text => text.includes(SWITCH_NOTE_MARK))
 
 test('切替が直近 10 ターンの中にあれば、切替の注記を出す', () => {
   // Arrange: 15 ターン中、index 5 から Opus。直近 10 ターン（index 5〜14）に切替がある。
@@ -92,7 +95,7 @@ test('直近ターンでの切替は、切替の注記を出す', () => {
 
 const TTL_MARK = '実コストが'
 const ttlNotesOf = (sessionCostUsd: ReviewState['sessionCostUsd'], turns: TurnRecord[]): string[] =>
-  buildNotes({ turns, sessionCostUsd }).filter(text => text.includes(TTL_MARK))
+  textsOf({ turns, sessionCostUsd }).filter(text => text.includes(TTL_MARK))
 /** 基準点より前に積んだ、上限推定だけが大きいターン（実コストには入らない）。 */
 const preBaselineTurn: TurnRecord = {
   ...turn,
@@ -161,7 +164,7 @@ test('単価不明のモデル名は、3 割未満でも注記に出す（件数
   }
 
   // Act
-  const text = buildNotes(state).find(note => note.includes('単価不明')) ?? ''
+  const text = textsOf(state).find(note => note.includes('単価不明')) ?? ''
 
   // Assert
   expect(text).toContain('recent-mystery')
@@ -175,7 +178,28 @@ test('plan mode のターンがあるときだけ、件数を 1 行で注記す�
   const withPlan: ReviewState = { ...review, turns: [turn, { ...turn, turnId: 't2', planMode: true }] }
 
   // Act / Assert
-  expect(buildNotes(withPlan).filter(text => text.includes('plan mode'))).toHaveLength(1)
-  expect(buildNotes(withPlan).join('\n')).toContain('plan mode のターンが 1 件')
-  expect(buildNotes(review).filter(text => text.includes('plan mode'))).toHaveLength(0)
+  expect(textsOf(withPlan).filter(text => text.includes('plan mode'))).toHaveLength(1)
+  expect(textsOf(withPlan).join('\n')).toContain('plan mode のターンが 1 件')
+  expect(textsOf(review).filter(text => text.includes('plan mode'))).toHaveLength(0)
+})
+
+test('D3 注記は動的な警告（再構築・TTL・切替）と信頼度（単価・食い違い・plan mode）に分かれ、それぞれ元の順を保つ', () => {
+  // Arrange: 単価表が古く（信頼度）、plan mode のターンがあり（信頼度）、書込 > 読込が 3 回連続する（警告）記録。
+  const rebuilding = Array.from({ length: 3 }, (_, index) => ({
+    ...turn,
+    turnId: `r${index}`,
+    planMode: index === 0,
+    tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 },
+  }))
+  const state: ReviewState = { turns: rebuilding, sessionCostUsd: { baseline: null, current: null } }
+  const nowMs = fetchedMs + (PRICE_TABLE_STALE_DAYS + 10) * MS_PER_DAY
+
+  // Act
+  const { alerts, reliability } = splitNotes(buildNotes(state, nowMs))
+
+  // Assert
+  expect(kindsOf(state, nowMs)).toEqual(['rebuild', 'priceAge', 'planMode'])
+  expect(alerts.map(note => note.kind)).toEqual(['rebuild'])
+  expect(alerts[0]?.brief).toBe('キャッシュ書込 > 読込が 3 ターン連続')
+  expect(reliability.map(note => note.kind)).toEqual(['priceAge', 'planMode'])
 })

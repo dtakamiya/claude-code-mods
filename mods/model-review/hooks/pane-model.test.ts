@@ -140,7 +140,7 @@ test('色以外でも状態が分かる: 結論は記号（▲ / ✓）と文言
 
   // Assert
   expect(conclusion).toMatchObject({ kind: 'conclusion' })
-  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toMatch(/^✓ 結論:/)
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toMatch(/^✓ 問題なし · 結論:/)
   expect(Object.fromEntries(rows.map(row => [row.tier, row.percentText]))).toEqual({ sonnet: '75%', haiku: '25%' })
 })
 
@@ -451,7 +451,7 @@ test('先頭の結論は、見直し候補の件数を種類別に出し、指�
   const [conclusion] = rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')])
 
   // Assert
-  expect(conclusion).toEqual({ kind: 'conclusion', text: '▲ 結論: 見直し候補 3 件（過剰 3）', tone: 'warning' })
+  expect(conclusion).toEqual({ kind: 'conclusion', text: '▲ 要確認 · 結論: 見直し候補 3 件（過剰 3）', tone: 'warning' })
 })
 
 test('指摘がなければ先頭の結論は「✓」と「目立った指摘なし」', () => {
@@ -459,7 +459,7 @@ test('指摘がなければ先頭の結論は「✓」と「目立った指摘�
   const [conclusion] = rowsOf([turn({ toolCount: 5 })])
 
   // Assert
-  expect(conclusion).toEqual({ kind: 'conclusion', text: '✓ 結論: 目立った指摘なし', tone: 'success' })
+  expect(conclusion).toEqual({ kind: 'conclusion', text: '✓ 問題なし · 結論: 目立った指摘なし', tone: 'success' })
 })
 
 test('結論の色は見直し候補の最も重い種類に合わせる: 不足があれば error', () => {
@@ -469,7 +469,7 @@ test('結論の色は見直し候補の最も重い種類に合わせる: 不足
 
   // Assert
   expect(conclusion).toMatchObject({ kind: 'conclusion', tone: 'error' })
-  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toMatch(/^▲ 結論: 見直し候補 \d+ 件/)
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toMatch(/^✖ 要対応 · 結論: 見直し候補 \d+ 件/)
 })
 
 test('結論の色は委譲だけなら suggestion にする', () => {
