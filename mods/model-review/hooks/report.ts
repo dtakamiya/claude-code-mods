@@ -8,10 +8,10 @@ import { numericEffortNote } from './effort'
 import { applyMute } from './mute'
 import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
-import { ALWAYS_NOTE, buildNotes } from './notes'
+import { ALWAYS_NOTE, buildNotes, splitNotes } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
-import { NO_RECORDS_CONCLUSION, conclusionOf } from './conclusion'
+import { NO_RECORDS_CONCLUSION } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
 import {
@@ -28,14 +28,16 @@ import {
 } from './analyze'
 import {
   NO_TURNS_LINE,
-  actualCostUsd,
   advisorCallText,
   allUnpricedText,
+  buildVerdict,
   concernDetailText,
+  costDiff,
   describeSwitchOptions,
   estimateFacts,
   groupFacts,
   loopView,
+  moneyLineText,
   subagentCount,
   toolDetailText,
   turnOriginLabel,
@@ -74,16 +76,16 @@ function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscr
   const breakdownLines = view === null ? [] : [`${BREAKDOWN_LABEL}: ${view.items}`, ...(view.hint === null ? [] : [`  → ${view.hint}`]), `  ${view.note}`]
   const growth = growthView(records, review.archived?.turns)
   const growthLines = growth === null ? [] : [`${GROWTH_LABEL}: ${growth.trend}`, ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]), ...(growth.hint === null ? [] : [`  → ${growth.hint}`]), `  ${growth.note}`]
-  const actual = actualCostUsd(review)
-  if (actual === null) {
+  const diff = costDiff(review)
+  if (diff === null) {
     return [estimateLine, ...breakdownLines, ...growthLines, 'セッション実コスト: 取得できません（コストの記録がない環境）']
   }
   return [
     estimateLine,
     ...breakdownLines,
     ...growthLines,
-    `セッション実コスト（読み込み後）: ${formatUsd(actual)}`,
-    `差（実コスト − 推定）: ${formatUsd(actual - estimate.costUsd)}（推定は単価表の値。キャッシュ書込みは 5 分単価で概算し、ターン外の要求は含まない）`,
+    `セッション実コスト（読み込み後）: ${formatUsd(diff.actualUsd)}`,
+    `差（実コスト − 推定）: ${formatUsd(diff.diffUsd)}（推定は単価表の値。キャッシュ書込みは 5 分単価で概算し、ターン外の要求は含まない）`,
   ]
 }
 
@@ -179,7 +181,8 @@ export function buildReportLines(
   const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
   const notes = buildNotes(review, nowMs)
   return [
-    conclusionOf(concerns, notes.length).text,
+    buildVerdict(review, concerns, splitNotes(notes).alerts).text,
+    moneyLineText(review, rate !== null),
     '',
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
@@ -196,7 +199,7 @@ export function buildReportLines(
     ...costLines(review, records, rate !== null),
     ...rateLines(rate),
     ...advisorLines(records, review.archived),
-    ...notes,
+    ...notes.map(note => note.text),
     ...archiveNoteLines(review),
     ALWAYS_NOTE,
     '',

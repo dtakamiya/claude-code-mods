@@ -37,7 +37,7 @@ test('記録がないときは案内の 1 行だけを返す', () => {
   expect(lines).toEqual(['結論: まだ記録がありません', NO_TURNS_LINE])
 })
 
-test('先頭行はペインの結論行と一致する（記録なし・指摘なし・指摘あり。単価表が古い注意つき）', () => {
+test('先頭行はペインの結論行と一致する（記録なし・指摘なし・指摘あり。単価表が古くても信頼度の注記は注意に数えない）', () => {
   // Arrange: lightOpus 3 件は過剰、toolCount 5 は指摘なし。
   const light = (id: string) => turn({ turnId: id, model: 'claude-opus-5-5', toolCount: 1, tokens: { input: 1_000, output: 100, cacheRead: 0, cacheWrite: 0 } })
   const reviews = [
@@ -47,14 +47,16 @@ test('先頭行はペインの結論行と一致する（記録なし・指摘�
   ]
 
   for (const review of reviews) {
-    // Act: 単価表の取得日から十分経った時刻で、注意（注意 N 件）の数も一致させる。
+    // Act: 単価表の取得日から十分経った時刻（単価表の古さは信頼度の注記で、動的な警告ではない）。
     const nowMs = Date.parse('2099-01-01T00:00:00Z')
-    const [first] = buildReportLines(review, nowMs)
+    const lines = buildReportLines(review, nowMs)
+    const [first] = lines
     const [conclusion] = buildPaneRows(review, {}, nowMs)
 
-    // Assert
+    // Assert: ペインと一致し、注意は 0 件（結論行に「注意」は出ない）。注記そのものはテキストに残る。
     expect(conclusion?.kind === 'conclusion' ? conclusion.text : undefined).toBe(first)
-    if (review.turns.length > 0) expect(first).toContain('注意 1 件')
+    expect(first).not.toContain('注意')
+    if (review.turns.length > 0) expect(lines.some(line => line.includes('単価表の取得から'))).toBe(true)
   }
 })
 
