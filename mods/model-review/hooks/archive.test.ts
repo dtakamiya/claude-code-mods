@@ -80,6 +80,7 @@ test('基準点のターン数は外した分だけ前へずれ、基準点よ�
   expect(review.sessionCostUsd.baselineTurns).toBe(0)
   const afterBaseline = Array.from({ length: 20 }, (_, index) => turnAt(100 + index))
   expect(review.archived?.sinceBaseline.cacheWrite).toBe(afterBaseline.reduce((sum, r) => sum + r.tokens.cacheWrite, 0))
+  expect(review.archived?.sinceBaseline.unpricedTurns).toBe(afterBaseline.filter(r => r.costUsd === null).length)
 })
 
 test('基準点がまだ無いあいだに畳んだターンは、後で取る基準点より前なので、基準点より後には積まない', () => {

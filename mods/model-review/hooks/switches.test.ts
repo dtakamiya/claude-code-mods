@@ -46,6 +46,21 @@ test('同じモデルで effort が変わっても、キャッシュが維持さ
   expect(summary.count).toBe(0)
 })
 
+test('effort が分からない（null の）ターンを挟んでも、effort の切替には数えない', () => {
+  // Arrange: キャッシュが維持されないモデルで high → null（中断などで応答なし）→ high
+  const records = [
+    turn({ model: 'claude-opus-4-8', effort: 'high' }),
+    turn({ turnId: 't2', model: 'claude-opus-4-8', effort: null, firstStepCacheWrite: 10_000 }),
+    turn({ turnId: 't3', model: 'claude-opus-4-8', effort: 'high', firstStepCacheWrite: 10_000 }),
+  ]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.count).toBe(0)
+})
+
 test('キャッシュが維持されないモデルでの effort 変更は切替に数える', () => {
   // Arrange
   const records = [

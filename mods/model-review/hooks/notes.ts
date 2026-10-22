@@ -57,12 +57,16 @@ function rebuildStreakNote(records: readonly TurnRecord[]): readonly Note[] {
   ]
 }
 
-/** 実コスト（基準点からの差）と同じターンだけで上限推定を取る。基準点より前のターンは実コストに入らないため、混ぜると偽陰性になる。 */
+/**
+ * 実コスト（基準点からの差）と同じターンだけで上限推定を取る。基準点より前のターンは実コストに入らないため、混ぜると偽陰性になる。
+ * 基準点より後に単価不明のターンがあると、その費用は実コストにだけ入り推定には入らないので、比べられない（誤って警告する）。そのときは判定しない。
+ */
 function ttlNote(review: ReviewState): readonly Note[] {
   const { baseline, current } = review.sessionCostUsd
   if (baseline === null || current === null) return []
   const sinceBaseline = turnsSinceBaseline(review)
   const folded = review.archived?.sinceBaseline
+  if (sinceBaseline.some(record => record.costUsd === null) || (folded?.unpricedTurns ?? 0) > 0) return []
   const suspected = ttlUnderestimateSuspected({
     actualUsd: current - baseline,
     estimateUsd: estimateRange(sinceBaseline).highUsd + (folded?.highUsd ?? 0),
