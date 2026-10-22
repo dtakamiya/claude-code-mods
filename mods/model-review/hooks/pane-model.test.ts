@@ -370,7 +370,7 @@ test('advisor の行があるときは、末尾の注記から advisor の句を
   const notes = noteTexts(rowsOf([turn({ toolCount: 5, advisorCalls: 2 })]))
 
   // Assert
-  expect(notes).toContain('推定に含まれないもの: fast mode の割増。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。')
+  expect(notes).toContain('推定に含まれないもの: fast mode の割増、Web 検索などトークン以外の料金。単価は Claude API の価格で、Bedrock / Vertex の価格と地域の割増は含みません。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。')
 })
 
 test('実行中のターンがあれば、完了前でも「実行中」の行にツール数と推定コストを出す', () => {
