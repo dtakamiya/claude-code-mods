@@ -38,9 +38,9 @@ export const splitNotes = (notes: readonly Note[]): { readonly alerts: readonly 
 
 const FAST_MODE_CLAUSE = 'fast mode の割増'
 const ADVISOR_COST_CLAUSE = 'advisor の費用（取得不可）'
-const NON_TOKEN_CLAUSE = 'Web 検索など API 外の料金'
+const NON_TOKEN_CLAUSE = 'トークン以外の料金（Web 検索など）'
 const REGION_PRICE_CLAUSE = 'Bedrock / Vertex 価格と地域割増'
-const TTL_SENTENCE = '書込は TTL 不明のため 5 分単価（下限）〜1 時間単価（上限）の幅'
+const TTL_SENTENCE = '推定は書込の TTL 不明のため 5 分単価（下限）〜1 時間単価（上限）の幅'
 
 /**
  * 末尾の免責。句の並びから組み立てる（文字列の置換で句を外すと、文言を変えたときに何も起きずに外れなくなるため）。

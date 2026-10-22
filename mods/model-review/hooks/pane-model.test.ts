@@ -370,7 +370,7 @@ test('advisor の行があるときは、末尾の注記から advisor の句を
   const notes = noteTexts(rowsOf([turn({ toolCount: 5, advisorCalls: 2 })]))
 
   // Assert
-  expect(notes).toContain('含まない: fast mode の割増・Web 検索など API 外の料金・Bedrock / Vertex 価格と地域割増。書込は TTL 不明のため 5 分単価（下限）〜1 時間単価（上限）の幅')
+  expect(notes).toContain('含まない: fast mode の割増・トークン以外の料金（Web 検索など）・Bedrock / Vertex 価格と地域割増。推定は書込の TTL 不明のため 5 分単価（下限）〜1 時間単価（上限）の幅')
 })
 
 test('実行中のターンがあれば、完了前でも「実行中」の行にツール数と推定コストを出す', () => {
@@ -554,13 +554,13 @@ test('実コストが取れないときは、ペイン・テキストと同じ�
   })
 })
 
-test('実コストがあるときは、判定基準の末尾に「・更新は /model-review」を付け、独立した行は出さない', () => {
+test('実コストがあるときは、判定基準の末尾に「。更新は /model-review」を付け、独立した行は出さない', () => {
   // Act
   const rows = rowsOf([turn({})], { baseline: 10, current: 14 })
   const last = rows.at(-1)
 
   // Assert
-  expect(last?.kind === 'note' ? last.text : '').toMatch(/^軽作業 = .*・更新は \/model-review$/)
+  expect(last?.kind === 'note' ? last.text : '').toMatch(/^軽作業 = .*。更新は \/model-review$/)
   expect(rows).not.toContainEqual({ kind: 'note', text: '/model-review で更新' })
 })
 
