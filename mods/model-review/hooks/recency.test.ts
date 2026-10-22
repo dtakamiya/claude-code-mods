@@ -140,8 +140,9 @@ test('過去の指摘は、テキストでもペインでも小見出しの下�
 
   // Assert: ペインは OK 行を出さず、見出しの直後に小見出し（注記）→ 色なしのバッジ。次の一手の行はない。
   const pastRow = rows.findIndex(row => row.kind === 'note' && row.text === PAST_CONCERNS_HEADING)
-  expect(rows[pastRow - 1]).toMatchObject({ kind: 'heading' })
-  expect(rows[pastRow - 1]?.kind === 'heading' && rows[pastRow - 1]?.text.startsWith(HEADING.concerns)).toBe(true)
+  const before = rows[pastRow - 1]
+  expect(before?.kind).toBe('heading')
+  expect(before?.kind === 'heading' && before.text.startsWith(HEADING.concerns)).toBe(true)
   expect(rows.slice(pastRow).find(row => row.kind === 'badge')).toMatchObject({ label: '過剰', tone: 'plain' })
   expect(rows.some(row => row.kind === 'next')).toBe(false)
 
