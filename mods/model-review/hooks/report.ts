@@ -1,46 +1,34 @@
-// ペインとコマンド出力に載せる文面（日本語）を組み立てる純粋関数。
-// 集計と文面の部品は summary.ts。ここはテキスト出力だけに出す行と、その並びを持つ。
+// テキストレポート（/model-review text・copy）の行を組み立てる純粋関数。
+// 集計は analysis.ts、節の順序と出し分けは sections.ts（ペインと共有）、文面の部品は summary.ts。ここはテキストだけの並びと書式を持つ。
 import type { ArchivedGroup, ReviewState, TurnRecord } from '../types'
-import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
-import { GROWTH_LABEL, growthView } from './growth'
+import { analyzeReview, type ReviewAnalysis } from './analysis'
+import { BREAKDOWN_LABEL } from './breakdown'
+import { GROWTH_LABEL } from './growth'
 import type { RateView } from './pace'
-import { numericEffortNote } from './effort'
-import { applyMute } from './mute'
-import { archiveNote, mergeGroups } from './archive'
 import { formatUsd, formatUsdRange } from './format'
-import { ALWAYS_NOTE, buildNotes, splitNotes } from './notes'
+import { ALWAYS_NOTE } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
 import { NO_RECORDS_CONCLUSION } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
-import { nextStepText } from './nextstep'
+import { HEAVY_TOOL_CALLS, LIGHT_MAX_OUTPUT_TOKENS, LIGHT_MAX_TOOL_CALLS, mainTurnsAfter, type Concern, type ConcernKind } from './analyze'
 import {
-  HEAVY_TOOL_CALLS,
-  LIGHT_MAX_OUTPUT_TOKENS,
-  LIGHT_MAX_TOOL_CALLS,
-  findConcerns,
-  groupByModelEffort,
-  partitionByRecency,
-  mainTurnsAfter,
-  topCostTurns,
-  type Concern,
-  type ConcernKind,
-} from './analyze'
+  buildSections,
+  type ConcernsSection,
+  type CostSection,
+  type LoopsSection,
+  type Section,
+  type TopTurnsSection,
+  type WhatIfSection,
+} from './sections'
 import {
   ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
-  advisorCallText,
   allUnpricedText,
-  buildVerdict,
   concernDetailText,
-  costDiff,
-  describeSwitchOptions,
-  estimateFacts,
   groupFacts,
-  loopView,
-  moneyLineText,
+  moneyLineFrom,
   signedUsdText,
-  subagentCount,
   toolDetailText,
   turnOriginLabel,
   unpricedExclusionText,
@@ -68,17 +56,23 @@ function rateLines(rate: RateView | null): string[] {
   return rate === null ? [] : [...rate.rows.map(row => `使用率 ${row.label}: ${row.text}`), `  ${rate.note}`]
 }
 
-function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscription: boolean): string[] {
+function costLines(section: CostSection, isSubscription: boolean): string[] {
   const totalLabel = isSubscription ? '合計推定コスト（API 換算・参考）' : '合計推定コスト'
-  const estimate = estimateFacts(records, review.archived)
+  const { estimate, breakdown, growth, diff } = section
   const estimateLine = estimate.allUnpriced
-    ? `${totalLabel}: ${allUnpricedText(records.length + (review.archived?.turns ?? 0))}`
+    ? `${totalLabel}: ${allUnpricedText(section.totalTurns)}`
     : `${totalLabel}: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
-  const view = breakdownView(records, review.archived)
-  const breakdownLines = view === null ? [] : [`${BREAKDOWN_LABEL}: ${view.items}`, ...(view.hint === null ? [] : [`  → ${view.hint}`]), `  ${view.note}`]
-  const growth = growthView(records, review.archived?.turns)
-  const growthLines = growth === null ? [] : [`${GROWTH_LABEL}: ${growth.trend}`, ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]), ...(growth.hint === null ? [] : [`  → ${growth.hint}`]), `  ${growth.note}`]
-  const diff = costDiff(review)
+  const breakdownLines =
+    breakdown === null ? [] : [`${BREAKDOWN_LABEL}: ${breakdown.items}`, ...(breakdown.hint === null ? [] : [`  → ${breakdown.hint}`]), `  ${breakdown.note}`]
+  const growthLines =
+    growth === null
+      ? []
+      : [
+          `${GROWTH_LABEL}: ${growth.trend}`,
+          ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]),
+          ...(growth.hint === null ? [] : [`  → ${growth.hint}`]),
+          `  ${growth.note}`,
+        ]
   if (diff === null) {
     return [estimateLine, ...breakdownLines, ...growthLines, `セッション${ACTUAL_COST_UNAVAILABLE_TEXT.replace(' ', ': ')}`]
   }
@@ -95,8 +89,7 @@ function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscr
 const diffDirection = (diffUsd: number): string => (diffUsd > 0 ? '実が大きい。' : diffUsd < 0 ? '推定が大きい。' : '')
 
 /** 指摘 1 件の行。過去の指摘には「次の一手」を付けない（いま直す対象ではないため）。 */
-function oneConcernLines(concern: Concern, records: readonly TurnRecord[], withNext: boolean): string[] {
-  const next = withNext ? nextStepText(concern, records) : null
+function oneConcernLines(concern: Concern, next: string | null): string[] {
   return [
     `  【${CONCERN_TEXT[concern.kind].label}】 ${concernDetailText(concern)}`,
     ...concern.examples.map(example => `    ・${example}`),
@@ -105,19 +98,15 @@ function oneConcernLines(concern: Concern, records: readonly TurnRecord[], withN
 }
 
 /** 直近の指摘を先に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。止めている種類は最後に 1 行だけ。 */
-function concernLines(
-  concerns: readonly Concern[],
-  records: readonly TurnRecord[],
-  mutedLine: string | null,
-  archived: ReviewState['archived'],
-): string[] {
-  const { recent, past } = partitionByRecency(concerns)
-  const numericNote = numericEffortNote(records, archived)
+function concernLines(section: ConcernsSection): string[] {
+  const { recent, past, nextSteps, numericNote, mutedLine } = section
   return [
-    ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, records, true))),
-    ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, records, false))]),
+    `■ ${HEADING.concerns} · ヒューリスティック`,
+    ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, nextSteps.get(concern) ?? null))),
+    ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, null))]),
     ...(numericNote === null ? [] : [`  ${numericNote}`]),
     ...(mutedLine === null ? [] : [`  ${mutedLine}`]),
+    '',
   ]
 }
 
@@ -127,31 +116,18 @@ const reportTurnRef = (record: TurnRecord, records: readonly TurnRecord[], nowMs
     ? `${turnRefText(record, 0)}（${turnOriginLabel(record)}）`
     : turnRefText(record, mainTurnsAfter(records, record), nowMs)
 
-function topTurnLines(records: readonly TurnRecord[], nowMs?: number): string[] {
-  return topCostTurns(records).map(
-    record =>
-      `  ${formatUsd(record.costUsd)}  ${reportTurnRef(record, records, nowMs)}  ${record.model}  ${toolDetailText(record)}`,
-  )
+function topTurnLines(section: TopTurnsSection, nowMs?: number): string[] {
+  return [
+    `■ ${HEADING.topTurns}`,
+    ...section.turns.map(
+      record => `  ${formatUsd(record.costUsd)}  ${reportTurnRef(record, section.records, nowMs)}  ${record.model}  ${toolDetailText(record)}`,
+    ),
+    '',
+  ]
 }
 
-function topTurnSection(records: readonly TurnRecord[], nowMs?: number): string[] {
-  const lines = topTurnLines(records, nowMs)
-  return lines.length === 0 ? [] : [`■ ${HEADING.topTurns}`, ...lines, '']
-}
-
-function advisorLines(records: readonly TurnRecord[], archived: ReviewState['archived']): string[] {
-  const text = advisorCallText(records, archived)
-  return text === null ? [] : [`advisor ${text}`]
-}
-
-function archiveNoteLines(review: ReviewState): string[] {
-  const text = archiveNote(review.archived)
-  return text === null ? [] : [text]
-}
-
-function loopLines(records: readonly TurnRecord[]): string[] {
-  const view = loopView(records)
-  if (view === null) return []
+function loopLines(section: LoopsSection): string[] {
+  const { view } = section
   return [
     `■ ${HEADING.loops}`,
     ...view.rows.map(row => `  ${row.label}  ${row.detail}`),
@@ -160,10 +136,33 @@ function loopLines(records: readonly TurnRecord[]): string[] {
   ]
 }
 
-function whatIfLines(records: readonly TurnRecord[]): string[] {
-  const options = describeSwitchOptions(records)
-  if (options.length === 0) return []
-  return [`■ ${HEADING.whatIf}`, ...options.map(text => `  ${text}`), `  ${WHATIF_NOTE}`, '']
+const whatIfLines = (section: WhatIfSection): string[] => [`■ ${HEADING.whatIf}`, ...section.options.map(text => `  ${text}`), `  ${WHATIF_NOTE}`, '']
+
+/** コストの節。見出しの後に、金額・内訳・推移・実コスト・使用率・advisor を並べる。末尾の注記は footerLines。 */
+function costSectionLines(section: CostSection, rate: RateView | null): string[] {
+  return [
+    `■ ${HEADING.cost}`,
+    ...costLines(section, rate !== null),
+    ...rateLines(rate),
+    ...(section.advisorText === null ? [] : [`advisor ${section.advisorText}`]),
+  ]
+}
+
+function sectionLines(section: Section, nowMs: number | undefined, rate: RateView | null): string[] {
+  switch (section.kind) {
+    case 'concerns':
+      return concernLines(section)
+    case 'groups':
+      return [`■ ${HEADING.groups}`, ...section.groups.map(groupLine), '']
+    case 'topTurns':
+      return topTurnLines(section, nowMs)
+    case 'loops':
+      return loopLines(section)
+    case 'whatIf':
+      return whatIfLines(section)
+    case 'cost':
+      return costSectionLines(section, rate)
+  }
 }
 
 const CRITERIA_LINES = [
@@ -171,43 +170,30 @@ const CRITERIA_LINES = [
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
 ]
 
+/** 末尾の注記（注記の全件・畳み込み・免責・判定基準）。コストの節の続きに並ぶ。 */
+const footerLines = (analysis: ReviewAnalysis): string[] => [
+  ...analysis.notes.map(note => note.text),
+  ...(analysis.archiveNote === null ? [] : [analysis.archiveNote]),
+  ALWAYS_NOTE,
+  '',
+  ...CRITERIA_LINES,
+]
+
 /**
  * テキストレポートの行。先頭はペインと同じ結論の 1 行。記録がなければ結論と案内の 2 行だけを返す。
  * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
+ * 節の順序と出し分けは sections.ts、集計は analysis.ts で、ペインと同じものを使う。
  */
-export function buildReportLines(
-  review: ReviewState,
-  nowMs?: number,
-  muted: ReadonlySet<ConcernKind> = new Set(),
-  rate: RateView | null = null,
-): string[] {
-  const records = review.turns
-  if (records.length === 0) return [NO_RECORDS_CONCLUSION.text, NO_TURNS_LINE]
-  const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
-  const notes = buildNotes(review, nowMs)
+export function buildReportLines(review: ReviewState, nowMs?: number, muted?: ReadonlySet<ConcernKind>, rate: RateView | null = null): string[] {
+  if (review.turns.length === 0) return [NO_RECORDS_CONCLUSION.text, NO_TURNS_LINE]
+  const analysis = analyzeReview(review, nowMs, muted)
   return [
-    buildVerdict(review, concerns, splitNotes(notes).alerts).text,
-    moneyLineText(review, rate !== null),
+    analysis.conclusion.text,
+    moneyLineFrom(analysis.estimate, analysis.diff, rate !== null),
     '',
-    `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
+    `対象: ${analysis.totalTurns} ターン（サブエージェント ${analysis.subagents} 件）。Mod 読み込み前のターンは含みません。`,
     '',
-    `■ ${HEADING.concerns} · ヒューリスティック`,
-    ...concernLines(concerns, records, mutedLine, review.archived),
-    '',
-    `■ ${HEADING.groups}`,
-    ...mergeGroups(review.archived, groupByModelEffort(records)).map(groupLine),
-    '',
-    ...topTurnSection(records, nowMs),
-    ...loopLines(records),
-    ...whatIfLines(records),
-    `■ ${HEADING.cost}`,
-    ...costLines(review, records, rate !== null),
-    ...rateLines(rate),
-    ...advisorLines(records, review.archived),
-    ...notes.map(note => note.text),
-    ...archiveNoteLines(review),
-    ALWAYS_NOTE,
-    '',
-    ...CRITERIA_LINES,
+    ...buildSections(analysis).flatMap(section => sectionLines(section, nowMs, rate)),
+    ...footerLines(analysis),
   ]
 }
