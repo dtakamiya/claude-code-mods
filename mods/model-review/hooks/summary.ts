@@ -158,6 +158,9 @@ export function estimateRangeText(estimate: EstimateFacts): string {
   return `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
 }
 
+/** 実額の語。サブスクの累計コストは API 単価での換算で請求額ではないので、そう明示する。 */
+export const actualWord = (isSubscription: boolean): string => (isSubscription ? '実（API 換算）' : '実')
+
 /** 金額の 1 行（推定の幅 · 実額 · 差）。テキスト出力の結論の次に出す。 */
 export function moneyLineText(review: ReviewState, isSubscription: boolean): string {
   const estimate = estimateFacts(review.turns, review.archived)
@@ -166,7 +169,7 @@ export function moneyLineText(review: ReviewState, isSubscription: boolean): str
   const actualPart =
     diff === null
       ? '実コスト 取得できません'
-      : `実 ${formatUsd(diff.actualUsd)}（読み込み後）· 差 ${signedUsdText(diff.diffUsd)}${diffDirectionText(diff.diffUsd)}`
+      : `${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）· 差 ${signedUsdText(diff.diffUsd)}${diffDirectionText(diff.diffUsd)}`
   return `金額: ${word} ${estimateRangeText(estimate)} · ${actualPart}`
 }
 
