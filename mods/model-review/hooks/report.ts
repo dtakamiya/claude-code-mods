@@ -84,7 +84,7 @@ function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscr
     estimateLine,
     ...breakdownLines,
     ...growthLines,
-    `セッション実コスト（読み込み後）: ${formatUsd(diff.actualUsd)}`,
+    `セッション実コスト（${isSubscription ? 'API 換算・請求額ではない・' : ''}読み込み後）: ${formatUsd(diff.actualUsd)}`,
     `差（実コスト − 推定）: ${formatUsd(diff.diffUsd)}（推定は単価表の値。キャッシュ書込みは 5 分単価で概算し、ターン外の要求は含まない）`,
   ]
 }

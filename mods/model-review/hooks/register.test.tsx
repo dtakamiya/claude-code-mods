@@ -738,7 +738,7 @@ test('measure: コストと使用率を status 行に出し、context だけの�
   await $.session.measure(measure(['context'], 9, [99]))
   await $.session.measure(measure(['cost'], 1.234, [72]))
 
-  expect(ui.statuses).toEqual(['実コスト $1.23 · 5h 72%'])
+  expect(ui.statuses).toEqual(['API換算 $1.23 · 5h 72%'])
 })
 
 test('measure: 既定は上限が無効でトーストを出さない', async ($, on) => {

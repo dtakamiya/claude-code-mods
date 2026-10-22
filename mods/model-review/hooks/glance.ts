@@ -39,12 +39,20 @@ export const formatPercent = (percent: number): string => `${Number.isInteger(pe
 const formatCostShort = (usd: number): string => `$${usd.toFixed(2)}`
 
 /**
+ * 使用率が取れる環境（サブスク）か。サブスクの累計コストは API 単価での換算で、請求額ではない。
+ * 常に目に入る status 行・トーストで「実コスト」と書くと請求額に読めるため、語を分ける。
+ */
+const isSubscription = (glance: Glance): boolean => glance.rateLimits.length > 0
+
+/**
  * status 行の 1 行。コストも使用率も無ければ undefined（行を消す）。
  * 使用率が空（サブスク外・初回前）のときはコストだけを出す。`hints` は枠の種類ごとの短い印（消費ペース）。
  */
 export function formatStatus(glance: Glance, hints: ReadonlyMap<string, string> = new Map()): string | undefined {
   const parts: string[] = []
-  if (glance.costUsd !== undefined && Number.isFinite(glance.costUsd)) parts.push(`実コスト ${formatCostShort(glance.costUsd)}`)
+  if (glance.costUsd !== undefined && Number.isFinite(glance.costUsd)) {
+    parts.push(`${isSubscription(glance) ? 'API換算' : '実コスト'} ${formatCostShort(glance.costUsd)}`)
+  }
   for (const window of glance.rateLimits) {
     if (Number.isFinite(window.percentUsed)) parts.push(`${rateLabel(window.kind)} ${formatPercent(window.percentUsed)}${hints.has(window.kind) ? `（${hints.get(window.kind)}）` : ''}`)
   }
@@ -62,7 +70,12 @@ export type AlertResult = {
 export function evaluateAlerts(glance: Glance, limits: Limits, notified: ReadonlySet<string>): AlertResult {
   const exceeded = new Map<string, string>()
   if (limits.costUsd !== null && glance.costUsd !== undefined && glance.costUsd >= limits.costUsd) {
-    exceeded.set('cost', `実コストが上限 ${formatUsd(limits.costUsd)} に達しました（現在 ${formatCostShort(glance.costUsd)}）`)
+    exceeded.set(
+      'cost',
+      isSubscription(glance)
+        ? `API 換算コストが上限 ${formatUsd(limits.costUsd)} に達しました（現在 ${formatCostShort(glance.costUsd)}・請求額ではありません）`
+        : `実コストが上限 ${formatUsd(limits.costUsd)} に達しました（現在 ${formatCostShort(glance.costUsd)}）`,
+    )
   }
   if (limits.ratePercent !== null) {
     for (const window of glance.rateLimits) {

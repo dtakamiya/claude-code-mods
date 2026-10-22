@@ -166,8 +166,8 @@ test('status 行には短い印だけを添え、印がなければ今までと�
   const rateLimits = [{ kind: 'five_hour', percentUsed: 72 }]
 
   // Act / Assert
-  expect(formatStatus({ costUsd: 1.234, rateLimits }, new Map([['five_hour', '↑40分']]))).toBe('実コスト $1.23 · 5h 72%（↑40分）')
-  expect(formatStatus({ costUsd: 1.234, rateLimits })).toBe('実コスト $1.23 · 5h 72%')
+  expect(formatStatus({ costUsd: 1.234, rateLimits }, new Map([['five_hour', '↑40分']]))).toBe('API換算 $1.23 · 5h 72%（↑40分）')
+  expect(formatStatus({ costUsd: 1.234, rateLimits })).toBe('API換算 $1.23 · 5h 72%')
   expect(formatStatus({ costUsd: 1.234, rateLimits: [] }, new Map([['five_hour', '↑40分']]))).toBe('実コスト $1.23')
 })
 
@@ -210,4 +210,25 @@ test('サブスク（使用率あり）では金額を「API 換算」と明示�
   expect(JSON.stringify(rows)).toContain('API 換算の推定')
   expect(JSON.stringify(rowsWithout)).not.toContain('API 換算')
   expect(rateView({}, T0)).toBeNull()
+})
+
+test('サブスクでは実額にも「API 換算」を添え、請求額に読めないようにする。サブスク外は今のまま', () => {
+  // Arrange: 読み込み時 $0.25、現在 $0.75 の累計コスト
+  const withCost = { ...review, sessionCostUsd: { baseline: 0.25, current: 0.75, baselineTurns: 0 } }
+  const rate = rateView(addRateSamples({}, [five(72)], T0), T0)
+
+  // Act
+  const report = buildReportLines(withCost, T0, new Set(), rate).join('\n')
+  const reportWithout = buildReportLines(withCost, T0).join('\n')
+  const rows = JSON.stringify(buildPaneRows(withCost, {}, T0, 80, new Set(), rate))
+  const rowsWithout = JSON.stringify(buildPaneRows(withCost, {}, T0, 80))
+
+  // Assert
+  expect(report).toContain('実（API 換算） $0.5000（読み込み後）')
+  expect(report).toContain('セッション実コスト（API 換算・請求額ではない・読み込み後）: $0.5000')
+  expect(rows).toContain('/ 実（API 換算） $0.5000（読み込み後）')
+  expect(reportWithout).toContain('実 $0.5000（読み込み後）')
+  expect(reportWithout).toContain('セッション実コスト（読み込み後）: $0.5000')
+  expect(rowsWithout).toContain('/ 実 $0.5000（読み込み後）')
+  expect(rowsWithout).not.toContain('API 換算')
 })

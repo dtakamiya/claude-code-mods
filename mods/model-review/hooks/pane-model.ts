@@ -31,6 +31,7 @@ import { ALWAYS_NOTE, buildNotes, splitNotes } from './notes'
 import {
   NO_TURNS_LINE,
   actualCostUsd,
+  actualWord,
   advisorCallText,
   buildVerdict,
   concernDetailText,
@@ -166,7 +167,7 @@ function costRows(review: ReviewState, estimate: EstimateFacts, isSubscription: 
   if (diff === null) {
     return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実コスト 取得できませんでした（/model-review で再取得）`, tone: 'plain' }]
   }
-  return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実 ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }]
+  return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }]
 }
 
 /** 直近の指摘は種類の色と「次の一手」つき。過去の指摘は色なし（plain）で、次の一手を付けない。 */
