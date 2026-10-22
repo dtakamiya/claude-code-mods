@@ -20,7 +20,7 @@ import {
   type ConcernKind,
 } from './analyze'
 import { archiveNote, mergeGroups } from './archive'
-import { cellWidth, formatUsd, formatUsdRange } from './format'
+import { cellWidth, formatUsd } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
 import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
@@ -64,7 +64,7 @@ export type PaneRow =
   | { kind: 'conclusion'; text: string; tone: Tone }
   | { kind: 'message'; text: string }
   | { kind: 'blank' }
-  | { kind: 'title'; turns: number; subagents: number; costText: string }
+  | { kind: 'title'; turns: number; subagents: number }
   | { kind: 'heading'; text: string }
   | { kind: 'group'; model: string; effort: string; tier: Tier; turns: number; barWidth: number; filled: number; percentText: string; costText: string; tokenText: string; cacheText: string }
   | { kind: 'turn'; label: string; model: string; tier: Tier; costText: string; detail: string }
@@ -249,6 +249,12 @@ function advisorRows(records: ReviewState['turns'], archived: ReviewState['archi
   return text === null ? [] : [{ kind: 'kv', label: 'advisor', value: text, tone: 'plain' }]
 }
 
+/** advisor の費用の句。advisor の行（回数と金額の免責）があるときは、末尾の注記からこの句を外す。 */
+const ADVISOR_COST_CLAUSE = '、advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）'
+
+/** ペイン末尾の免責。advisor の行があるときは、その行に免責があるので句を外す（ALWAYS_NOTE はレポートと共有するため変えない）。 */
+export const paneAlwaysNote = (hasAdvisorRow: boolean): string => (hasAdvisorRow ? ALWAYS_NOTE.replace(ADVISOR_COST_CLAUSE, '') : ALWAYS_NOTE)
+
 function archiveNoteRows(review: ReviewState): PaneRow[] {
   const text = archiveNote(review.archived)
   return text === null ? [] : [{ kind: 'note', text }]
@@ -275,8 +281,9 @@ function glossaryRows(terms: readonly TermKey[]): PaneRow[] {
 const CONCERN_DETAIL_HEADING = `${HEADING.concerns}· 見直し候補の内訳`
 
 const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
-/** 実コストが取れなかったときの、ペイン末尾の案内。 */
+/** 実コストが取れているときの、ペイン末尾の更新の案内。取れないときはコスト行の「再取得」の案内に任せる。 */
 const REFRESH_NOTE = '/model-review で更新'
+const refreshRows = (review: ReviewState): PaneRow[] => (costDiff(review) === null ? [] : [{ kind: 'note', text: REFRESH_NOTE }])
 
 const isStarted = (draft: LoopDraft): boolean => draft.stepCount > 0 || draft.toolCount > 0
 
@@ -317,6 +324,7 @@ export function buildPaneRows(
   const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
   const groups = mergeGroups(review.archived, groupByModelEffort(records))
   const { alerts, reliability } = splitNotes(buildNotes(review, nowMs))
+  const advisor = advisorRows(records, review.archived)
   return [
     { kind: 'conclusion', ...buildVerdict(review, concerns, alerts) },
     { kind: 'blank' },
@@ -324,7 +332,6 @@ export function buildPaneRows(
       kind: 'title',
       turns: records.length + (review.archived?.turns ?? 0),
       subagents: subagentCount(records, review.archived),
-      costText: estimate.allUnpriced ? formatUsd(null) : formatUsdRange(estimate.lowUsd, estimate.highUsd),
     },
     { kind: 'blank' },
     ...live,
@@ -342,14 +349,14 @@ export function buildPaneRows(
     ...rateRows(rate),
     ...breakdownRows(records, review.archived),
     ...growthRows(records, review.archived),
-    ...advisorRows(records, review.archived),
+    ...advisor,
     ...glossaryRows(shownTerms(review, groups, concerns)),
     { kind: 'blank' },
     ...alerts.map((note): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text: note.text })),
     ...reliability.map((note): PaneRow => ({ kind: 'note', text: note.text })),
     ...archiveNoteRows(review),
-    { kind: 'note', text: ALWAYS_NOTE },
+    { kind: 'note', text: paneAlwaysNote(advisor.length > 0) },
     { kind: 'note', text: CRITERIA_NOTE },
-    { kind: 'note', text: REFRESH_NOTE },
+    ...refreshRows(review),
   ]
 }
