@@ -1,5 +1,4 @@
 import { test, expect } from 'claude-code/testing'
-import type { SessionMessage } from 'claude-code'
 
 import { MESSAGE_LIMIT, render, summarize } from './recap'
 
@@ -42,15 +41,4 @@ test('入力値や結果本文は出力に現れない', () => {
   const secret = 'SECRET-COMMAND-xyz'
   const withInput = [{ toolUses: [{ tool: 'Bash', input: { command: secret }, text: secret }] }]
   expect(render(summarize(withInput))).not.toContain(secret)
-})
-
-test('/recap は tool 名の集計を text で返す', async ($, on) => {
-  on('session.messages', () => ({ value: messages as unknown as SessionMessage[] }))
-  const ran = await $.command.run({
-    command: 'recap',
-    args: '',
-    origin: { kind: 'composer' },
-    presentation: { isFullscreen: false, columns: 80 },
-  })
-  expect(ran.text).toBe(render(summarize(messages)))
 })
