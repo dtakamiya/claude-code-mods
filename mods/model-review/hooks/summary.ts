@@ -4,8 +4,10 @@ import type { ArchivedTurns, ReviewState, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
 import { estimateRange, estimateTotal, summarizeAgentTypes, type Concern, type ModelGroup } from './analyze'
 import { effortText } from './effort'
-import { formatDuration, formatInt, formatUsd, formatUsdRange } from './format'
-import { CONCERN_TEXT } from './labels'
+import { formatDuration, formatInt, formatUsd, formatUsdRange, signedUsdText } from './format'
+import { CONCERN_TEXT, countText } from './labels'
+
+export { countText } from './labels'
 import { UNKNOWN_AGENT_TYPE } from './agenttype'
 import { describeAgentType, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops, SUBAGENT_CACHE_NOTE } from './loops'
 import { conclusionOf, type Conclusion, type PriceCoverage } from './conclusion'
@@ -24,9 +26,6 @@ export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | nul
   switch: '推定',
 }
 
-/** 件数の表記。母数があれば「116 / 200 件」。 */
-export const countText = (concern: Concern): string =>
-  concern.outOf === undefined ? `${concern.count} 件` : `${concern.count} / ${concern.outOf} 件`
 
 /** 金額の付け足し（` · Sonnet 換算 $0.2500`）。金額がないか語がない種類は空文字。 */
 const concernAmountSuffix = (concern: Concern): string => {
@@ -145,8 +144,7 @@ export function costDiff(review: ReviewState): CostDiff | null {
   return { actualUsd, estimateUsd, diffUsd: actualUsd - estimateUsd }
 }
 
-/** 符号つきの金額（`+$0.3839` / `-$0.0187`）。0 は + とする。 */
-export const signedUsdText = (usd: number): string => `${usd >= 0 ? '+' : '-'}${formatUsd(Math.abs(usd))}`
+export { signedUsdText } from './format'
 
 /** 差の向きの説明。差がちょうど 0 なら空文字。 */
 const diffDirectionText = (diffUsd: number): string => (diffUsd > 0 ? '（実が大きい）' : diffUsd < 0 ? '（推定が大きい）' : '')

@@ -20,6 +20,7 @@ import {
   type ConcernKind,
 } from './analyze'
 import { archiveNote, mergeGroups } from './archive'
+import { shortModel } from './domain'
 import { cellWidth, formatUsd } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
@@ -27,7 +28,7 @@ import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, saysNoConcerns, type 
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
 import { turnLabelText } from './turnref'
-import { ALWAYS_NOTE, buildNotes, splitNotes } from './notes'
+import { alwaysNoteText, buildNotes, splitNotes } from './notes'
 import {
   ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
@@ -59,7 +60,6 @@ export const MIN_BAR_WIDTH = 4
 const BAR_MAX_SHARE_OF_COLUMNS = 5
 /** バー行の固定部分: 先頭の字下げ 2 + 金額との間 2 + 割合との間 2 + 割合（`100%` で 4）。 */
 const BAR_ROW_FIXED_CELLS = 10
-const MODEL_ID_PREFIX = 'claude-'
 
 export type Tier = 'haiku' | 'sonnet' | 'opus' | 'other'
 
@@ -81,7 +81,6 @@ export type PaneRow =
 const TIER_OF_RANK: Readonly<Record<number, Tier>> = { 0: 'haiku', 1: 'sonnet', 2: 'opus' }
 
 const tierOf = (model: string): Tier => TIER_OF_RANK[modelRank(model)] ?? 'other'
-const shortModel = (model: string): string => (model.startsWith(MODEL_ID_PREFIX) ? model.slice(MODEL_ID_PREFIX.length) : model)
 
 const MIN_VISIBLE_SHARE = 0.01
 
@@ -257,11 +256,8 @@ function advisorRows(records: ReviewState['turns'], archived: ReviewState['archi
   return text === null ? [] : [{ kind: 'kv', label: 'advisor', value: text, tone: 'plain' }]
 }
 
-/** advisor の費用の句。advisor の行（回数と金額の免責）があるときは、末尾の注記からこの句を外す。 */
-const ADVISOR_COST_CLAUSE = '、advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）'
-
-/** ペイン末尾の免責。advisor の行があるときは、その行に免責があるので句を外す（ALWAYS_NOTE はレポートと共有するため変えない）。 */
-export const paneAlwaysNote = (hasAdvisorRow: boolean): string => (hasAdvisorRow ? ALWAYS_NOTE.replace(ADVISOR_COST_CLAUSE, '') : ALWAYS_NOTE)
+/** ペイン末尾の免責。advisor の行があるときは、その行に免責があるので advisor の句を外す（レポートは ALWAYS_NOTE のまま）。 */
+export const paneAlwaysNote = (hasAdvisorRow: boolean): string => alwaysNoteText({ omitAdvisor: hasAdvisorRow })
 
 function archiveNoteRows(review: ReviewState): PaneRow[] {
   const text = archiveNote(review.archived)

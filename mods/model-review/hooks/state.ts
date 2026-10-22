@@ -60,6 +60,8 @@ export function withCurrent(state: ReviewState, costUsd: number): ReviewState {
       sessionCostUsd: { baseline: costUsd, current: costUsd, baselineTurns: state.turns.length },
     }
   }
+  // 同じ値なら同じ状態を返す。新しいオブジェクトを返すと、測定のたびに atom の書込みと再描画が走る。
+  if (current === costUsd) return state
   return { ...state, sessionCostUsd: { ...state.sessionCostUsd, current: costUsd } }
 }
 

@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
-import { recordSpawn, resolveAgentType, sanitizeAgentType } from './agenttype'
+import { MAX_AGENT_TYPES, recordSpawn, resolveAgentType, sanitizeAgentType, type AgentTypes } from './agenttype'
 import { finishTurn, beginTurn } from './recorder'
 import { findConcerns, summarizeAgentTypes } from './analyze'
 import { loopView } from './summary'
@@ -75,4 +75,23 @@ test('種類が 1 つでも名前が分かれば行を出し、種類不明だ�
   const main = turn({ agentId: null, turnId: 'm' })
   expect(loopView([main, turn({ agentType: 'Explore' })])?.rows.map(row => row.label)).toEqual(['メイン', 'サブエージェント', '└ Explore'])
   expect(loopView([main, turn({})])?.rows.map(row => row.label)).toEqual(['メイン', 'サブエージェント'])
+})
+
+test('覚える agentId は上限までで、超えたら古い順に捨てる。同じ agentId は新しい種類で上書きして最新にする', () => {
+  // Arrange: 上限ちょうどまで覚える
+  const full = Array.from({ length: MAX_AGENT_TYPES }, (_, index) => index).reduce<AgentTypes>(
+    (types, index) => recordSpawn(types, `agent-${index}`, 'Explore'),
+    {},
+  )
+
+  // Act
+  const refreshed = recordSpawn(full, 'agent-0', 'Plan')
+  const overflow = recordSpawn(refreshed, 'agent-new', 'Explore')
+
+  // Assert: agent-0 は上書きで最新になったので残り、最も古い agent-1 が捨てられる
+  expect(Object.keys(refreshed)).toHaveLength(MAX_AGENT_TYPES)
+  expect(Object.keys(overflow)).toHaveLength(MAX_AGENT_TYPES)
+  expect(overflow['agent-0']).toBe('Plan')
+  expect(overflow['agent-1']).toBeUndefined()
+  expect(overflow['agent-new']).toBe('Explore')
 })

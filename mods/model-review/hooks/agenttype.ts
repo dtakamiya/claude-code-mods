@@ -2,6 +2,8 @@
 // 記録するのは種類の名前だけ。description・prompt は受け取らない。
 export const UNKNOWN_AGENT_TYPE = '種類不明'
 const MAX_TYPE_LENGTH = 64
+/** 覚えておく agentId の上限。超えたら古い順に捨てる（捨てた分は $.agent.list() で補える）。 */
+export const MAX_AGENT_TYPES = 256
 
 export type AgentTypes = Readonly<Record<string, string>>
 
@@ -19,7 +21,11 @@ export function sanitizeAgentType(raw: unknown): string | null {
 export function recordSpawn(types: AgentTypes, agentId: unknown, subagentType: unknown): AgentTypes {
   const type = sanitizeAgentType(subagentType)
   if (typeof agentId !== 'string' || agentId === '' || type === null) return types
-  return { ...types, [agentId]: type }
+  const { [agentId]: _previous, ...rest } = types
+  const entries = Object.entries(rest)
+  // 追加順を保つので、先頭が最も古い。上限を超えるぶんだけ先頭から捨てる。
+  const kept = entries.length >= MAX_AGENT_TYPES ? entries.slice(entries.length - MAX_AGENT_TYPES + 1) : entries
+  return { ...Object.fromEntries(kept), [agentId]: type }
 }
 
 /**

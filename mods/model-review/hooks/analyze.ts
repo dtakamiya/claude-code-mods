@@ -3,6 +3,7 @@ import type { TokenCounts, TurnRecord } from '../types'
 import { UNKNOWN_AGENT_TYPE } from './agenttype'
 import { sharesOf } from './archive'
 import { cacheHitRate } from './cache'
+import { RECENT_CONCERN_MAIN_TURNS, ZERO_TOKENS, addCost, addTokens } from './domain'
 import { effortText } from './effort'
 import { formatDuration, formatInt, formatUsd } from './format'
 import { normalizeModelId } from './pricing'
@@ -45,8 +46,8 @@ export const UNDERSPEC_ERROR_STREAK = 2
 /** 不足は、該当（重いターン・エラーの連続エピソード）がこの数以上あるときだけ指摘する。1 件の偶発を根拠にしない（仮置き）。 */
 export const MIN_UNDERSPEC_TURNS = 2
 export const TOP_COST_TURN_LIMIT = 3
-/** 結論の ▲ は、メインの直近この数のターンの中に該当がある指摘だけで決める。窓より前だけの指摘は「過去の指摘」として別に並べる。対処が効いたかを画面で分かるようにするため（仮置き）。 */
-export const RECENT_CONCERN_MAIN_TURNS = 20
+/** 結論の ▲ を決める直近の窓。定義は domain.ts（文言の層が analyze を import せずに使えるように）。 */
+export { RECENT_CONCERN_MAIN_TURNS }
 
 export type ModelGroup = {
   readonly model: string
@@ -100,8 +101,6 @@ export type Concern = {
   readonly lastTurnsAgo?: number
 }
 
-const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-
 export function modelRank(model: string): number {
   const id = normalizeModelId(model)
   if (id.includes('haiku')) return RANK_HAIKU
@@ -109,16 +108,6 @@ export function modelRank(model: string): number {
   if (id.includes('opus') || id.includes('fable') || id.includes('mythos')) return RANK_OPUS
   return RANK_UNRANKED
 }
-
-const addTokens = (a: TokenCounts, b: TokenCounts): TokenCounts => ({
-  input: a.input + b.input,
-  output: a.output + b.output,
-  cacheRead: a.cacheRead + b.cacheRead,
-  cacheWrite: a.cacheWrite + b.cacheWrite,
-})
-
-const addCost = (total: number | null, cost: number | null): number | null =>
-  total === null || cost === null ? null : total + cost
 
 type Share = ReturnType<typeof sharesOf>[number]
 

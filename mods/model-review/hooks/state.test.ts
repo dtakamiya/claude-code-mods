@@ -183,3 +183,14 @@ test('基準点を取り直したら、畳んだ集計の「基準点より後�
   expect(after.archived?.pricedUsd).toBe(10)
   expect(before.archived.sinceBaseline).toEqual(sinceBaseline)
 })
+
+test('累計が変わらない測定では同じ状態を返す（atom の書込みと再描画を起こさない）', () => {
+  // Arrange
+  const sampled = withCostSample(appendTurn(EMPTY_REVIEW, record), 1)
+
+  // Act
+  const same = withCurrent(sampled, 1)
+
+  // Assert
+  expect(same).toBe(sampled)
+})

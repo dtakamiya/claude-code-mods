@@ -3,7 +3,7 @@ import type { Register, SessionUsage } from 'claude-code'
 
 import { PaneBody } from './pane'
 import { EMPTY_REVIEW, appendTurn, stampTurn, withBaseline, withCostSample } from './state'
-import { beginTurn, finishTurn, liveDrafts, markPlanMode, recordStep, recordTool, type Drafts } from './recorder'
+import { beginTurn, finishTurn, liveDrafts, markPlanMode, pruneDrafts, recordStep, recordTool, type Drafts } from './recorder'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
 import { ARGUMENT_HINT, COPIED_TEXT, HELP_TEXT, UNKNOWN_ARG_TEXT, copyFailedText, parseCommandMode } from './copy'
@@ -177,7 +177,7 @@ export const register: Register = (on, options) => {
           : await Promise.resolve()
               .then(() => $.session.model())
               .catch(() => null)
-      drafts = beginTurn(drafts, e, nowMs, sessionModel)
+      drafts = pruneDrafts(beginTurn(drafts, e, nowMs, sessionModel), nowMs)
       $.ui.invalidate('ui.render')
     }, logDebug($))
     return next(e)

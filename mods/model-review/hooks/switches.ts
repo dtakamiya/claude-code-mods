@@ -6,7 +6,7 @@ import { effortText } from './effort'
 import { formatUsd } from './format'
 import { turnRefText } from './turnref'
 import { cacheRebuildCostUsd, isThirdPartyModelId, normalizeModelId, ratesFor } from './pricing'
-import { UNKNOWN_MODEL } from './recorder'
+import { UNKNOWN_MODEL } from './domain'
 
 /** API キー・サブスク経由で、effort を変えてもキャッシュが維持されるモデル（公式ドキュメントの記載）。 */
 export const CACHE_SAFE_EFFORT_MODELS: ReadonlySet<string> = new Set([

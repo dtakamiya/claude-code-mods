@@ -1,13 +1,13 @@
 // ターンの記録を組み立てる純粋な reducer。$ に触れず、入力を受けて新しいオブジェクトを返す。
 // tool.call は turnId を持たないため、ループ（メイン or サブエージェント）ごとに下書きを持つ。
 import type { CostParts, ModelShare, TurnRecord } from '../types'
-import { ZERO_PARTS, addParts } from './breakdown'
+import { UNKNOWN_MODEL, ZERO_PARTS, ZERO_TOKENS, addParts } from './domain'
 import { sanitizeAgentType } from './agenttype'
 import { effortToRecord } from './effort'
 import { HAIKU_REFERENCE_MODEL, normalizeModelId, SONNET_REFERENCE_MODEL, priceUsage, priceUsageParts, type CacheWriteTtl, type TokenUsageLike } from './pricing'
 
 export const MAIN_LOOP_KEY = 'main'
-export const UNKNOWN_MODEL = 'unknown'
+export { UNKNOWN_MODEL }
 export const EDIT_TOOLS: ReadonlySet<string> = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
 /** 応答・ツール呼び出しが止まってからこの時間を過ぎた未完了の下書きは、実行中の表示から外す（turn.complete が来ないまま中断されたターン用）。 */
 export const LIVE_DRAFT_LIFETIME_MS = 10 * 60 * 1000
@@ -141,8 +141,6 @@ const withDraft = (drafts: Drafts, agentId: string | undefined, draft: LoopDraft
   [loopKey(agentId)]: draft,
 })
 
-const ZERO_TOKENS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const
-
 /** 同じループに残っていた未完了の下書きは置き換える（中断されたターンの残りを引きずらない）。 */
 export function beginTurn(
   drafts: Drafts,
@@ -273,6 +271,21 @@ export function recordTool(drafts: Drafts, call: ToolInput, nowMs?: number): Dra
     lastActivityMs: nowMs ?? prev.lastActivityMs,
   }
   return withDraft(drafts, call.agentId, next)
+}
+
+/** 動きが止まってからこの時間を過ぎた未完了の下書きは、捨てる（turn.complete が来ないまま残った下書きでメモリが増え続けないように）。 */
+export const DRAFT_RETENTION_MS = 6 * LIVE_DRAFT_LIFETIME_MS
+
+/**
+ * 保持期限を過ぎた未完了の下書きを捨てる。liveDrafts（表示から外すだけで、動きが再開すれば戻る）より長い期限で、
+ * 戻る見込みのない下書きだけを消す。最後の動きの時刻が不明な下書きは消さない。何も消さなければ同じ値を返す。
+ */
+export function pruneDrafts(drafts: Drafts, nowMs: number | undefined): Drafts {
+  if (nowMs === undefined) return drafts
+  const stale = Object.entries(drafts).filter(([, draft]) => draft.lastActivityMs !== null && nowMs - draft.lastActivityMs > DRAFT_RETENTION_MS)
+  if (stale.length === 0) return drafts
+  const staleKeys = new Set(stale.map(([key]) => key))
+  return Object.fromEntries(Object.entries(drafts).filter(([key]) => !staleKeys.has(key)))
 }
 
 /**

@@ -1,7 +1,7 @@
 // 「いまモデルを替えたらどうなるか」の見積り。$ に触れない純粋関数。
 // 直近のメインループのターンのトークン内訳を、各モデルの単価で置き換えて比べる（実際の切替結果ではなく目安）。
 import type { TurnRecord } from '../types'
-import { formatUsd } from './format'
+import { formatUsd, signedUsdText } from './format'
 import {
   HAIKU_REFERENCE_MODEL,
   OPUS_REFERENCE_MODEL,
@@ -10,10 +10,9 @@ import {
   normalizeModelId,
   priceUsage,
 } from './pricing'
-import { UNKNOWN_MODEL } from './recorder'
+import { UNKNOWN_MODEL, shortModel } from './domain'
 
 const CANDIDATE_MODELS: readonly string[] = [HAIKU_REFERENCE_MODEL, SONNET_REFERENCE_MODEL, OPUS_REFERENCE_MODEL]
-const MODEL_ID_PREFIX = 'claude-'
 
 export type SwitchOption = {
   readonly model: string
@@ -94,13 +93,10 @@ export function estimateSwitchOptions(records: readonly TurnRecord[]): readonly 
   return CANDIDATE_MODELS.filter(model => model !== currentId).flatMap(model => optionFor(latest, currentUsd, model) ?? [])
 }
 
-const shortModel = (model: string): string => (model.startsWith(MODEL_ID_PREFIX) ? model.slice(MODEL_ID_PREFIX.length) : model)
-
-const signedUsd = (value: number): string => `${value < 0 ? '-' : '+'}${formatUsd(Math.abs(value))}`
 
 export function describeOption(option: SwitchOption): string {
   const recover = option.breakEvenTurns === null ? '' : ` · 約 ${option.breakEvenTurns} ターンで回収`
-  return `${shortModel(option.model)} へ: 再構築 +${formatUsd(option.rebuildUsd)} · 1 ターンあたり ${signedUsd(option.perTurnDeltaUsd)}${recover}`
+  return `${shortModel(option.model)} へ: 再構築 +${formatUsd(option.rebuildUsd)} · 1 ターンあたり ${signedUsdText(option.perTurnDeltaUsd)}${recover}`
 }
 
 export const WHATIF_NOTE =

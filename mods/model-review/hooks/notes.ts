@@ -3,7 +3,7 @@ import type { ReviewState, TurnRecord } from '../types'
 import { estimateRange, estimateTotal } from './analyze'
 import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
-import { UNKNOWN_MODEL } from './recorder'
+import { UNKNOWN_MODEL } from './domain'
 import { turnsSinceBaseline } from './state'
 import { findSwitches } from './switches'
 
@@ -36,8 +36,22 @@ export const splitNotes = (notes: readonly Note[]): { readonly alerts: readonly 
   reliability: notes.filter(note => !isAlert(note)),
 })
 
-export const ALWAYS_NOTE =
-  '推定に含まれないもの: fast mode の割増、advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）、Web 検索などトークン以外の料金。単価は Claude API の価格で、Bedrock / Vertex の価格と地域の割増は含みません。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
+const FAST_MODE_CLAUSE = 'fast mode の割増'
+const ADVISOR_COST_CLAUSE = 'advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）'
+const NON_TOKEN_CLAUSE = 'Web 検索などトークン以外の料金'
+const PRICE_SCOPE_SENTENCE = '単価は Claude API の価格で、Bedrock / Vertex の価格と地域の割増は含みません。'
+const TTL_SENTENCE = 'キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
+
+/**
+ * 末尾の免責。句の並びから組み立てる（文字列の置換で句を外すと、文言を変えたときに何も起きずに外れなくなるため）。
+ * omitAdvisor は、advisor の行（回数と金額の免責）を出すペインで advisor の句を重ねないためのもの。
+ */
+export function alwaysNoteText(options: { readonly omitAdvisor?: boolean } = {}): string {
+  const excluded = [FAST_MODE_CLAUSE, ...(options.omitAdvisor === true ? [] : [ADVISOR_COST_CLAUSE]), NON_TOKEN_CLAUSE]
+  return `推定に含まれないもの: ${excluded.join('、')}。${PRICE_SCOPE_SENTENCE}${TTL_SENTENCE}`
+}
+
+export const ALWAYS_NOTE = alwaysNoteText()
 
 export const advisorCallTotal = (records: readonly TurnRecord[]): number =>
   records.reduce((sum, record) => sum + (record.advisorCalls ?? 0), 0)
