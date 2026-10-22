@@ -57,7 +57,8 @@ test('単価不明・内訳のないターンは除き、その数を注記に�
   expect(breakdown?.excludedTurns).toBe(2)
   expectNear(breakdown?.totalUsd, 1)
   expect(breakdownNote(breakdown!)).toContain('2 ターンを除く')
-  expect(breakdownNote(breakdown!)).toContain('5 分単価')
+  expect(breakdownNote(breakdown!)).toContain('推定の下限と同じ基準、単価不明または内訳のない 2 ターンを除く')
+  expect(breakdownNote(breakdown!)).not.toContain('5 分単価')
 })
 
 test('畳んだ記録を含めても、内訳の合計は畳む前と同じになる', () => {

@@ -575,7 +575,7 @@ test('Pane の過剰の例文は切り詰めず折り返す', async ($, on) => {
   await ui.unmount()
 })
 
-test('実コストがあるとき、Pane の末尾に「/model-review で更新」を dim の 1 行で出す', async ($, on) => {
+test('実コストがあるとき、Pane の判定基準の末尾に「・更新は /model-review」を付ける', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
   await $.session.start(SESSION_START)
@@ -586,11 +586,11 @@ test('実コストがあるとき、Pane の末尾に「/model-review で更新�
   const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
 
   // Assert
-  expect(await ui.find({ type: 'Text', text: /^\/model-review で更新$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^軽作業 = .*・更新は \/model-review$/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('実コストが取れないときは、Pane の末尾に「/model-review で更新」を出さない', async ($, on) => {
+test('実コストが取れないときは、Pane に「・更新は /model-review」を出さない', async ($, on) => {
   // Arrange: 累計コストが取れない（undefined）ので、実コストは null。
   answerEngine(on, () => undefined, true)
   await $.session.start(SESSION_START)
@@ -601,7 +601,7 @@ test('実コストが取れないときは、Pane の末尾に「/model-review �
   const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
 
   // Assert
-  expect(await ui.find({ type: 'Text', text: /^\/model-review で更新$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /・更新は \/model-review$/ })).toBeUndefined()
   await ui.unmount()
 })
 
