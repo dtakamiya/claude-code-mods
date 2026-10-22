@@ -97,6 +97,7 @@ export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseli
           lowUsd: archive.sinceBaseline.lowUsd + low,
           highUsd: archive.sinceBaseline.highUsd + high,
           cacheWrite: archive.sinceBaseline.cacheWrite + record.tokens.cacheWrite,
+          unpricedTurns: (archive.sinceBaseline.unpricedTurns ?? 0) + (record.costUsd === null ? 1 : 0),
         }
       : archive.sinceBaseline,
   }

@@ -103,7 +103,13 @@ export type ArchivedTurns = {
   /** 単価はあるが内訳を持たない（0.23.0 より前に記録した）ターンの数。古い状態には無い。 */
   readonly partsMissingTurns?: number
   /** 畳んだターンのうち、基準点より後に完了したぶん。実コストとの比較（TTL の注記）で使う。 */
-  readonly sinceBaseline: { readonly lowUsd: number; readonly highUsd: number; readonly cacheWrite: number }
+  readonly sinceBaseline: {
+    readonly lowUsd: number
+    readonly highUsd: number
+    readonly cacheWrite: number
+    /** そのうち単価不明のターン数（推定に入らないが実コストには入る）。0.32.3 で追加。古い状態・基準点より後に畳んでいない集計には無い（0 扱い）。 */
+    readonly unpricedTurns?: number
+  }
 }
 
 export type ReviewState = {

@@ -44,10 +44,17 @@ const isPricedModel = (model: string): boolean => ratesFor(model, 0) !== null
 /** 同じモデルの effort 変更が、キャッシュを切らす切替として数えられるか。 */
 const effortChangeCountsAsSwitch = (model: string): boolean => isPricedModel(model) && !keepsCacheOnEffortChange(model)
 
+/**
+ * effort の切替として数えるのは、両方のターンで effort が分かっているときだけ。
+ * 応答のない（中断した）ターンなどは effort が null になるので、high → null → high を 2 回の切替と数えない。
+ */
+const isEffortChange = (prev: TurnRecord, current: TurnRecord): boolean =>
+  prev.effort !== null && current.effort !== null && prev.effort !== current.effort
+
 function switchKind(prev: TurnRecord, current: TurnRecord): SwitchKind | null {
   if (prev.model === UNKNOWN_MODEL || current.model === UNKNOWN_MODEL) return null
   if (normalizeModelId(prev.model) !== normalizeModelId(current.model)) return 'model'
-  if (prev.effort === current.effort || !effortChangeCountsAsSwitch(current.model)) return null
+  if (!isEffortChange(prev, current) || !effortChangeCountsAsSwitch(current.model)) return null
   return 'effort'
 }
 

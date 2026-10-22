@@ -124,6 +124,39 @@ test('基準点が遅れたとき、基準点より前のターンは上限推�
   expect(notes).toHaveLength(1)
 })
 
+test('基準点より後に単価不明のターンがあれば、その費用は推定に入らないので、実コストの注記を出さない', () => {
+  // Arrange: 単価のあるターンだけなら注記が出る条件（実 0.5 > 上限 0.2）に、単価不明のターンを 1 件足す
+  const unpriced: TurnRecord = { ...postBaselineTurn, turnId: 'gw', model: 'gateway-model-9', costUsd: null, costUpperUsd: null }
+
+  // Act
+  const notes = ttlNotesOf({ baseline: 5, current: 5.5, baselineTurns: 0 }, [postBaselineTurn, postBaselineTurn, unpriced])
+
+  // Assert
+  expect(notes).toEqual([])
+})
+
+test('基準点より後に畳んだぶんに単価不明のターンがあれば、実コストの注記を出さない', () => {
+  // Arrange
+  const archived = {
+    turns: 10,
+    subagents: 0,
+    advisorCalls: 0,
+    groups: [],
+    pricedUsd: 0,
+    unpricedTurns: 1,
+    highUsd: 0,
+    sinceBaseline: { lowUsd: 0, highUsd: 0, cacheWrite: 0, unpricedTurns: 1 },
+  }
+
+  // Act
+  const notes = textsOf({ turns: [postBaselineTurn, postBaselineTurn], sessionCostUsd: { baseline: 5, current: 5.5, baselineTurns: 0 }, archived }).filter(
+    text => text.includes(TTL_MARK),
+  )
+
+  // Assert
+  expect(notes).toEqual([])
+})
+
 test('基準点が未取得なら、キャッシュ書込が多くても実コストの注記は出さない', () => {
   // Act
   const notes = ttlNotesOf({ baseline: null, current: 5.5 }, [postBaselineTurn, postBaselineTurn])
