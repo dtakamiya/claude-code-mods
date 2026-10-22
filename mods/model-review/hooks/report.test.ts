@@ -179,6 +179,10 @@ test('見出しの順序と用語はペインと同じで、妥当性が最初�
     [
       turn({ turnId: 't1', toolCount: 0, firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
       turn({ turnId: 's1', agentId: 'a1', model: 'claude-haiku-5-5' }),
+      // 直近の指摘（Opus の軽作業 3 件で過剰）。ペインは指摘があるときだけ内訳の見出しを出す。
+      ...['o1', 'o2', 'o3'].map(turnId =>
+        turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 }),
+      ),
     ],
     null,
     null,

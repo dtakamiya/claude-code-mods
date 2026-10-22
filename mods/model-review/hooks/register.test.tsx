@@ -488,7 +488,7 @@ async function runLightOpusTurn($: Engine, turnId: string) {
   await $.turn.complete({ answer: '', durationMs: 1_000, isAborted: false, turnId, reason: 'answer', usage: OPUS_USAGE } as never)
 }
 
-test('Pane のタイトル行は推定コストを先頭に出し、ターン数とサブエージェント数はその後ろに置く', async ($, on) => {
+test('Pane のタイトル行は先頭にターン数とサブエージェント数を置き、推定コストは出さない（コスト行に出す）', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
   await $.session.start(SESSION_START)
@@ -500,7 +500,7 @@ test('Pane のタイトル行は推定コストを先頭に出し、ターン数
   const title = (await ui.findAll({ type: 'Text' })).find(element => element.text.includes('サブエージェント'))
 
   // Assert
-  expect(title?.text).toMatch(/^推定 \$3\.0000 .*1 ターン.*サブエージェント 0/)
+  expect(title?.text).toMatch(/^1 ターン  ·  サブエージェント 0$/)
   await ui.unmount()
 })
 
@@ -575,7 +575,7 @@ test('Pane の過剰の例文は切り詰めず折り返す', async ($, on) => {
   await ui.unmount()
 })
 
-test('Pane の末尾に「/model-review で更新」を dim の 1 行で出す', async ($, on) => {
+test('実コストがあるとき、Pane の末尾に「/model-review で更新」を dim の 1 行で出す', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
   await $.session.start(SESSION_START)
@@ -587,6 +587,21 @@ test('Pane の末尾に「/model-review で更新」を dim の 1 行で出す',
 
   // Assert
   expect(await ui.find({ type: 'Text', text: /^\/model-review で更新$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('実コストが取れないときは、Pane の末尾に「/model-review で更新」を出さない', async ($, on) => {
+  // Arrange: 累計コストが取れない（undefined）ので、実コストは null。
+  answerEngine(on, () => undefined, true)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_RUN)
+
+  // Act
+  const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: PANE_PROPS } as never)
+
+  // Assert
+  expect(await ui.find({ type: 'Text', text: /^\/model-review で更新$/ })).toBeUndefined()
   await ui.unmount()
 })
 

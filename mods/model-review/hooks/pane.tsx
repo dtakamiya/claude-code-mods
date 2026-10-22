@@ -32,13 +32,7 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
   const renderRow = (row: PaneRow) => {
     switch (row.kind) {
       case 'title':
-        return (
-          <Text wrap="wrap">
-            {'推定 '}
-            <Text bold>{row.costText}</Text>
-            {sub(`  ·  ${row.turns} ターン  ·  サブエージェント ${row.subagents}`)}
-          </Text>
-        )
+        return <Text wrap="wrap">{sub(`${row.turns} ターン  ·  サブエージェント ${row.subagents}`)}</Text>
       case 'conclusion':
         return <Text bold wrap="wrap" color={TONE_COLOR[row.tone]}>{row.text}</Text>
       case 'heading':

@@ -60,6 +60,15 @@ function concernStatus(present: readonly Concern[]): Status | null {
 }
 
 /**
+ * 結論が「目立った指摘なし」を言うか。直近の窓に指摘がなく、状態を上げる警告もなく、全ターン単価不明でもないとき。
+ * conclusionOf の最後の分岐と、ペイン（pane-model.ts）の「✓ 指摘なし」行・見出しの判定が、この 1 つを共有する。
+ */
+export function saysNoConcerns(concerns: readonly Concern[], alerts: readonly Note[], coverage: PriceCoverage): boolean {
+  const { recent } = partitionByRecency(concerns.filter(concern => concern.count > 0))
+  return recent.length === 0 && !alerts.some(raisesStatus) && !isAllUnpriced(coverage)
+}
+
+/**
  * 状態は重い順に 要対応（不足）> 要確認（過剰・サブ・切替の指摘、または再構築の連続・TTL 乖離）>
  * 判定不能（全ターン単価不明）> 参考（委譲だけ）> 問題なし。
  * 問題なしは「判定でき、かつ指摘も動的な警告もない」ときだけ。
@@ -97,7 +106,8 @@ export function conclusionOf(concerns: readonly Concern[], alerts: readonly Note
     const others = alerts.length - 1
     return { text: `${lead}${first.brief ?? first.text}${others > 0 ? ` · ほか ${others} 件` : ''}${pastPart}${unpriced}`, tone: status.tone }
   }
-  if (status === STATUS.unknown) {
+  // 直近の指摘も状態を上げる警告もない分岐では、全ターン単価不明のときだけ「指摘なし」と言えない（statusOf の判定と同じ）。
+  if (!saysNoConcerns(concerns, alerts, coverage)) {
     return { text: `${lead}全 ${coverage.totalTurns} ターンが単価不明${pastPart}${alertSuffix(alerts.length)}`, tone: status.tone }
   }
   const pastNone = past === '' ? '' : `（${past}）`

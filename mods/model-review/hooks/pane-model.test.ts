@@ -4,6 +4,8 @@ import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL } from './conclusion'
 import { cellWidth, formatUsdRange } from './format'
+import { HEADING, NO_CONCERNS_TEXT } from './labels'
+import { ALWAYS_NOTE } from './notes'
 import { BAR_WIDTH, MIN_BAR_WIDTH, barWidthFor, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 
@@ -35,7 +37,7 @@ test('記録がなければ、先頭に結論「まだ記録がありません�
   expect(rows[0]).toEqual({ kind: 'conclusion', text: '結論: まだ記録がありません', tone: 'plain' })
 })
 
-test('先頭はターン数・サブエージェント数・推定コストのタイトル行', () => {
+test('先頭はターン数・サブエージェント数のタイトル行（推定の金額はタイトルに出さず、コスト行に任せる）', () => {
   // Arrange
   const turns = [turn({}), turn({ turnId: 't2', agentId: 'a1', model: 'claude-haiku-5-5', costUsd: 1 })]
 
@@ -43,7 +45,7 @@ test('先頭はターン数・サブエージェント数・推定コストの�
   const title = buildPaneRows(review(turns)).find(row => row.kind === 'title')
 
   // Assert
-  expect(title).toEqual({ kind: 'title', turns: 2, subagents: 1, costText: '$4.0000' })
+  expect(title).toEqual({ kind: 'title', turns: 2, subagents: 1 })
 })
 
 test('コスト比のバーは合計に対する割合で埋まる', () => {
@@ -189,7 +191,7 @@ test('妥当性セクションは内訳より上にあり、見出しは件数�
   expect(headings[1]).toContain('モデル × effort')
 })
 
-test('指摘がなければ OK 行、軽作業に重い設定ならバッジを出す', () => {
+test('結論が指摘なしを言うとき、ペインは OK 行も妥当性の見出しも出さない（軽作業に重い設定ならバッジは出す）', () => {
   // Arrange
   const heavyForLight = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
 
@@ -198,8 +200,33 @@ test('指摘がなければ OK 行、軽作業に重い設定ならバッジを�
   const flagged = buildPaneRows(review([heavyForLight('a'), heavyForLight('b'), heavyForLight('c')]))
 
   // Assert
-  expect(clean).toContainEqual({ kind: 'ok', text: '指摘なし' })
+  expect(clean[0]).toMatchObject({ kind: 'conclusion', text: '✓ 問題なし · 結論: 目立った指摘なし' })
+  expect(clean.some(row => row.kind === 'ok')).toBe(false)
+  expect(clean.some(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))).toBe(false)
   expect(flagged.some(row => row.kind === 'badge' && row.label === '過剰')).toBe(true)
+})
+
+test('結論が要確認（注意で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる注意）。
+  const rebuild = (turnId: string) => turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
+  const rows = buildPaneRows(review(['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuild)))
+
+  // Assert
+  expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'warning' })
+  expect(rows).toContainEqual({ kind: 'ok', text: NO_CONCERNS_TEXT })
+  expect(rows.some(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))).toBe(true)
+})
+
+test('全件単価不明のときは、判定不能の結論に加えて OK 行を出す', () => {
+  // Arrange
+  const unpriced = (turnId: string) => turn({ turnId, costUsd: null, costUpperUsd: null })
+
+  // Act
+  const rows = buildPaneRows(review(['u0', 'u1', 'u2'].map(unpriced)))
+
+  // Assert
+  expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'plain' })
+  expect(rows).toContainEqual({ kind: 'ok', text: NO_CONCERNS_TEXT })
 })
 
 const rowsOf = (turns: TurnRecord[], cost?: ReviewState['sessionCostUsd']): PaneRow[] => buildPaneRows(review(turns, cost))
@@ -330,12 +357,20 @@ test('advisor の呼び出しがあれば回数を出し、金額には含まれ
   expect(kv?.kind === 'kv' ? kv.value : '').toContain('含まれません')
 })
 
-test('fast mode の割増が推定に含まれない旨を、常に注記する', () => {
+test('advisor がないときは、末尾の注記に fast mode と advisor の費用の免責を出す', () => {
   // Act
   const notes = noteTexts(rowsOf([turn({ toolCount: 5 })]))
 
   // Assert
-  expect(notes.some(text => text.includes('fast mode'))).toBe(true)
+  expect(notes).toContain(ALWAYS_NOTE)
+})
+
+test('advisor の行があるときは、末尾の注記から advisor の句を外す（金額の免責は advisor 行に出ている）', () => {
+  // Act
+  const notes = noteTexts(rowsOf([turn({ toolCount: 5, advisorCalls: 2 })]))
+
+  // Assert
+  expect(notes).toContain('推定に含まれないもの: fast mode の割増。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。')
 })
 
 test('実行中のターンがあれば、完了前でも「実行中」の行にツール数と推定コストを出す', () => {
@@ -404,12 +439,12 @@ test('ループ別の集計は、メインとサブエージェントの両方�
   expect(headings(mainOnly)).not.toContain('ループ別（キャッシュ効率）')
 })
 
-test('タイトルの推定は、上限のあるターンがあれば幅で表示する', () => {
+test('推定は、上限のあるターンがあれば幅でコスト行に表示する', () => {
   // Arrange: 下限 $3、上限 $4.2。
-  const title = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })])).find(row => row.kind === 'title')
+  const cost = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })])).find(row => row.kind === 'kv' && row.label === 'コスト')
 
   // Assert
-  expect(title).toMatchObject({ kind: 'title', costText: '$3.0000〜$4.2000' })
+  expect(cost?.kind === 'kv' ? cost.value : '').toContain('$3.0000〜$4.2000')
 })
 
 test('状況に応じた警告は「注意」バッジにし、常に出す免責は dim の注記のまま残す', () => {
@@ -519,12 +554,20 @@ test('実コストが取れないときは「取得できませんでした（/m
   })
 })
 
-test('ペインの末尾に、dim の「/model-review で更新」の 1 行を出す', () => {
+test('実コストがあるときは、ペインの末尾に dim の「/model-review で更新」の 1 行を出す', () => {
+  // Act
+  const rows = rowsOf([turn({})], { baseline: 10, current: 14 })
+
+  // Assert
+  expect(rows.at(-1)).toEqual({ kind: 'note', text: '/model-review で更新' })
+})
+
+test('実コストが取れないときは、末尾に「/model-review で更新」を出さない（コスト行の再取得の案内に任せる）', () => {
   // Act
   const rows = rowsOf([turn({})])
 
   // Assert
-  expect(rows.at(-1)).toEqual({ kind: 'note', text: '/model-review で更新' })
+  expect(rows).not.toContainEqual({ kind: 'note', text: '/model-review で更新' })
 })
 
 test('用語行は、画面に出ている行の用語だけを末尾にまとめる', () => {
