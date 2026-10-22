@@ -115,16 +115,18 @@ export function paceText(pace: WindowPace): string {
   return parts.join(' · ')
 }
 
+const HINT_PREFIX = '上限まで'
+
 /** 「5h 72% · このペースだと約 40 分で上限（目安） · リセットまで 1 時間 10 分」。 */
 export const paceLine = (pace: WindowPace): string => `${rateLabel(pace.kind)} ${paceText(pace)}`
 
-/** status 行用の短い印。上限に届く見込みのときだけ「↑40分」「↑1時間10分」。 */
+/** status 行用の短い印。上限に届く見込みのときだけ「上限まで40分」「上限まで1時間10分」（矢印だけでは意味が読めないため語で書く）。 */
 export function paceHint(pace: WindowPace): string | undefined {
   if (pace.etaMs === null || pace.percent >= 100 || !reachesBeforeReset(pace)) return undefined
   const minutes = Math.max(1, Math.round(pace.etaMs / MS_PER_MINUTE))
-  if (minutes < MINUTES_PER_HOUR) return `↑${minutes}分`
+  if (minutes < MINUTES_PER_HOUR) return `${HINT_PREFIX}${minutes}分`
   const rest = minutes % MINUTES_PER_HOUR
-  return `↑${Math.floor(minutes / MINUTES_PER_HOUR)}時間${rest === 0 ? '' : `${rest}分`}`
+  return `${HINT_PREFIX}${Math.floor(minutes / MINUTES_PER_HOUR)}時間${rest === 0 ? '' : `${rest}分`}`
 }
 
 /** status 行に添える印（枠の種類 → 印）。 */

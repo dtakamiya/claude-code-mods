@@ -21,11 +21,12 @@ const isUsable = (value: number): boolean => Number.isFinite(value) && value >= 
 /**
  * トースト文。キャッシュが温かくない（捨てるものがない）・同じモデルへの切替・見積りが使えないときは undefined。
  * 見積りは engine の値で、単価が既定の仮定のときはそう添える。
+ * 毎回出るトーストなので、「温かいキャッシュ」などの用語や「切替は止めません」の断りは書かず、かかる額を先に短く書く。
  */
 export function formatSwitchNotice(input: PreSwitch): string | undefined {
   if (!input.isCacheWarm || input.fromModel === input.toModel) return undefined
   if (!isUsable(input.contextTokens) || !isUsable(input.estimatedCacheWriteUsd)) return undefined
   const usd = `約 $${input.estimatedCacheWriteUsd.toFixed(2)}`
-  const assumed = input.pricing === 'default' ? '（単価は仮定）' : ''
-  return `${input.fromModel} → ${input.toModel}: 温かいキャッシュを捨て、${formatInt(Math.round(input.contextTokens))} tokens を書き直す見積り ${usd}${assumed}（目安・切替は止めません）`
+  const assumed = input.pricing === 'default' ? '・単価は仮定' : ''
+  return `${input.fromModel} → ${input.toModel}: キャッシュを作り直すため${usd} かかる見込み（${formatInt(Math.round(input.contextTokens))} tokens${assumed}）`
 }

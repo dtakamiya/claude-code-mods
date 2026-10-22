@@ -19,12 +19,16 @@ test('温かいキャッシュの切替は、書き直す tokens と見積りを
   expect(text).not.toContain('仮定')
 })
 
+test('文面は額を先に短く書き、用語「温かいキャッシュ」や「切替は止めません」の断りを出さない', () => {
+  expect(formatSwitchNotice(BASE)).toBe('claude-opus-5-5 → claude-sonnet-5-5: キャッシュを作り直すため約 $0.30 かかる見込み（120,000 tokens）')
+})
+
 test('キャッシュが冷えているときは出さない', () => {
   expect(formatSwitchNotice({ ...BASE, isCacheWarm: false })).toBeUndefined()
 })
 
 test('単価が既定の仮定のときは「単価は仮定」と添える', () => {
-  expect(formatSwitchNotice({ ...BASE, pricing: 'default' })).toContain('単価は仮定')
+  expect(formatSwitchNotice({ ...BASE, pricing: 'default' })).toContain('（120,000 tokens・単価は仮定）')
 })
 
 test('同じモデルへの切替・使えない見積りは出さない', () => {

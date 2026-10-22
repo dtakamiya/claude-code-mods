@@ -541,7 +541,7 @@ test('注意がなければ、結論行に「注意」は出さない', () => {
   expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').not.toContain(ALERT_LABEL)
 })
 
-test('実コストが取れないときは「取得できませんでした（/model-review で再取得）」と出す', () => {
+test('実コストが取れないときは、ペイン・テキストと同じ「取得できません（…/model-review で再取得）」を出す', () => {
   // Act
   const rows = rowsOf([turn({})])
 
@@ -549,7 +549,7 @@ test('実コストが取れないときは「取得できませんでした（/m
   expect(rows).toContainEqual({
     kind: 'kv',
     label: 'コスト',
-    value: '推定 $3.0000 / 実コスト 取得できませんでした（/model-review で再取得）',
+    value: '推定 $3.0000 / 実コスト 取得できません（取れない環境もあります。/model-review で再取得）',
     tone: 'plain',
   })
 })

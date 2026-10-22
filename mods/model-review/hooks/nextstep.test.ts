@@ -46,7 +46,7 @@ test('モデル起因の過剰（メイン）は Sonnet への切替を、1 タ�
   expect(text).toBe(`${NEXT_STEP_PREFIX}軽作業が続くあいだは /model sonnet で Sonnet へ（軽作業の平均で 1 ターンあたり約 -$0.0200、再構築 +$0.0024・約 1 ターンで回収の目安。戻すときにも再構築）`)
 })
 
-test('回収に MAX_RECOVERABLE_TURNS を超えるターンがかかるときは「切替の元は取りにくい」と添える', () => {
+test('回収に MAX_RECOVERABLE_TURNS を超えるターンがかかるときは、「元を取りにくい」を先に書き、切り替えるならどれだけ続くときかを添える', () => {
   // Arrange: 書込 100,000 tokens。Sonnet への再構築 $0.24 を $0.02/ターンで回収するには 12 ターン。
   const records = repeat(3, index =>
     turn({ turnId: `t${index}`, firstStepCacheWrite: 100_000, firstStepPromptTokens: 100_000 }),
@@ -56,8 +56,10 @@ test('回収に MAX_RECOVERABLE_TURNS を超えるターンがかかるときは
   const text = nextStepText(concernOf(records, 'overspec'), records)
 
   // Assert
-  expect(text).toContain('再構築 +$0.2400・約 12 ターンで回収の目安')
-  expect(text).toContain(`${MAX_RECOVERABLE_TURNS} ターンを超えるので切替の元は取りにくい`)
+  expect(text).toBe(
+    `${NEXT_STEP_PREFIX}Sonnet への切替は元を取りにくい（再構築 +$0.2400 の回収に約 12 ターン、軽作業の平均で 1 ターンあたり約 -$0.0200）。軽作業が 12 ターン以上続くなら /model sonnet（戻すときにも再構築）`,
+  )
+  expect(text).not.toContain('回収の目安')
 })
 
 test('再構築コストを見積もれる記録がないときは、回収の見込みを出せないと書く', () => {

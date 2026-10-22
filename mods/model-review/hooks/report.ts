@@ -27,6 +27,7 @@ import {
   type ConcernKind,
 } from './analyze'
 import {
+  ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
   advisorCallText,
   allUnpricedText,
@@ -38,6 +39,7 @@ import {
   groupFacts,
   loopView,
   moneyLineText,
+  signedUsdText,
   subagentCount,
   toolDetailText,
   turnOriginLabel,
@@ -78,16 +80,19 @@ function costLines(review: ReviewState, records: readonly TurnRecord[], isSubscr
   const growthLines = growth === null ? [] : [`${GROWTH_LABEL}: ${growth.trend}`, ...(growth.compact === null ? [] : [`  compact の前後: ${growth.compact}`]), ...(growth.hint === null ? [] : [`  → ${growth.hint}`]), `  ${growth.note}`]
   const diff = costDiff(review)
   if (diff === null) {
-    return [estimateLine, ...breakdownLines, ...growthLines, 'セッション実コスト: 取得できません（コストの記録がない環境）']
+    return [estimateLine, ...breakdownLines, ...growthLines, `セッション${ACTUAL_COST_UNAVAILABLE_TEXT.replace(' ', ': ')}`]
   }
   return [
     estimateLine,
     ...breakdownLines,
     ...growthLines,
     `セッション実コスト（${isSubscription ? 'API 換算・請求額ではない・' : ''}読み込み後）: ${formatUsd(diff.actualUsd)}`,
-    `差（実コスト − 推定）: ${formatUsd(diff.diffUsd)}（推定は単価表の値。キャッシュ書込みは 5 分単価で概算し、ターン外の要求は含まない）`,
+    `差（実コスト − 推定）: ${signedUsdText(diff.diffUsd)}（${diffDirection(diff.diffUsd)}推定は単価表の値。キャッシュ書込は 5 分単価で概算し、ターン外の要求は含まない）`,
   ]
 }
+
+/** 差の向き。括弧を重ねないよう、後ろの説明と同じ括弧の中に入れる文の頭として返す。差が 0 なら空文字。 */
+const diffDirection = (diffUsd: number): string => (diffUsd > 0 ? '実が大きい。' : diffUsd < 0 ? '推定が大きい。' : '')
 
 /** 指摘 1 件の行。過去の指摘には「次の一手」を付けない（いま直す対象ではないため）。 */
 function oneConcernLines(concern: Concern, records: readonly TurnRecord[], withNext: boolean): string[] {
@@ -186,7 +191,7 @@ export function buildReportLines(
     '',
     `対象: ${records.length + (review.archived?.turns ?? 0)} ターン（サブエージェント ${subagentCount(records, review.archived)} 件）。Mod 読み込み前のターンは含みません。`,
     '',
-    `■ ${HEADING.concerns}（ヒューリスティック）`,
+    `■ ${HEADING.concerns} · ヒューリスティック`,
     ...concernLines(concerns, records, mutedLine, review.archived),
     '',
     `■ ${HEADING.groups}`,

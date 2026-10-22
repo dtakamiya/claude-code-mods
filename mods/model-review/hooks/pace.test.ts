@@ -28,7 +28,7 @@ test('2 回以上の測定から増え方を求め、上限までとリセット
 
   // Assert
   expect(paceLine(pace!)).toBe('5h 72% · このペースだと約 23 分で上限（目安） · リセットまで 1 時間')
-  expect(paceHints(samples, T0 + 10 * MIN).get('five_hour')).toBe('↑23分')
+  expect(paceHints(samples, T0 + 10 * MIN).get('five_hour')).toBe('上限まで23分')
 })
 
 test('測定が 1 回だけ、または間隔が短すぎるときは、ペースを出さずリセットまでだけ示す', () => {
@@ -166,9 +166,9 @@ test('status 行には短い印だけを添え、印がなければ今までと�
   const rateLimits = [{ kind: 'five_hour', percentUsed: 72 }]
 
   // Act / Assert
-  expect(formatStatus({ costUsd: 1.234, rateLimits }, new Map([['five_hour', '↑40分']]))).toBe('API換算 $1.23 · 5h 72%（↑40分）')
+  expect(formatStatus({ costUsd: 1.234, rateLimits }, new Map([['five_hour', '上限まで40分']]))).toBe('API換算 $1.23 · 5h 72%（上限まで40分）')
   expect(formatStatus({ costUsd: 1.234, rateLimits })).toBe('API換算 $1.23 · 5h 72%')
-  expect(formatStatus({ costUsd: 1.234, rateLimits: [] }, new Map([['five_hour', '↑40分']]))).toBe('実コスト $1.23')
+  expect(formatStatus({ costUsd: 1.234, rateLimits: [] }, new Map([['five_hour', '上限まで40分']]))).toBe('実コスト $1.23')
 })
 
 const review = {

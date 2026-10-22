@@ -70,7 +70,19 @@ test('実コストと推定の差を、同じ基準点から計算して表示�
   // Assert
   expect(text).toContain('合計推定コスト: $0.5000')
   expect(text).toContain('セッション実コスト（読み込み後）: $0.7500')
-  expect(text).toContain('差（実コスト − 推定）: $0.2500')
+  expect(text).toContain('差（実コスト − 推定）: +$0.2500（実が大きい。推定は単価表の値')
+})
+
+test('実コストが推定より小さいときの差は「-$」の形で、向きを添える（$-0.0187 の形にしない）', () => {
+  // Arrange: 推定 0.5、実コスト 0.4（基準点から）。
+  const review = withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], 0.25, 0.65)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+
+  // Assert
+  expect(text).toContain('差（実コスト − 推定）: -$0.1000（推定が大きい。推定は単価表の値')
+  expect(text).not.toContain('$-')
 })
 
 test('基準点がない環境では実コストを取得できないと表示する', () => {

@@ -298,7 +298,7 @@ test('基準点から現在までの実コストと、推定との差を表示�
 
   // Assert
   expect(ran.text).toContain('セッション実コスト（読み込み後）: $3.0000')
-  expect(ran.text).toContain('差（実コスト − 推定）: $0.0000')
+  expect(ran.text).toContain('差（実コスト − 推定）: +$0.0000（推定は単価表の値')
 })
 
 test('Pane は先頭の結論行を terminal と desktop の両方で描く', async ($, on) => {
