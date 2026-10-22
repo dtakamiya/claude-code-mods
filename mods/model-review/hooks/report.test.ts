@@ -290,3 +290,27 @@ test('費用の推移の候補は、テキストレポートとペインの両�
   expect(text).toContain('  → 直近の平均が最初の 3 倍以上です。候補: /compact')
   expect(rows).toContain('→ 直近の平均が最初の 3 倍以上です。候補: /compact')
 })
+
+test('TTL の説明（1 時間単価）は、ペインとテキストの出力全体で免責の 1 行だけに出る', () => {
+  // Arrange: 警告（書込の連続・TTL 乖離・切替）が出ない典型の記録。内訳と差の行は出る。架空データ。
+  const costParts = { input: 0.05, output: 0.25, cacheRead: 0.12, cacheWrite: 0.58 }
+  const turns = Array.from({ length: 6 }, (_, index) => turn({ turnId: `t${index}`, costUsd: 1, costParts }))
+  const review = withTurns(turns, 10, 16.5)
+
+  // Act
+  const rows = buildPaneRows(review, {}, undefined, 80)
+  const lines = buildReportLines(review)
+
+  // Assert: 前提（警告なし・内訳と差の行がある）
+  expect(rows.some(row => row.kind === 'badge')).toBe(false)
+  expect(rows.some(row => row.kind === 'note' && row.text.startsWith('内訳の合計'))).toBe(true)
+  expect(lines.some(line => line.includes('差（実コスト − 推定）'))).toBe(true)
+  // Assert: 1 時間単価 はペインでは免責の 1 行、テキストでは免責の 1 行だけ。1 時間 TTL は出ない
+  const paneHits = rows.filter(row => JSON.stringify(row).includes('1 時間単価'))
+  expect(paneHits.map(row => row.kind)).toEqual(['note'])
+  expect(paneHits.every(row => row.kind === 'note' && row.text.startsWith('含まない:'))).toBe(true)
+  const textHits = lines.filter(line => line.includes('1 時間単価'))
+  expect(textHits.map(line => line.startsWith('含まない:'))).toEqual([true])
+  expect(JSON.stringify(rows)).not.toContain('1 時間 TTL')
+  expect(lines.join('\n')).not.toContain('1 時間 TTL')
+})

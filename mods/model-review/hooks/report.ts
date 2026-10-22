@@ -81,7 +81,7 @@ function costLines(section: CostSection, isSubscription: boolean): string[] {
     ...breakdownLines,
     ...growthLines,
     `セッション実コスト（${isSubscription ? 'API 換算・請求額ではない・' : ''}読み込み後）: ${formatUsd(diff.actualUsd)}`,
-    `差（実コスト − 推定）: ${signedUsdText(diff.diffUsd)}（${diffDirection(diff.diffUsd)}推定は単価表の値。キャッシュ書込は 5 分単価で概算し、ターン外の要求は含まない）`,
+    `差（実コスト − 推定）: ${signedUsdText(diff.diffUsd)}（${diffDirection(diff.diffUsd)}推定は単価表の値。ターン外の要求は含まない）`,
   ]
 }
 

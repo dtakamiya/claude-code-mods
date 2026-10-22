@@ -37,18 +37,18 @@ export const splitNotes = (notes: readonly Note[]): { readonly alerts: readonly 
 })
 
 const FAST_MODE_CLAUSE = 'fast mode の割増'
-const ADVISOR_COST_CLAUSE = 'advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）'
-const NON_TOKEN_CLAUSE = 'Web 検索などトークン以外の料金'
-const PRICE_SCOPE_SENTENCE = '単価は Claude API の価格で、Bedrock / Vertex の価格と地域の割増は含みません。'
-const TTL_SENTENCE = 'キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
+const ADVISOR_COST_CLAUSE = 'advisor の費用（取得不可）'
+const NON_TOKEN_CLAUSE = 'トークン以外の料金（Web 検索など）'
+const REGION_PRICE_CLAUSE = 'Bedrock / Vertex 価格と地域割増'
+const TTL_SENTENCE = '推定は書込の TTL 不明のため 5 分単価（下限）〜1 時間単価（上限）の幅'
 
 /**
  * 末尾の免責。句の並びから組み立てる（文字列の置換で句を外すと、文言を変えたときに何も起きずに外れなくなるため）。
  * omitAdvisor は、advisor の行（回数と金額の免責）を出すペインで advisor の句を重ねないためのもの。
  */
 export function alwaysNoteText(options: { readonly omitAdvisor?: boolean } = {}): string {
-  const excluded = [FAST_MODE_CLAUSE, ...(options.omitAdvisor === true ? [] : [ADVISOR_COST_CLAUSE]), NON_TOKEN_CLAUSE]
-  return `推定に含まれないもの: ${excluded.join('、')}。${PRICE_SCOPE_SENTENCE}${TTL_SENTENCE}`
+  const excluded = [FAST_MODE_CLAUSE, ...(options.omitAdvisor === true ? [] : [ADVISOR_COST_CLAUSE]), NON_TOKEN_CLAUSE, REGION_PRICE_CLAUSE]
+  return `含まない: ${excluded.join('・')}。${TTL_SENTENCE}`
 }
 
 export const ALWAYS_NOTE = alwaysNoteText()

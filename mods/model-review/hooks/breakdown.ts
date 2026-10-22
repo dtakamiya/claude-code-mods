@@ -78,7 +78,7 @@ export function breakdownHint(breakdown: CostBreakdown): string | null {
 /** 除いたターンの注記と、金額の定義。 */
 export function breakdownNote(breakdown: CostBreakdown): string {
   const excluded = breakdown.excludedTurns > 0 ? `、単価不明または内訳のない ${breakdown.excludedTurns} ターンを除く` : ''
-  return `内訳の合計 ${formatUsd(breakdown.totalUsd)}（推定の下限と同じ基準。書込は 5 分単価${excluded}。1 時間 TTL ならもっと大きくなる幅があります）`
+  return `内訳の合計 ${formatUsd(breakdown.totalUsd)}（推定の下限と同じ基準${excluded}）`
 }
 
 export type BreakdownView = {
