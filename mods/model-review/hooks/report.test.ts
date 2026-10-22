@@ -173,12 +173,16 @@ test('コマンド出力にも、ヒット率・高コストターン・切替�
   expect(text).toContain('fast mode')
 })
 
-test('見出しの順序と用語はペインと同じで、指摘がなければ内訳の見出しは出ず、グループが最初に来る', () => {
+test('見出しの順序と用語はペインと同じで、妥当性が最初に来る', () => {
   // Arrange: 指摘・ループ別・切替見積りが全部出る記録。
   const review = withTurns(
     [
       turn({ turnId: 't1', toolCount: 0, firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
       turn({ turnId: 's1', agentId: 'a1', model: 'claude-haiku-5-5' }),
+      // 直近の指摘（Opus の軽作業 3 件で過剰）。ペインは指摘があるときだけ内訳の見出しを出す。
+      ...['o1', 'o2', 'o3'].map(turnId =>
+        turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 }),
+      ),
     ],
     null,
     null,
@@ -191,7 +195,7 @@ test('見出しの順序と用語はペインと同じで、指摘がなけれ�
   const reportOrder = paneOrder.map(heading => text.indexOf(`■ ${heading}`))
 
   // Assert: ペインの見出しがすべてテキストにあり、同じ順序で並ぶ。
-  expect(paneOrder[0]).toBe(HEADING.groups)
+  expect(paneOrder[0]).toBe(HEADING.concerns)
   expect(reportOrder.every(index => index >= 0)).toBe(true)
   expect(reportOrder).toEqual([...reportOrder].sort((a, b) => a - b))
 })
