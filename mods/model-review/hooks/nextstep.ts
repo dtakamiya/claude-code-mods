@@ -26,9 +26,22 @@ function recoveryText(records: readonly TurnRecord[], savingPerTurnUsd: number):
   if (sonnet.rebuildUsd <= 0) return '、再構築はほぼなし'
   const turns = breakEvenTurns(sonnet.rebuildUsd, savingPerTurnUsd)
   const rebuild = `、再構築 +${formatUsd(sonnet.rebuildUsd)}`
-  if (turns === null) return rebuild
-  const hard = turns > MAX_RECOVERABLE_TURNS ? `。${MAX_RECOVERABLE_TURNS} ターンを超えるので切替の元は取りにくい` : ''
-  return `${rebuild}・約 ${turns} ターンで回収の目安${hard}`
+  return turns === null ? rebuild : `${rebuild}・約 ${turns} ターンで回収の目安`
+}
+
+/**
+ * 回収に MAX_RECOVERABLE_TURNS を超えるターンがかかる切替。勧めた直後に打ち消す文にならないよう、
+ * 「元を取りにくい」を先に書き、切り替えるならどれだけ続くときかを後に添える。それ以外は null。
+ */
+function hardRecoveryText(records: readonly TurnRecord[], savingPerTurnUsd: number): string | null {
+  const sonnet = estimateSwitchOptions(records).find(option => option.model === SONNET_REFERENCE_MODEL)
+  if (sonnet === undefined || sonnet.rebuildUsd <= 0) return null
+  const turns = breakEvenTurns(sonnet.rebuildUsd, savingPerTurnUsd)
+  if (turns === null || turns <= MAX_RECOVERABLE_TURNS) return null
+  return (
+    `Sonnet への切替は元を取りにくい（再構築 +${formatUsd(sonnet.rebuildUsd)} の回収に約 ${turns} ターン、軽作業の平均で 1 ターンあたり約 -${formatUsd(savingPerTurnUsd)}）。` +
+    `軽作業が ${turns} ターン以上続くなら /model sonnet（戻すときにも再構築）`
+  )
 }
 
 /** 直近のメインのターンのモデル（モデル不明は飛ばす）。見積りの基準と違い、compact 直後や単価不明のターンも含める。 */
@@ -44,6 +57,8 @@ function mainModelPiece(facts: OverspecFacts, records: readonly TurnRecord[]): s
     return '直近のメインはすでに Sonnet 以下なので、見直し済みなら対応不要'
   }
   const perTurn = facts.mainModelSavingsUsd === null ? null : facts.mainModelSavingsUsd / facts.mainModelTurns
+  const hard = perTurn === null ? null : hardRecoveryText(records, perTurn)
+  if (hard !== null) return hard
   const detail =
     perTurn === null ? '' : `（軽作業の平均で 1 ターンあたり約 -${formatUsd(perTurn)}${recoveryText(records, perTurn)}。戻すときにも再構築）`
   return `軽作業が続くあいだは /model sonnet で Sonnet へ${detail}`

@@ -29,6 +29,7 @@ import { nextStepText } from './nextstep'
 import { turnLabelText } from './turnref'
 import { ALWAYS_NOTE, buildNotes, splitNotes } from './notes'
 import {
+  ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
   actualCostUsd,
   actualWord,
@@ -165,7 +166,7 @@ function costRows(review: ReviewState, estimate: EstimateFacts, isSubscription: 
   const estimateText = estimateRangeText(estimate)
   const diff = costDiff(review)
   if (diff === null) {
-    return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / 実コスト 取得できませんでした（/model-review で再取得）`, tone: 'plain' }]
+    return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${ACTUAL_COST_UNAVAILABLE_TEXT}`, tone: 'plain' }]
   }
   return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }]
 }

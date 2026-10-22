@@ -158,6 +158,9 @@ export function estimateRangeText(estimate: EstimateFacts): string {
   return `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
 }
 
+/** 実コストが取れないときの文言。ペイン・テキストの金額行・コストの節で同じ説明にする。 */
+export const ACTUAL_COST_UNAVAILABLE_TEXT = '実コスト 取得できません（取れない環境もあります。/model-review で再取得）'
+
 /** 実額の語。サブスクの累計コストは API 単価での換算で請求額ではないので、そう明示する。 */
 export const actualWord = (isSubscription: boolean): string => (isSubscription ? '実（API 換算）' : '実')
 
@@ -168,7 +171,7 @@ export function moneyLineText(review: ReviewState, isSubscription: boolean): str
   const diff = costDiff(review)
   const actualPart =
     diff === null
-      ? '実コスト 取得できません'
+      ? ACTUAL_COST_UNAVAILABLE_TEXT
       : `${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）· 差 ${signedUsdText(diff.diffUsd)}${diffDirectionText(diff.diffUsd)}`
   return `金額: ${word} ${estimateRangeText(estimate)} · ${actualPart}`
 }
