@@ -23,7 +23,7 @@ import { archiveNote, mergeGroups } from './archive'
 import { cellWidth, formatUsd } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
-import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
+import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, saysNoConcerns, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { nextStepText } from './nextstep'
 import { turnLabelText } from './turnref'
@@ -41,6 +41,7 @@ import {
   groupFacts,
   hitRateText,
   loopView,
+  priceCoverageOf,
   signedUsdText,
   subagentCount,
   toolDetailText,
@@ -183,25 +184,30 @@ function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent:
   ]
 }
 
-/** 直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。止めている種類は最後に注記 1 行だけ。 */
-function concernRows(
+/**
+ * 妥当性の節（見出し・指摘・空行）。直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
+ * 止めている種類は最後に注記 1 行だけ。`noConcerns` は結論が「指摘なし」を言うとき（true なら OK 行を出さない）。
+ * 中身が 1 行も残らないときは、見出しと空行ごと出さない。
+ */
+function concernSectionRows(
   concerns: readonly Concern[],
   records: ReviewState['turns'],
   mutedLine: string | null,
   archived: ReviewState['archived'],
+  noConcerns: boolean,
 ): PaneRow[] {
   const { recent, past } = partitionByRecency(concerns)
   const numericNote = numericEffortNote(records, archived)
-  return [
-    ...(recent.length === 0
-      ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow]
-      : recent.flatMap(concern => oneConcernRows(concern, records, true))),
+  const body: PaneRow[] = [
+    ...recent.flatMap(concern => oneConcernRows(concern, records, true)),
+    ...(recent.length === 0 && !noConcerns ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow] : []),
     ...(past.length === 0
       ? []
       : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, records, false))]),
     ...(numericNote === null ? [] : [{ kind: 'note', text: numericNote } satisfies PaneRow]),
     ...(mutedLine === null ? [] : [{ kind: 'note', text: mutedLine } satisfies PaneRow]),
   ]
+  return body.length === 0 ? [] : [{ kind: 'heading', text: CONCERN_DETAIL_HEADING }, ...body, { kind: 'blank' }]
 }
 
 function topTurnRows(records: ReviewState['turns'], nowMs?: number): PaneRow[] {
@@ -325,6 +331,7 @@ export function buildPaneRows(
   const groups = mergeGroups(review.archived, groupByModelEffort(records))
   const { alerts, reliability } = splitNotes(buildNotes(review, nowMs))
   const advisor = advisorRows(records, review.archived)
+  const noConcerns = saysNoConcerns(concerns, alerts, priceCoverageOf(review))
   return [
     { kind: 'conclusion', ...buildVerdict(review, concerns, alerts) },
     { kind: 'blank' },
@@ -335,9 +342,7 @@ export function buildPaneRows(
     },
     { kind: 'blank' },
     ...live,
-    { kind: 'heading', text: CONCERN_DETAIL_HEADING },
-    ...concernRows(concerns, records, mutedLine, review.archived),
-    { kind: 'blank' },
+    ...concernSectionRows(concerns, records, mutedLine, review.archived, noConcerns),
     { kind: 'heading', text: HEADING.groups },
     ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
     { kind: 'blank' },

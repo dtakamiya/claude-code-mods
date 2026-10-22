@@ -4,6 +4,7 @@ import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL } from './conclusion'
 import { cellWidth, formatUsdRange } from './format'
+import { HEADING, NO_CONCERNS_TEXT } from './labels'
 import { ALWAYS_NOTE } from './notes'
 import { BAR_WIDTH, MIN_BAR_WIDTH, barWidthFor, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
@@ -190,7 +191,7 @@ test('妥当性セクションは内訳より上にあり、見出しは件数�
   expect(headings[1]).toContain('モデル × effort')
 })
 
-test('指摘がなければ OK 行、軽作業に重い設定ならバッジを出す', () => {
+test('結論が指摘なしを言うとき、ペインは OK 行も妥当性の見出しも出さない（軽作業に重い設定ならバッジは出す）', () => {
   // Arrange
   const heavyForLight = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
 
@@ -199,8 +200,33 @@ test('指摘がなければ OK 行、軽作業に重い設定ならバッジを�
   const flagged = buildPaneRows(review([heavyForLight('a'), heavyForLight('b'), heavyForLight('c')]))
 
   // Assert
-  expect(clean).toContainEqual({ kind: 'ok', text: '指摘なし' })
+  expect(clean[0]).toMatchObject({ kind: 'conclusion', text: '✓ 問題なし · 結論: 目立った指摘なし' })
+  expect(clean.some(row => row.kind === 'ok')).toBe(false)
+  expect(clean.some(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))).toBe(false)
   expect(flagged.some(row => row.kind === 'badge' && row.label === '過剰')).toBe(true)
+})
+
+test('結論が要確認（注意で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる注意）。
+  const rebuild = (turnId: string) => turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
+  const rows = buildPaneRows(review(['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuild)))
+
+  // Assert
+  expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'warning' })
+  expect(rows).toContainEqual({ kind: 'ok', text: NO_CONCERNS_TEXT })
+  expect(rows.some(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))).toBe(true)
+})
+
+test('全件単価不明のときは、判定不能の結論に加えて OK 行を出す', () => {
+  // Arrange
+  const unpriced = (turnId: string) => turn({ turnId, costUsd: null, costUpperUsd: null })
+
+  // Act
+  const rows = buildPaneRows(review(['u0', 'u1', 'u2'].map(unpriced)))
+
+  // Assert
+  expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'plain' })
+  expect(rows).toContainEqual({ kind: 'ok', text: NO_CONCERNS_TEXT })
 })
 
 const rowsOf = (turns: TurnRecord[], cost?: ReviewState['sessionCostUsd']): PaneRow[] => buildPaneRows(review(turns, cost))

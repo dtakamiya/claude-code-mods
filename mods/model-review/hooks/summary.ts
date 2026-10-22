@@ -8,7 +8,7 @@ import { formatDuration, formatInt, formatUsd, formatUsdRange } from './format'
 import { CONCERN_TEXT } from './labels'
 import { UNKNOWN_AGENT_TYPE } from './agenttype'
 import { describeAgentType, describeLoop, loopLabel, subagentHitRateLow, summarizeLoops, SUBAGENT_CACHE_NOTE } from './loops'
-import { conclusionOf, type Conclusion } from './conclusion'
+import { conclusionOf, type Conclusion, type PriceCoverage } from './conclusion'
 import { advisorCallTotal, type Note } from './notes'
 import { turnsSinceBaseline } from './state'
 import { describeOption, estimateSwitchOptions } from './whatif'
@@ -170,10 +170,14 @@ export function moneyLineText(review: ReviewState, isSubscription: boolean): str
   return `金額: ${word} ${estimateRangeText(estimate)} · ${actualPart}`
 }
 
+/** 単価が分からないターン数と全ターン数。結論の状態（判定不能・理由の添え書き）に使う。結論行とペインの判定で同じ数え方にする。 */
+export function priceCoverageOf(review: ReviewState): PriceCoverage {
+  return { unpricedTurns: estimateFacts(review.turns, review.archived).unpricedTurns, totalTurns: review.turns.length + (review.archived?.turns ?? 0) }
+}
+
 /** 結論の 1 行（状態）。`alerts` は動的な警告だけ（信頼度の注記は含めない）。 */
 export function buildVerdict(review: ReviewState, concerns: readonly Concern[], alerts: readonly Note[]): Conclusion {
-  const facts = estimateFacts(review.turns, review.archived)
-  return conclusionOf(concerns, alerts, { unpricedTurns: facts.unpricedTurns, totalTurns: review.turns.length + (review.archived?.turns ?? 0) })
+  return conclusionOf(concerns, alerts, priceCoverageOf(review))
 }
 
 /** advisor の呼び出し回数の文面（「2 回（費用が…）」）。0 回なら null。 */

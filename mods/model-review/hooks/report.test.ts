@@ -191,7 +191,7 @@ test('見出しの順序と用語はペインと同じで、妥当性が最初�
   const reportOrder = paneOrder.map(heading => text.indexOf(`■ ${heading}`))
 
   // Assert: ペインの見出しがすべてテキストにあり、同じ順序で並ぶ。
-  expect(paneOrder[0]).toBe(HEADING.concerns)
+  expect(paneOrder[0]).toBe(HEADING.groups)
   expect(reportOrder.every(index => index >= 0)).toBe(true)
   expect(reportOrder).toEqual([...reportOrder].sort((a, b) => a - b))
 })
