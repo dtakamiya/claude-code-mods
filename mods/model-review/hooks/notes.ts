@@ -37,7 +37,7 @@ export const splitNotes = (notes: readonly Note[]): { readonly alerts: readonly 
 })
 
 export const ALWAYS_NOTE =
-  '推定に含まれないもの: fast mode の割増、advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
+  '推定に含まれないもの: fast mode の割増、advisor の費用（usage に載らず取得できないため含まれません。Claude Code の更新時に再確認します）、Web 検索などトークン以外の料金。単価は Claude API の価格で、Bedrock / Vertex の価格と地域の割増は含みません。キャッシュ書込の TTL は分からないため、推定は 5 分単価（下限）〜1 時間単価（上限）の幅で示します。'
 
 export const advisorCallTotal = (records: readonly TurnRecord[]): number =>
   records.reduce((sum, record) => sum + (record.advisorCalls ?? 0), 0)
