@@ -82,6 +82,19 @@ test('基準点のターン数は外した分だけ前へずれ、基準点よ�
   expect(review.archived?.sinceBaseline.cacheWrite).toBe(afterBaseline.reduce((sum, r) => sum + r.tokens.cacheWrite, 0))
 })
 
+test('基準点がまだ無いあいだに畳んだターンは、後で取る基準点より前なので、基準点より後には積まない', () => {
+  // Arrange: 実コストを取れないまま MAX_TURNS を超え、その後で初めて基準点を取る
+  const review = build(MAX_TURNS + 10).review
+
+  // Act
+  const based = withBaseline(review, 100)
+
+  // Assert
+  expect(review.archived?.turns).toBe(10)
+  expect(review.archived?.sinceBaseline).toEqual({ lowUsd: 0, highUsd: 0, cacheWrite: 0 })
+  expect(based.sessionCostUsd.baselineTurns).toBe(MAX_TURNS)
+})
+
 test('畳んだことはペインとレポートに注記し、件数は畳んだぶんも含める', () => {
   // Arrange
   const { review } = build(MAX_TURNS + 40)

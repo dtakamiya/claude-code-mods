@@ -36,6 +36,10 @@ export type LoopDraft = {
   readonly firstStepCacheWrite: number
   /** 最初の応答のプロンプト長（入力 + 読込 + 書込）。 */
   readonly firstStepPromptTokens: number
+  /** 最初の応答のキャッシュ読込トークン数。書込と合わせて、モデル切替で書き直すキャッシュの量になる。 */
+  readonly firstStepCacheRead: number
+  /** 記録できた応答のうち、最も長いプロンプト長。応答の記録が欠けたとき、合計の usage の単価段をこの長さで決める。 */
+  readonly maxStepPromptTokens: number
   readonly advisorCalls: number
   readonly toolCount: number
   readonly editCount: number
@@ -116,6 +120,8 @@ const emptyDraft = (turnId: string, agentId: string | null): LoopDraft => ({
   sonnetPricedCostUsd: 0,
   firstStepCacheWrite: 0,
   firstStepPromptTokens: 0,
+  firstStepCacheRead: 0,
+  maxStepPromptTokens: 0,
   advisorCalls: 0,
   toolCount: 0,
   editCount: 0,
@@ -177,9 +183,12 @@ export function sanitizeUsage(raw: unknown): SafeUsage | null {
   }
 }
 
-/** model が不明（null）なら単価不明として null。それ以外は指定した単価（既定は 5 分単価）で計算する。 */
-const priceAs = (usage: SafeUsage, model: string | null, writeTtl: CacheWriteTtl = '5m'): number | null =>
-  model === null ? null : priceUsage({ ...usage, model }, writeTtl)
+/**
+ * model が不明（null）なら単価不明として null。それ以外は指定した単価（既定は 5 分単価）で計算する。
+ * tierPromptTokens は合計の usage を評価するときの 1 応答の長さ（省略時は usage 自身の長さ）。
+ */
+const priceAs = (usage: SafeUsage, model: string | null, writeTtl: CacheWriteTtl = '5m', tierPromptTokens?: number): number | null =>
+  model === null ? null : priceUsage({ ...usage, model }, writeTtl, tierPromptTokens)
 
 const promptTokensOf = (usage: SafeUsage | null): number =>
   usage === null ? 0 : usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
@@ -235,6 +244,8 @@ export function recordStep(drafts: Drafts, step: StepInput, nowMs?: number): Dra
     sonnetPricedCostUsd: prev.sonnetPricedCostUsd + (pricedAsSonnet ?? 0),
     firstStepCacheWrite: prev.stepCount === 0 ? (usage?.cache_creation_input_tokens ?? 0) : prev.firstStepCacheWrite,
     firstStepPromptTokens: prev.stepCount === 0 ? promptTokensOf(usage) : prev.firstStepPromptTokens,
+    firstStepCacheRead: prev.stepCount === 0 ? (usage?.cache_read_input_tokens ?? 0) : prev.firstStepCacheRead,
+    maxStepPromptTokens: Math.max(prev.maxStepPromptTokens, promptTokensOf(usage)),
     advisorCalls: prev.advisorCalls + countOf(step.advisorCalls),
     lastActivityMs: nowMs ?? prev.lastActivityMs,
     byModel: addShare(prev.byModel, usage?.model ?? step.model, usage, priced),
@@ -289,6 +300,12 @@ const isStepRecordIncomplete = (draft: LoopDraft, usage: SafeUsage | null): bool
   usage !== null && totalTokensOf(usage) > draft.stepTokenTotal
 
 /**
+ * ターン全体の usage で計算するときの単価段の長さ。単価段は 1 応答ごとに決まるので、合計の長さでは判定しない。
+ * 記録できた応答があれば、その最長のプロンプト長で代用する。応答が 1 つも記録されていなければ（1 応答とみなして）合計の長さのまま。
+ */
+const fallbackTierOf = (draft: LoopDraft): number | undefined => (draft.stepCount > 0 ? draft.maxStepPromptTokens : undefined)
+
+/**
  * 推定コストの共通規則。応答ごとに計算した合計を優先し、step が欠けていればターン全体の usage で計算する。
  * どちらも取れなければ null（単価不明と同じ扱い）。0 と書くと 0 円に読めてしまう。
  */
@@ -296,15 +313,15 @@ function resolveCost(
   draft: LoopDraft,
   usage: SafeUsage | null,
   perStepUsd: number,
-  priceTurn: (turnUsage: SafeUsage) => number | null,
+  priceTurn: (turnUsage: SafeUsage, tierPromptTokens: number | undefined) => number | null,
 ): number | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0 && !isStepRecordIncomplete(draft, usage)) return perStepUsd
-  return usage === null ? null : priceTurn(usage)
+  return usage === null ? null : priceTurn(usage, fallbackTierOf(draft))
 }
 
 function costOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
-  return resolveCost(draft, usage, draft.pricedCostUsd, turnUsage => priceAs(turnUsage, turnUsage.model))
+  return resolveCost(draft, usage, draft.pricedCostUsd, (turnUsage, tier) => priceAs(turnUsage, turnUsage.model, '5m', tier))
 }
 
 /** costOf と同じ規則の、種類別の内訳。costUsd が null のターンは null。 */
@@ -312,22 +329,22 @@ function partsOf(draft: LoopDraft, usage: SafeUsage | null): CostParts | null {
   if (draft.hasUnpricedStep) return null
   if (draft.stepCount > 0 && !isStepRecordIncomplete(draft, usage)) return draft.pricedParts
   if (usage === null || usage.model === null) return null
-  return priceUsageParts({ ...usage, model: usage.model })
+  return priceUsageParts({ ...usage, model: usage.model }, '5m', fallbackTierOf(draft))
 }
 
 /** costOf と同じ規則で、キャッシュ書込を 1 時間単価にした推定コスト（上限側）。 */
 function upperCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
-  return resolveCost(draft, usage, draft.pricedUpperCostUsd, turnUsage => priceAs(turnUsage, turnUsage.model, '1h'))
+  return resolveCost(draft, usage, draft.pricedUpperCostUsd, (turnUsage, tier) => priceAs(turnUsage, turnUsage.model, '1h', tier))
 }
 
 /** costOf と同じ規則で、Haiku 単価に置き換えた推定コスト。 */
 function haikuCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
-  return resolveCost(draft, usage, draft.haikuPricedCostUsd, turnUsage => priceAs(turnUsage, HAIKU_REFERENCE_MODEL))
+  return resolveCost(draft, usage, draft.haikuPricedCostUsd, (turnUsage, tier) => priceAs(turnUsage, HAIKU_REFERENCE_MODEL, '5m', tier))
 }
 
 /** costOf と同じ規則で、Sonnet 単価に置き換えた推定コスト。 */
 function sonnetCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null {
-  return resolveCost(draft, usage, draft.sonnetPricedCostUsd, turnUsage => priceAs(turnUsage, SONNET_REFERENCE_MODEL))
+  return resolveCost(draft, usage, draft.sonnetPricedCostUsd, (turnUsage, tier) => priceAs(turnUsage, SONNET_REFERENCE_MODEL, '5m', tier))
 }
 
 /**
@@ -337,10 +354,12 @@ function sonnetCostOf(draft: LoopDraft, usage: SafeUsage | null): number | null 
 function firstStepOf(
   draft: LoopDraft,
   usage: SafeUsage | null,
-): { readonly cacheWrite: number | undefined; readonly promptTokens: number | undefined } {
-  if (draft.stepCount > 0) return { cacheWrite: draft.firstStepCacheWrite, promptTokens: draft.firstStepPromptTokens }
-  if (!usage) return { cacheWrite: undefined, promptTokens: undefined }
-  return { cacheWrite: usage.cache_creation_input_tokens, promptTokens: promptTokensOf(usage) }
+): { readonly cacheWrite: number | undefined; readonly cacheRead: number | undefined; readonly promptTokens: number | undefined } {
+  if (draft.stepCount > 0) {
+    return { cacheWrite: draft.firstStepCacheWrite, cacheRead: draft.firstStepCacheRead, promptTokens: draft.firstStepPromptTokens }
+  }
+  if (!usage) return { cacheWrite: undefined, cacheRead: undefined, promptTokens: undefined }
+  return { cacheWrite: usage.cache_creation_input_tokens, cacheRead: usage.cache_read_input_tokens, promptTokens: promptTokensOf(usage) }
 }
 
 /** サブエージェントのターンで、使える種類の名前があるときだけ載せる。 */
@@ -375,6 +394,7 @@ export function finishTurn(drafts: Drafts, end: TurnEndInput): FinishedTurn {
     sonnetCostUsd: sonnetCostOf(draft, usage),
     firstStepCacheWrite: first.cacheWrite,
     firstStepPromptTokens: first.promptTokens,
+    firstStepCacheRead: first.cacheRead,
     advisorCalls: draft.advisorCalls,
     ...byModelField(draft, usage),
     ...(draft.divergedSteps > 0 ? { divergedSteps: draft.divergedSteps } : {}),

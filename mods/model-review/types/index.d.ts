@@ -54,6 +54,8 @@ export type TurnRecord = {
   readonly firstStepCacheWrite?: number
   /** ターン最初の応答のプロンプト長（入力 + キャッシュ読込 + 書込）。単価段の判定に使う。 */
   readonly firstStepPromptTokens?: number
+  /** ターン最初の応答のキャッシュ読込トークン数。書込と合わせて、いま切り替えたら書き直すキャッシュの量になる。0.32.1 で追加。古い記録には無い。 */
+  readonly firstStepCacheRead?: number
   /** API が実行した advisor サーバーツールの呼び出し回数。 */
   readonly advisorCalls?: number
   /** /compact（自動を含む）の直後のターン。必然的なキャッシュ再構築を含むので、書込多め・切替コストの判定から外す。0.14.2 で追加。 */

@@ -50,9 +50,29 @@ export function breakEvenTurns(rebuildUsd: number, savingPerTurnUsd: number): nu
   return savingPerTurnUsd > 0 && rebuildUsd > 0 ? Math.ceil(rebuildUsd / savingPerTurnUsd) : null
 }
 
+/**
+ * 切り替えると書き直すキャッシュの量。キャッシュはモデルごとなので、最初の応答が読んだ分と書いた分の全体を書き直す。
+ * 温かいときの書込は前回からの追記分だけなので、書込だけでは再構築を小さく見積もる。
+ * 読込を持たない旧記録（0.32.0 まで）は、プロンプト全体（キャッシュしない入力を含むので少し大きめ）で代用する。
+ */
+const rebuildTokensOf = (record: UsableRecord): number =>
+  record.firstStepCacheRead === undefined
+    ? (record.firstStepPromptTokens ?? record.firstStepCacheWrite)
+    : record.firstStepCacheRead + record.firstStepCacheWrite
+
+/**
+ * 候補のモデルで同じ応答を計算した費用。単価段は応答ごとに決まるので、記録が応答ごとに計算した値（Haiku・Sonnet 換算）を優先する。
+ * 無ければターン合計のトークンを、最初の応答のプロンプト長の単価段で計算する（合計の長さで判定すると高い段に入りうる）。
+ */
+function candidateCostOf(record: UsableRecord, model: string): number | null {
+  const perResponse = model === HAIKU_REFERENCE_MODEL ? record.haikuCostUsd : model === SONNET_REFERENCE_MODEL ? record.sonnetCostUsd : undefined
+  if (typeof perResponse === 'number') return perResponse
+  return priceUsage(usageOf(record, model), '5m', record.firstStepPromptTokens)
+}
+
 function optionFor(record: UsableRecord, currentUsd: number, model: string): SwitchOption | null {
-  const candidateUsd = priceUsage(usageOf(record, model))
-  const rebuildUsd = cacheRebuildCostUsd(model, record.firstStepCacheWrite, record.firstStepPromptTokens)
+  const candidateUsd = candidateCostOf(record, model)
+  const rebuildUsd = cacheRebuildCostUsd(model, rebuildTokensOf(record), record.firstStepPromptTokens)
   if (candidateUsd === null || rebuildUsd === null) return null
   const perTurnDeltaUsd = candidateUsd - currentUsd
   return { model, rebuildUsd, perTurnDeltaUsd, breakEvenTurns: breakEvenTurns(rebuildUsd, -perTurnDeltaUsd) }
@@ -61,13 +81,15 @@ function optionFor(record: UsableRecord, currentUsd: number, model: string): Swi
 
 /**
  * 直近のメインループのターンを基準にした切替の見積り。基準にできるターンがなければ空。
- * 再構築コストは、切替の判定（switches.ts）と同じく「そのターンの最初の応答の書込」を使う。
+ * 再構築コストは、そのターンの最初の応答が使ったキャッシュ全体（読込 + 書込）を候補のモデルで書き直す額。
+ * 実際に切り替えた直後のターンを見る switches.ts は、書込そのものが再構築なので書込だけを使う。
  */
 export function estimateSwitchOptions(records: readonly TurnRecord[]): readonly SwitchOption[] {
   const latest = [...records].reverse().find(isUsable)
   if (latest === undefined) return []
-  const currentUsd = priceUsage(usageOf(latest, latest.model))
-  if (currentUsd === null) return []
+  // isUsable で単価ありを確かめている。応答ごとに単価段を判定した記録の値を、いまのモデルの費用とする。
+  const currentUsd = latest.costUsd
+  if (currentUsd === null || priceUsage(usageOf(latest, latest.model)) === null) return []
   const currentId = normalizeModelId(latest.model)
   return CANDIDATE_MODELS.filter(model => model !== currentId).flatMap(model => optionFor(latest, currentUsd, model) ?? [])
 }

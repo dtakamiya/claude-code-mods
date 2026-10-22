@@ -102,14 +102,18 @@ export function foldTurn(archive: ArchivedTurns, record: TurnRecord, afterBaseli
   }
 }
 
-/** turns が上限を超えていれば、古い順に畳む。基準点のターン数も、外した分だけ前へずらす。 */
+/**
+ * turns が上限を超えていれば、古い順に畳む。基準点のターン数も、外した分だけ前へずらす。
+ * 基準点がまだ無い（実コストを取れていない）あいだに畳んだターンは、後で取る基準点より前なので、基準点より後には積まない。
+ */
 export function trimTurns(state: ReviewState): ReviewState {
   const excess = state.turns.length - MAX_TURNS
   if (excess <= 0) return state
+  const hasBaseline = state.sessionCostUsd.baseline !== null
   const baselineTurns = state.sessionCostUsd.baselineTurns ?? 0
   const archived = state.turns
     .slice(0, excess)
-    .reduce((acc, record, index) => foldTurn(acc, record, index >= baselineTurns), state.archived ?? EMPTY_ARCHIVE)
+    .reduce((acc, record, index) => foldTurn(acc, record, hasBaseline && index >= baselineTurns), state.archived ?? EMPTY_ARCHIVE)
   return {
     ...state,
     turns: state.turns.slice(excess),

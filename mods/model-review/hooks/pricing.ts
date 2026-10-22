@@ -137,9 +137,10 @@ export type CacheWriteTtl = '5m' | '1h'
 /**
  * 1 応答の推定コストを、トークンの種類ごとに分けたもの（USD）。単価表にないモデルは null（単価不明）。
  * 単価段の判定・書込の単価は priceUsage と同じ（合計は priceUsage と一致する）。
+ * tierPromptTokens を渡すと、単価段はその長さで決める（複数の応答を合計した usage を、1 応答の長さで評価するとき用）。
  */
-export function priceUsageParts(usage: TokenUsageLike, writeTtl: CacheWriteTtl = '5m'): CostParts | null {
-  const promptTokens = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+export function priceUsageParts(usage: TokenUsageLike, writeTtl: CacheWriteTtl = '5m', tierPromptTokens?: number): CostParts | null {
+  const promptTokens = tierPromptTokens ?? usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
   const tierRates = ratesFor(usage.model, promptTokens)
   if (!tierRates) return null
   return {
@@ -155,8 +156,8 @@ export function priceUsageParts(usage: TokenUsageLike, writeTtl: CacheWriteTtl =
  * 1 応答の推定コスト（USD）。単価表にないモデルは null（単価不明）。プロンプト長は応答ごとに判定する。
  * writeTtl が '1h' なら、書込を 1 時間単価で計算した上限側の値になる（既定は 5 分単価）。
  */
-export function priceUsage(usage: TokenUsageLike, writeTtl: CacheWriteTtl = '5m'): number | null {
-  const parts = priceUsageParts(usage, writeTtl)
+export function priceUsage(usage: TokenUsageLike, writeTtl: CacheWriteTtl = '5m', tierPromptTokens?: number): number | null {
+  const parts = priceUsageParts(usage, writeTtl, tierPromptTokens)
   return parts === null ? null : parts.input + parts.output + parts.cacheRead + parts.cacheWrite
 }
 
