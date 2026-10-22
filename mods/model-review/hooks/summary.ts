@@ -164,9 +164,12 @@ export const actualWord = (isSubscription: boolean): string => (isSubscription ?
 
 /** 金額の 1 行（推定の幅 · 実額 · 差）。テキスト出力の結論の次に出す。 */
 export function moneyLineText(review: ReviewState, isSubscription: boolean): string {
-  const estimate = estimateFacts(review.turns, review.archived)
+  return moneyLineFrom(estimateFacts(review.turns, review.archived), costDiff(review), isSubscription)
+}
+
+/** moneyLineText の、計算済みの推定と差から組み立てる版（集計を 1 回で済ませる呼び出し側用）。 */
+export function moneyLineFrom(estimate: EstimateFacts, diff: CostDiff | null, isSubscription: boolean): string {
   const word = isSubscription ? 'API 換算の推定' : '推定'
-  const diff = costDiff(review)
   const actualPart =
     diff === null
       ? ACTUAL_COST_UNAVAILABLE_TEXT

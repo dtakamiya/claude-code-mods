@@ -1,55 +1,40 @@
 // ペインの行モデルを組み立てる純粋関数。`$` にも JSX にも依存しない。描画は pane.tsx。
-// 集計と文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
+// 集計は analysis.ts、節の順序と出し分けは sections.ts、文面の共通部分は summary.ts。ここはペイン固有の並び・バー・用語・結論行を持つ。
 import type { ArchivedGroup, ReviewState } from '../types'
-import { BREAKDOWN_LABEL, breakdownView } from './breakdown'
-import { GROWTH_LABEL, growthView } from './growth'
+import { analyzeReview, type ReviewAnalysis } from './analysis'
+import { BREAKDOWN_LABEL, type BreakdownView } from './breakdown'
+import { GROWTH_LABEL, type GrowthView } from './growth'
 import type { RateView } from './pace'
-import { numericEffortNote } from './effort'
-import { applyMute } from './mute'
-import {
-  HEAVY_TOOL_CALLS,
-  LIGHT_MAX_OUTPUT_TOKENS,
-  LIGHT_MAX_TOOL_CALLS,
-  findConcerns,
-  mainTurnsAfter,
-  groupByModelEffort,
-  partitionByRecency,
-  modelRank,
-  topCostTurns,
-  type Concern,
-  type ConcernKind,
-} from './analyze'
-import { archiveNote, mergeGroups } from './archive'
+import { HEAVY_TOOL_CALLS, LIGHT_MAX_OUTPUT_TOKENS, LIGHT_MAX_TOOL_CALLS, mainTurnsAfter, modelRank, type Concern, type ConcernKind } from './analyze'
 import { shortModel } from './domain'
 import { cellWidth, formatUsd } from './format'
 import type { Drafts, LoopDraft } from './recorder'
 import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
-import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, saysNoConcerns, type Tone } from './conclusion'
+import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
-import { nextStepText } from './nextstep'
 import { turnLabelText } from './turnref'
-import { alwaysNoteText, buildNotes, splitNotes } from './notes'
+import { alwaysNoteText } from './notes'
+import {
+  buildSections,
+  type ConcernsSection,
+  type CostSection,
+  type GroupsSection,
+  type LoopsSection,
+  type Section,
+  type TopTurnsSection,
+  type WhatIfSection,
+} from './sections'
 import {
   ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
-  actualCostUsd,
   actualWord,
-  advisorCallText,
-  buildVerdict,
   concernDetailText,
-  costDiff,
-  describeSwitchOptions,
-  estimateFacts,
   estimateRangeText,
   groupFacts,
   hitRateText,
-  loopView,
-  priceCoverageOf,
   signedUsdText,
-  subagentCount,
   toolDetailText,
   turnOriginLabel,
-  type EstimateFacts,
 } from './summary'
 
 /** コスト比バーの最大幅。狭い画面では barWidthFor が縮める。 */
@@ -131,8 +116,7 @@ function groupRow(group: ArchivedGroup, totalUsd: number, columns: number | unde
   }
 }
 
-function breakdownRows(records: ReviewState['turns'], archived: ReviewState['archived']): PaneRow[] {
-  const view = breakdownView(records, archived)
+function breakdownRows(view: BreakdownView | null): PaneRow[] {
   if (view === null) return []
   return [
     { kind: 'kv', label: BREAKDOWN_LABEL, value: view.items, tone: 'plain' },
@@ -141,8 +125,7 @@ function breakdownRows(records: ReviewState['turns'], archived: ReviewState['arc
   ]
 }
 
-function growthRows(records: ReviewState['turns'], archived: ReviewState['archived']): PaneRow[] {
-  const view = growthView(records, archived?.turns)
+function growthRows(view: GrowthView | null): PaneRow[] {
   if (view === null) return []
   return [
     { kind: 'kv', label: GROWTH_LABEL, value: view.trend, tone: 'plain' },
@@ -160,19 +143,18 @@ function rateRows(rate: RateView | null): PaneRow[] {
   ]
 }
 
-function costRows(review: ReviewState, estimate: EstimateFacts, isSubscription: boolean): PaneRow[] {
+function costLineRow(section: CostSection, isSubscription: boolean): PaneRow {
   const estimateWord = isSubscription ? 'API 換算の推定' : '推定'
-  const estimateText = estimateRangeText(estimate)
-  const diff = costDiff(review)
+  const estimateText = estimateRangeText(section.estimate)
+  const { diff } = section
   if (diff === null) {
-    return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${ACTUAL_COST_UNAVAILABLE_TEXT}`, tone: 'plain' }]
+    return { kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${ACTUAL_COST_UNAVAILABLE_TEXT}`, tone: 'plain' }
   }
-  return [{ kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }]
+  return { kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }
 }
 
 /** 直近の指摘は種類の色と「次の一手」つき。過去の指摘は色なし（plain）で、次の一手を付けない。 */
-function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent: boolean): PaneRow[] {
-  const next = recent ? nextStepText(concern, records) : null
+function oneConcernRows(concern: Concern, next: string | null, recent: boolean): PaneRow[] {
   return [
     {
       kind: 'badge',
@@ -187,38 +169,33 @@ function oneConcernRows(concern: Concern, records: ReviewState['turns'], recent:
 
 /**
  * 妥当性の節（見出し・指摘・空行）。直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
- * 止めている種類は最後に注記 1 行だけ。`noConcerns` は結論が「指摘なし」を言うとき（true なら OK 行を出さない）。
+ * 止めている種類は最後に注記 1 行だけ。結論が「指摘なし」を言うときは OK 行を出さない。
  * 中身が 1 行も残らないときは、見出しと空行ごと出さない。
  */
-function concernSectionRows(
-  concerns: readonly Concern[],
-  records: ReviewState['turns'],
-  mutedLine: string | null,
-  archived: ReviewState['archived'],
-  noConcerns: boolean,
-): PaneRow[] {
-  const { recent, past } = partitionByRecency(concerns)
-  const numericNote = numericEffortNote(records, archived)
+function concernSectionRows(section: ConcernsSection): PaneRow[] {
+  const { recent, past, nextSteps, numericNote, mutedLine, noConcerns } = section
   const body: PaneRow[] = [
-    ...recent.flatMap(concern => oneConcernRows(concern, records, true)),
+    ...recent.flatMap(concern => oneConcernRows(concern, nextSteps.get(concern) ?? null, true)),
     ...(recent.length === 0 && !noConcerns ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow] : []),
     ...(past.length === 0
       ? []
-      : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, records, false))]),
+      : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, null, false))]),
     ...(numericNote === null ? [] : [{ kind: 'note', text: numericNote } satisfies PaneRow]),
     ...(mutedLine === null ? [] : [{ kind: 'note', text: mutedLine } satisfies PaneRow]),
   ]
   return body.length === 0 ? [] : [{ kind: 'heading', text: CONCERN_DETAIL_HEADING }, ...body, { kind: 'blank' }]
 }
 
-function topTurnRows(records: ReviewState['turns'], nowMs?: number): PaneRow[] {
-  const top = topCostTurns(records)
-  if (top.length === 0) return []
+function groupSectionRows(section: GroupsSection, columns: number | undefined): PaneRow[] {
+  return [{ kind: 'heading', text: HEADING.groups }, ...section.groups.map(group => groupRow(group, section.totalUsd, columns)), { kind: 'blank' }]
+}
+
+function topTurnRows(section: TopTurnsSection, nowMs?: number): PaneRow[] {
   return [
     { kind: 'heading', text: HEADING.topTurns },
-    ...top.map((record): PaneRow => ({
+    ...section.turns.map((record): PaneRow => ({
       kind: 'turn',
-      label: turnLabelText(record, mainTurnsAfter(records, record), turnOriginLabel(record), nowMs),
+      label: turnLabelText(record, mainTurnsAfter(section.records, record), turnOriginLabel(record), nowMs),
       model: shortModel(record.model),
       tier: tierOf(record.model),
       costText: formatUsd(record.costUsd),
@@ -228,10 +205,8 @@ function topTurnRows(records: ReviewState['turns'], nowMs?: number): PaneRow[] {
   ]
 }
 
-/** メインとサブエージェントの両方があるときだけ出す。 */
-function loopRows(records: ReviewState['turns']): PaneRow[] {
-  const view = loopView(records)
-  if (view === null) return []
+function loopRows(section: LoopsSection): PaneRow[] {
+  const { view } = section
   return [
     { kind: 'heading', text: HEADING.loops },
     ...view.rows.map((row): PaneRow => ({ kind: 'kv', label: row.label, value: row.detail, tone: 'plain' })),
@@ -240,37 +215,27 @@ function loopRows(records: ReviewState['turns']): PaneRow[] {
   ]
 }
 
-function whatIfRows(records: ReviewState['turns']): PaneRow[] {
-  const options = describeSwitchOptions(records)
-  if (options.length === 0) return []
+function whatIfRows(section: WhatIfSection): PaneRow[] {
   return [
     { kind: 'heading', text: HEADING.whatIf },
-    ...options.map((text): PaneRow => ({ kind: 'example', text })),
+    ...section.options.map((text): PaneRow => ({ kind: 'example', text })),
     { kind: 'note', text: WHATIF_NOTE },
     { kind: 'blank' },
   ]
 }
 
-function advisorRows(records: ReviewState['turns'], archived: ReviewState['archived']): PaneRow[] {
-  const text = advisorCallText(records, archived)
-  return text === null ? [] : [{ kind: 'kv', label: 'advisor', value: text, tone: 'plain' }]
-}
+const advisorRows = (text: string | null): PaneRow[] => (text === null ? [] : [{ kind: 'kv', label: 'advisor', value: text, tone: 'plain' }])
 
 /** ペイン末尾の免責。advisor の行があるときは、その行に免責があるので advisor の句を外す（レポートは ALWAYS_NOTE のまま）。 */
 export const paneAlwaysNote = (hasAdvisorRow: boolean): string => alwaysNoteText({ omitAdvisor: hasAdvisorRow })
 
-function archiveNoteRows(review: ReviewState): PaneRow[] {
-  const text = archiveNote(review.archived)
-  return text === null ? [] : [{ kind: 'note', text }]
-}
-
 /** 画面に出る行と同じ条件で、説明すべき用語を選ぶ。 */
-function shownTerms(review: ReviewState, groups: readonly ArchivedGroup[], concerns: readonly Concern[]): TermKey[] {
-  const hasActual = actualCostUsd(review) !== null
+function shownTerms(analysis: ReviewAnalysis): TermKey[] {
+  const hasActual = analysis.diff !== null
   const candidates: ReadonlyArray<readonly [TermKey, boolean]> = [
-    ['hitRate', groups.some(group => hitRateText(group.tokens) !== null)],
+    ['hitRate', analysis.groups.some(group => hitRateText(group.tokens) !== null)],
     ['afterLoad', hasActual],
-    ['sonnetEquivalent', concerns.some(concern => concern.kind === 'overspec' && concern.amountUsd !== null)],
+    ['sonnetEquivalent', analysis.concerns.some(concern => concern.kind === 'overspec' && concern.amountUsd !== null)],
     ['diff', hasActual],
   ]
   return candidates.flatMap(([term, shown]) => (shown ? [term] : []))
@@ -281,13 +246,26 @@ function glossaryRows(terms: readonly TermKey[]): PaneRow[] {
   return [{ kind: 'note', text: `用語  ${terms.map(term => TERM_TEXT[term]).join(' / ')}` }]
 }
 
+/** コストの節。見出しの後に、金額・使用率・内訳・推移・advisor・用語を並べる。 */
+function costSectionRows(section: CostSection, analysis: ReviewAnalysis, rate: RateView | null): PaneRow[] {
+  return [
+    { kind: 'heading', text: HEADING.cost },
+    costLineRow(section, rate !== null),
+    ...rateRows(rate),
+    ...breakdownRows(section.breakdown),
+    ...growthRows(section.growth),
+    ...advisorRows(section.advisorText),
+    ...glossaryRows(shownTerms(analysis)),
+    { kind: 'blank' },
+  ]
+}
+
 /** 件数は結論行だけに出し、見出しは内訳であることを示す。 */
 const CONCERN_DETAIL_HEADING = `${HEADING.concerns}· 見直し候補の内訳`
 
 const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
 /** 実コストが取れているときの、ペイン末尾の更新の案内。取れないときはコスト行の「再取得」の案内に任せる。 */
 const REFRESH_NOTE = '/model-review で更新'
-const refreshRows = (review: ReviewState): PaneRow[] => (costDiff(review) === null ? [] : [{ kind: 'note', text: REFRESH_NOTE }])
 
 const isStarted = (draft: LoopDraft): boolean => draft.stepCount > 0 || draft.toolCount > 0
 
@@ -306,60 +284,61 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
+function sectionRows(section: Section, analysis: ReviewAnalysis, columns: number | undefined, nowMs: number | undefined, rate: RateView | null): PaneRow[] {
+  switch (section.kind) {
+    case 'concerns':
+      return concernSectionRows(section)
+    case 'groups':
+      return groupSectionRows(section, columns)
+    case 'topTurns':
+      return topTurnRows(section, nowMs)
+    case 'loops':
+      return loopRows(section)
+    case 'whatIf':
+      return whatIfRows(section)
+    case 'cost':
+      return costSectionRows(section, analysis, rate)
+  }
+}
+
+/** 末尾の注記（警告のバッジ・信頼度・畳み込み・免責・判定基準・更新の案内）。 */
+function footerRows(analysis: ReviewAnalysis): PaneRow[] {
+  return [
+    ...analysis.alerts.map((note): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text: note.text })),
+    ...analysis.reliability.map((note): PaneRow => ({ kind: 'note', text: note.text })),
+    ...(analysis.archiveNote === null ? [] : [{ kind: 'note', text: analysis.archiveNote } satisfies PaneRow]),
+    { kind: 'note', text: paneAlwaysNote(analysis.advisorText !== null) },
+    { kind: 'note', text: CRITERIA_NOTE },
+    ...(analysis.diff === null ? [] : [{ kind: 'note', text: REFRESH_NOTE } satisfies PaneRow]),
+  ]
+}
+
 /**
  * `columns` はペイン本文の桁数（bodyColumns）。バー幅を合わせる。省略時は最大幅。
  * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
+ * 節の順序と出し分けは sections.ts、集計は analysis.ts（同じ記録なら前回の結果を使う）。
  */
 export function buildPaneRows(
   review: ReviewState,
   drafts: Drafts = {},
   nowMs?: number,
   columns?: number,
-  muted: ReadonlySet<ConcernKind> = new Set(),
+  muted?: ReadonlySet<ConcernKind>,
   rate: RateView | null = null,
 ): PaneRow[] {
-  const records = review.turns
   const live = liveRows(drafts)
-  if (records.length === 0) {
+  if (review.turns.length === 0) {
     const body: PaneRow[] = live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
     return [{ kind: 'conclusion', ...NO_RECORDS_CONCLUSION }, ...body]
   }
-  const estimate = estimateFacts(records, review.archived)
-  const { concerns, mutedLine } = applyMute(findConcerns(records), muted)
-  const groups = mergeGroups(review.archived, groupByModelEffort(records))
-  const { alerts, reliability } = splitNotes(buildNotes(review, nowMs))
-  const advisor = advisorRows(records, review.archived)
-  const noConcerns = saysNoConcerns(concerns, alerts, priceCoverageOf(review))
+  const analysis = analyzeReview(review, nowMs, muted)
   return [
-    { kind: 'conclusion', ...buildVerdict(review, concerns, alerts) },
+    { kind: 'conclusion', ...analysis.conclusion },
     { kind: 'blank' },
-    {
-      kind: 'title',
-      turns: records.length + (review.archived?.turns ?? 0),
-      subagents: subagentCount(records, review.archived),
-    },
+    { kind: 'title', turns: analysis.totalTurns, subagents: analysis.subagents },
     { kind: 'blank' },
     ...live,
-    ...concernSectionRows(concerns, records, mutedLine, review.archived, noConcerns),
-    { kind: 'heading', text: HEADING.groups },
-    ...groups.map(group => groupRow(group, estimate.costUsd, columns)),
-    { kind: 'blank' },
-    ...topTurnRows(records, nowMs),
-    ...loopRows(records),
-    ...whatIfRows(records),
-    { kind: 'heading', text: HEADING.cost },
-    ...costRows(review, estimate, rate !== null),
-    ...rateRows(rate),
-    ...breakdownRows(records, review.archived),
-    ...growthRows(records, review.archived),
-    ...advisor,
-    ...glossaryRows(shownTerms(review, groups, concerns)),
-    { kind: 'blank' },
-    ...alerts.map((note): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text: note.text })),
-    ...reliability.map((note): PaneRow => ({ kind: 'note', text: note.text })),
-    ...archiveNoteRows(review),
-    { kind: 'note', text: paneAlwaysNote(advisor.length > 0) },
-    { kind: 'note', text: CRITERIA_NOTE },
-    ...refreshRows(review),
+    ...buildSections(analysis).flatMap(section => sectionRows(section, analysis, columns, nowMs, rate)),
+    ...footerRows(analysis),
   ]
 }
