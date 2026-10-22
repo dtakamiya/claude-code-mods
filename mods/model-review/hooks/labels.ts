@@ -1,5 +1,6 @@
 // ペインとテキスト出力で共用する見出し・用語。順序（ペインに合わせる）は両方の組み立て側で守る。
-import { RECENT_CONCERN_MAIN_TURNS, type ConcernKind } from './analyze'
+import type { Concern, ConcernKind } from './analyze'
+import { RECENT_CONCERN_MAIN_TURNS } from './domain'
 
 export const HEADING = {
   concerns: '妥当性（参考）',
@@ -40,3 +41,7 @@ export const TERM_TEXT = {
   diff: '差（実コスト − 推定）: + は推定より実額が大きい',
 } as const
 export type TermKey = keyof typeof TERM_TEXT
+
+/** 件数の表記。母数があれば「116 / 200 件」。 */
+export const countText = (concern: Concern): string =>
+  concern.outOf === undefined ? `${concern.count} 件` : `${concern.count} / ${concern.outOf} 件`

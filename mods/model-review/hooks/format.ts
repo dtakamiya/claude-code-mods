@@ -47,3 +47,6 @@ export function formatDuration(ms: number): string {
   if (minutes === 0) return `${seconds} 秒`
   return seconds === 0 ? `${minutes} 分` : `${minutes} 分 ${seconds} 秒`
 }
+
+/** 符号つきの金額（`+$0.3839` / `-$0.0187`）。0 は + とする。 */
+export const signedUsdText = (usd: number): string => `${usd >= 0 ? '+' : '-'}${formatUsd(Math.abs(usd))}`

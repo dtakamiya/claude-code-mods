@@ -1,6 +1,6 @@
 // 上限を超えた古いターンを集計値に畳み込む。$ に触れない純粋関数。
 // turns を無制限に持つと、毎ターンの書き直しと描画ごとの全件再計算が増え続ける。
-import { ZERO_PARTS, addParts } from './breakdown'
+import { ZERO_PARTS, ZERO_TOKENS, addCost, addParts, addTokens } from './domain'
 import type { ArchivedGroup, ArchivedTurns, ReviewState, TurnRecord } from '../types'
 
 /** turns に残す件数の上限（仮置き）。これを超えた分は古い順に集計へ畳む。 */
@@ -20,8 +20,6 @@ export const EMPTY_ARCHIVE: ArchivedTurns = {
 }
 
 const groupKey = (model: string, effort: string | null): string => `${model}\u0000${effort ?? ''}`
-
-const addCost = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : a + b)
 
 /**
  * 1 ターンを集計に入れる単位に分ける。モデルが混ざったターン（byModel あり）はモデルごとに分け、
@@ -57,19 +55,14 @@ function foldShare(
     effort,
     turns: 0,
     unpricedTurns: 0,
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    tokens: ZERO_TOKENS,
     costUsd: 0,
   }
   const next: ArchivedGroup = {
     ...base,
     turns: base.turns + 1,
     unpricedTurns: base.unpricedTurns + (record.costUsd === null ? 1 : 0),
-    tokens: {
-      input: base.tokens.input + record.tokens.input,
-      output: base.tokens.output + record.tokens.output,
-      cacheRead: base.tokens.cacheRead + record.tokens.cacheRead,
-      cacheWrite: base.tokens.cacheWrite + record.tokens.cacheWrite,
-    },
+    tokens: addTokens(base.tokens, record.tokens),
     costUsd: addCost(base.costUsd, record.costUsd),
   }
   return found === undefined ? [...groups, next] : groups.map(group => (group === found ? next : group))
@@ -133,12 +126,7 @@ export function mergeGroups<G extends ArchivedGroup>(archived: ArchivedTurns | u
       ...found,
       turns: found.turns + group.turns,
       unpricedTurns: found.unpricedTurns + group.unpricedTurns,
-      tokens: {
-        input: found.tokens.input + group.tokens.input,
-        output: found.tokens.output + group.tokens.output,
-        cacheRead: found.tokens.cacheRead + group.tokens.cacheRead,
-        cacheWrite: found.tokens.cacheWrite + group.tokens.cacheWrite,
-      },
+      tokens: addTokens(found.tokens, group.tokens),
       costUsd: addCost(found.costUsd, group.costUsd),
     }
     return acc.map(item => (item === found ? sum : item))

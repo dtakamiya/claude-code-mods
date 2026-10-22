@@ -1,8 +1,7 @@
 // 利用者が意図して選んだ設定の指摘を、種類ごとに止める（設定 mutedConcerns）。$ に触れない純粋関数。
 // 止めた種類は結論行と指摘の節から外し、「止めている指摘」の 1 行だけを残す（何も見えなくはしない）。
 import { isRecentConcern, type Concern, type ConcernKind } from './analyze'
-import { CONCERN_TEXT } from './labels'
-import { countText } from './summary'
+import { CONCERN_TEXT, countText } from './labels'
 
 const KINDS = Object.keys(CONCERN_TEXT) as ConcernKind[]
 

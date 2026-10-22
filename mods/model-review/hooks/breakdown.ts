@@ -1,15 +1,9 @@
 // 推定コストの内訳（入力・出力・キャッシュ書込・読込のどれが効いているか）。$ に触れない純粋関数。
 import type { ArchivedTurns, CostParts, TurnRecord } from '../types'
+import { ZERO_PARTS, addParts } from './domain'
 import { formatUsd } from './format'
 
-export const ZERO_PARTS: CostParts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-
-export const addParts = (a: CostParts, b: CostParts): CostParts => ({
-  input: a.input + b.input,
-  output: a.output + b.output,
-  cacheRead: a.cacheRead + b.cacheRead,
-  cacheWrite: a.cacheWrite + b.cacheWrite,
-})
+export { ZERO_PARTS, addParts } from './domain'
 
 /** 書込または出力がこの割合以上を占めるとき、見直しの手がかりを添える（仮置き）。 */
 export const BREAKDOWN_HINT_SHARE = 0.5

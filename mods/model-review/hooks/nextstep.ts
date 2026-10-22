@@ -6,7 +6,7 @@ import type { TurnRecord } from '../types'
 import { RANK_SONNET, RANK_UNRANKED, modelRank, type Concern, type OverspecFacts, type UnderspecFacts } from './analyze'
 import { formatUsd } from './format'
 import { SONNET_REFERENCE_MODEL } from './pricing'
-import { UNKNOWN_MODEL } from './recorder'
+import { UNKNOWN_MODEL } from './domain'
 import { keepsCacheOnEffortChange } from './switches'
 import { breakEvenTurns, estimateSwitchOptions } from './whatif'
 

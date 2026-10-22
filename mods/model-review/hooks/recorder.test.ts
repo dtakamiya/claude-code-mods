@@ -3,6 +3,7 @@ import { test, expect } from 'claude-code/testing'
 import { EMPTY_REVIEW } from './state'
 import { buildPaneRows } from './pane-model'
 import {
+  DRAFT_RETENTION_MS,
   LIVE_DRAFT_LIFETIME_MS,
   MAIN_LOOP_KEY,
   UNKNOWN_MODEL,
@@ -10,6 +11,7 @@ import {
   finishTurn,
   liveDrafts,
   markPlanMode,
+  pruneDrafts,
   recordStep,
   recordTool,
   type Drafts,
@@ -640,4 +642,22 @@ test('進行中のターンがないときの plan mode の印は何もせず、
   // Assert
   expect(untouched).toEqual({})
   expect('planMode' in record).toBe(false)
+})
+
+test('保持期限を過ぎた未完了の下書きは捨て、期限内・時刻不明の下書きは残す。何も捨てなければ同じ値を返す', () => {
+  // Arrange: メインは期限切れ、サブエージェントは期限内、もう 1 つは時刻不明
+  const T = 1_000_000_000
+  let drafts = beginTurn({}, { turnId: 'old' }, T)
+  drafts = beginTurn(drafts, { turnId: 'sub', agentId: 'agent-1' }, T + DRAFT_RETENTION_MS)
+  drafts = beginTurn(drafts, { turnId: 'nt', agentId: 'agent-2' })
+
+  // Act
+  const pruned = pruneDrafts(drafts, T + DRAFT_RETENTION_MS + 1)
+  const kept = pruneDrafts(pruned, T + DRAFT_RETENTION_MS + 1)
+
+  // Assert
+  expect(Object.keys(pruned).sort()).toEqual(['agent-1', 'agent-2'])
+  expect(kept).toBe(pruned)
+  expect(pruneDrafts(drafts, undefined)).toBe(drafts)
+  expect(DRAFT_RETENTION_MS).toBeGreaterThan(LIVE_DRAFT_LIFETIME_MS)
 })

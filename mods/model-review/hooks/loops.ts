@@ -2,6 +2,7 @@
 // サブエージェントは親のキャッシュを読まず、TTL も 5 分が既定なので、メインと分けて見る。
 import type { TokenCounts, TurnRecord } from '../types'
 import { cacheHitRate } from './cache'
+import { ZERO_TOKENS, addTokens } from './domain'
 import { estimateTotal, type AgentTypeSummary } from './analyze'
 import { formatInt, formatUsd } from './format'
 
@@ -20,14 +21,6 @@ export type LoopSummary = {
   readonly unpricedTurns: number
 }
 
-const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-
-const addTokens = (a: TokenCounts, b: TokenCounts): TokenCounts => ({
-  input: a.input + b.input,
-  output: a.output + b.output,
-  cacheRead: a.cacheRead + b.cacheRead,
-  cacheWrite: a.cacheWrite + b.cacheWrite,
-})
 
 function summarize(kind: LoopKind, records: readonly TurnRecord[]): LoopSummary | null {
   if (records.length === 0) return null
