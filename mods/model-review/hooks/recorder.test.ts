@@ -65,6 +65,7 @@ test('メインループのターンは開始・step・ツール・終了の順�
     sonnetCostUsd: 3,
     firstStepCacheWrite: 0,
     firstStepPromptTokens: 1_000_000,
+    firstStepCacheRead: 0,
     advisorCalls: 0,
   })
   expect(finished.drafts).toEqual({})
@@ -228,8 +229,26 @@ test('応答がなく終了時の usage だけあるターンは、終了時の 
   // Assert
   expect(withUsage.record.firstStepCacheWrite).toBe(40_000)
   expect(withUsage.record.firstStepPromptTokens).toBe(40_600)
+  expect(withUsage.record.firstStepCacheRead).toBe(500)
   expect(withoutUsage.record.firstStepCacheWrite).toBeUndefined()
   expect(withoutUsage.record.firstStepPromptTokens).toBeUndefined()
+  expect(withoutUsage.record.firstStepCacheRead).toBeUndefined()
+})
+
+test('最初の応答のキャッシュ読込を firstStepCacheRead に残す（後続の応答の読込は足さない）', () => {
+  // Arrange: 温かいキャッシュを読む定常のターン。最初の応答は読込 145,000・書込 5,000。
+  const first = { ...sonnetUsage, input_tokens: 200, cache_read_input_tokens: 145_000, cache_creation_input_tokens: 5_000 }
+  const later = { ...sonnetUsage, input_tokens: 200, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 1_000 }
+  let drafts = beginTurn({}, { turnId: 't8' })
+
+  // Act
+  drafts = recordStep(drafts, { turnId: 't8', model: 'claude-sonnet-5-5', usage: first })
+  drafts = recordStep(drafts, { turnId: 't8', model: 'claude-sonnet-5-5', usage: later })
+  const finished = finishTurn(drafts, { turnId: 't8', durationMs: 1, reason: 'answer' })
+
+  // Assert
+  expect(finished.record.firstStepCacheRead).toBe(145_000)
+  expect(finished.record.firstStepCacheWrite).toBe(5_000)
 })
 
 test('Sonnet 換算は同じ usage を Sonnet 単価で計算し、単価不明の応答を含むと null にする', () => {
@@ -338,6 +357,22 @@ test('step の記録が欠けていれば（終了時の usage の方が多け�
   expect(finished.record.costUsd).toBe(3)
   expect(finished.record.sonnetCostUsd).toBe(3)
   expect(finished.record.haikuCostUsd).toBe(0.75)
+})
+
+test('step の記録が欠けたときの Haiku 5.5 の単価段は、ターン合計ではなく記録できた応答の最長のプロンプト長で決める', () => {
+  // Arrange: 1 応答あたりプロンプト 50,000 tokens（Haiku 5.5 の低い単価段）。10 応答のうち 1 応答だけ届き、終了時の usage は 10 応答の合計（読込 500,000）。
+  const perStep = { model: 'claude-haiku-5-5', input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 50_000, cache_creation_input_tokens: 0 }
+  const whole = { ...perStep, cache_read_input_tokens: 500_000 }
+  let drafts = beginTurn({}, { turnId: 't17' })
+  drafts = recordStep(drafts, { turnId: 't17', model: 'claude-haiku-5-5', usage: perStep })
+
+  // Act
+  const finished = finishTurn(drafts, { turnId: 't17', usage: whole, durationMs: 1, reason: 'answer' })
+
+  // Assert: 低い段の読込 $0.01/MTok で 500,000 tokens = $0.005（合計の長さで判定すると高い段の $0.025 になる）。
+  expectNear(finished.record.costUsd, 0.005)
+  expectNear(finished.record.haikuCostUsd, 0.005)
+  expectNear(finished.record.costParts?.cacheRead, 0.005)
 })
 
 test('advisor の呼び出し回数は、NaN・負数・小数・非数なら 0 として数える', () => {

@@ -143,3 +143,43 @@ test('累計が基準点より小さくなったら、基準点を取り直し�
   // Assert
   expect(after.sessionCostUsd).toEqual({ baseline: 1, current: 1, baselineTurns: 1 })
 })
+
+test('累計が基準点以上でも直前の値より小さくなったら、巻き戻りとして基準点を取り直す', () => {
+  // Arrange: 基準点 0 で始まり、もう 1 ターン進んで累計 30 になった後、再開で 0 に戻った（基準点との比較だけでは見逃す）
+  const before = withCurrent(appendTurn(withCostSample(appendTurn(EMPTY_REVIEW, record), 0), record), 30)
+
+  // Act
+  const after = withCurrent(before, 0)
+  const resumed = withCurrent(after, 2)
+
+  // Assert
+  expect(after.sessionCostUsd).toEqual({ baseline: 0, current: 0, baselineTurns: 2 })
+  expect(resumed.sessionCostUsd).toEqual({ baseline: 0, current: 2, baselineTurns: 2 })
+})
+
+test('累計が増えている・変わらないあいだは、基準点を取り直さない', () => {
+  // Arrange
+  const started = withCostSample(appendTurn(EMPTY_REVIEW, record), 1)
+
+  // Act
+  const same = withCurrent(withCurrent(started, 3), 3)
+
+  // Assert
+  expect(same.sessionCostUsd).toEqual({ baseline: 1, current: 3, baselineTurns: 1 })
+})
+
+test('基準点を取り直したら、畳んだ集計の「基準点より後」のぶんも消す（取り直した基準点より前になるため）', () => {
+  // Arrange: 畳んだ集計に基準点より後のぶんが積まれている
+  const sinceBaseline = { lowUsd: 10, highUsd: 12, cacheWrite: 5_000 }
+  const archived = { turns: 100, subagents: 0, advisorCalls: 0, groups: [], pricedUsd: 10, unpricedTurns: 0, highUsd: 12, sinceBaseline }
+  const before = { ...withCurrent(withCostSample(appendTurn(EMPTY_REVIEW, record), 0), 110), archived }
+
+  // Act
+  const after = withCurrent(before, 2)
+
+  // Assert: 基準点より後のぶんだけ消え、件数・合計（全体の集計）は残る
+  expect(after.archived?.sinceBaseline).toEqual({ lowUsd: 0, highUsd: 0, cacheWrite: 0 })
+  expect(after.archived?.turns).toBe(100)
+  expect(after.archived?.pricedUsd).toBe(10)
+  expect(before.archived.sinceBaseline).toEqual(sinceBaseline)
+})

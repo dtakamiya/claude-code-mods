@@ -23,6 +23,7 @@ const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
   reason: 'answer',
   firstStepCacheWrite: 1_000,
   firstStepPromptTokens: 2_000,
+  firstStepCacheRead: 0,
   ...overrides,
 })
 

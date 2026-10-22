@@ -1,6 +1,6 @@
 // $.state に置く値（atom の初期値と、その書き換え）。すべて新しいオブジェクトを返す。
 import type { ReviewState, TurnRecord } from '../types'
-import { trimTurns } from './archive'
+import { EMPTY_ARCHIVE, trimTurns } from './archive'
 
 export const EMPTY_REVIEW: ReviewState = {
   turns: [],
@@ -44,14 +44,21 @@ export function withBaseline(state: ReviewState, costUsd: number | null): Review
 }
 
 /**
- * 直近値を書く。基準点より小さい値が来たら（セッション再開などで累計が巻き戻った）、基準点を取り直す。
- * 取り直さないと実コストが負になり、Mod 未読込中の費用も混ざる。
+ * 直近値を書く。直前の値（なければ基準点）より小さい値が来たら（セッション再開などで累計が巻き戻った）、基準点を取り直す。
+ * 累計は減らないので、基準点以上でも直前より下がれば巻き戻りとみなす（基準点 0 のままの再開もここで拾う）。
+ * 取り直さないと実コストが負になったり、巻き戻る前の費用が推定にだけ残ったりする。
+ * 畳んだ集計のうち基準点より後のぶんも、取り直した基準点より前になるので消す。
  */
 export function withCurrent(state: ReviewState, costUsd: number): ReviewState {
   if (!isUsableCost(costUsd)) return state
-  const { baseline } = state.sessionCostUsd
-  if (baseline !== null && costUsd < baseline) {
-    return { ...state, sessionCostUsd: { baseline: costUsd, current: costUsd, baselineTurns: state.turns.length } }
+  const { baseline, current } = state.sessionCostUsd
+  const previous = current ?? baseline
+  if (baseline !== null && previous !== null && costUsd < previous) {
+    return {
+      ...state,
+      ...(state.archived === undefined ? {} : { archived: { ...state.archived, sinceBaseline: EMPTY_ARCHIVE.sinceBaseline } }),
+      sessionCostUsd: { baseline: costUsd, current: costUsd, baselineTurns: state.turns.length },
+    }
   }
   return { ...state, sessionCostUsd: { ...state.sessionCostUsd, current: costUsd } }
 }
