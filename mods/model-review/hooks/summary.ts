@@ -169,12 +169,20 @@ export function moneyLineText(review: ReviewState, isSubscription: boolean): str
 
 /** moneyLineText の、計算済みの推定と差から組み立てる版（集計を 1 回で済ませる呼び出し側用）。 */
 export function moneyLineFrom(estimate: EstimateFacts, diff: CostDiff | null, isSubscription: boolean): string {
+  return `金額: ${moneyLineBody(estimate, diff, isSubscription)}`
+}
+
+/**
+ * 金額の文面の本体（「推定 … · 実 … · 差 …」）。ペインの金額行（「金額  」の後ろ）と、テキストの「金額: 」の行で同じ。
+ * 語の前に付くラベル（「金額」「金額:」）は呼び出し側が付ける。
+ */
+export function moneyLineBody(estimate: EstimateFacts, diff: CostDiff | null, isSubscription: boolean): string {
   const word = isSubscription ? 'API 換算の推定' : '推定'
   const actualPart =
     diff === null
       ? ACTUAL_COST_UNAVAILABLE_TEXT
       : `${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）· 差 ${signedUsdText(diff.diffUsd)}${diffDirectionText(diff.diffUsd)}`
-  return `金額: ${word} ${estimateRangeText(estimate)} · ${actualPart}`
+  return `${word} ${estimateRangeText(estimate)} · ${actualPart}`
 }
 
 /** 単価が分からないターン数と全ターン数。結論の状態（判定不能・理由の添え書き）に使う。結論行とペインの判定で同じ数え方にする。 */

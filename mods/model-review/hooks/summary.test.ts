@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { ReviewState, TurnRecord } from '../types'
 import type { Concern, ModelGroup } from './analyze'
 import {
+  ACTUAL_COST_UNAVAILABLE_TEXT,
   actualCostUsd,
   advisorCallText,
   concernDetailText,
@@ -10,6 +11,8 @@ import {
   estimateFacts,
   groupFacts,
   loopView,
+  moneyLineBody,
+  moneyLineFrom,
   subagentCount,
   toolDetailText,
   turnOriginLabel,
@@ -154,4 +157,26 @@ test('ターンの起点・ツールと所要時間・サブエージェント�
   expect(turnOriginLabel(sub)).toBe('サブエージェント')
   expect(toolDetailText(sub)).toBe('ツール 3 回 · 2 分 5 秒')
   expect(subagentCount([main, sub])).toBe(1)
+})
+
+test('金額の本体は、金額行の「金額: 」の後ろと同じ文面になる（実コスト取得不可のときも）', () => {
+  // Arrange
+  const estimate = { costUsd: 3, unpricedTurns: 0, allUnpriced: false, lowUsd: 3, highUsd: 3.9 }
+  const diff = { actualUsd: 3.5, estimateUsd: 3, diffUsd: 0.5 }
+
+  // Act / Assert
+  expect(moneyLineBody(estimate, diff, false)).toBe('推定 $3.0000〜$3.9000 · 実 $3.5000（読み込み後）· 差 +$0.5000（実が大きい）')
+  expect(moneyLineFrom(estimate, diff, false)).toBe(`金額: ${moneyLineBody(estimate, diff, false)}`)
+  expect(moneyLineBody(estimate, null, false)).toBe(`推定 $3.0000〜$3.9000 · ${ACTUAL_COST_UNAVAILABLE_TEXT}`)
+})
+
+test('サブスクの金額本体は API 換算の語を使う', () => {
+  // Arrange
+  const estimate = { costUsd: 3, unpricedTurns: 0, allUnpriced: false, lowUsd: 3, highUsd: 3.9 }
+  const diff = { actualUsd: 3.5, estimateUsd: 3, diffUsd: 0.5 }
+
+  // Act / Assert
+  expect(moneyLineBody(estimate, diff, true)).toBe(
+    'API 換算の推定 $3.0000〜$3.9000 · 実（API 換算） $3.5000（読み込み後）· 差 +$0.5000（実が大きい）',
+  )
 })

@@ -22,10 +22,10 @@ const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
   ...overrides,
 })
 
-/** 指摘・ループ別・切替見積り・高コストターンが全部出る記録。 */
+/** 指摘・ループ別・切替見積り・高コストターンが全部出る記録。advisor の呼び出しがあり、コストの節に中身が出る（見出しが出る）。 */
 const richReview = (): ReviewState => ({
   turns: [
-    turn({ turnId: 't1', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000, firstStepCacheRead: 100_000 }),
+    turn({ turnId: 't1', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000, firstStepCacheRead: 100_000, advisorCalls: 1 }),
     turn({ turnId: 's1', agentId: 'a1', model: 'claude-haiku-5-5' }),
     ...['o1', 'o2', 'o3'].map(turnId => turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 })),
   ],
@@ -105,4 +105,19 @@ test('結論・金額・差は、ペインとテキストで同じ集計から�
   expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toBe(analysis.conclusion.text)
   expect(text[0]).toBe(analysis.conclusion.text)
   expect(analysis.diff).not.toBeNull()
+})
+
+test('所見の節は、分析の所見（再構築・TTL 乖離）をそのまま持つ', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 3 回連続する（所見の警告）。
+  const rebuilding = Array.from({ length: 3 }, (_, index) =>
+    turn({ turnId: `r${index}`, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 } }),
+  )
+  const analysis = analyzeReview({ turns: rebuilding, sessionCostUsd: { baseline: null, current: null } })
+
+  // Act
+  const [concerns] = buildSections(analysis)
+
+  // Assert
+  expect(concerns?.kind === 'concerns' ? concerns.findings.map(note => note.kind) : null).toEqual(['rebuild'])
+  expect(concerns?.kind === 'concerns' ? concerns.findings : null).toEqual(analysis.findings)
 })

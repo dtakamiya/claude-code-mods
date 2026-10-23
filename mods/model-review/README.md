@@ -67,4 +67,4 @@
 
 ## 開発
 
-`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。動作確認済みバージョン: Claude Code 2.1.308（validate / test / tsc）。
+`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。動作確認済みバージョン: Claude Code 2.1.309（validate / test / tsc）。

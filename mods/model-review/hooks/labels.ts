@@ -1,15 +1,23 @@
 // ペインとテキスト出力で共用する見出し・用語。順序（ペインに合わせる）は両方の組み立て側で守る。
 import type { Concern, ConcernKind } from './analyze'
 import { RECENT_CONCERN_MAIN_TURNS } from './domain'
+import type { FindingKind } from './notes'
 
 export const HEADING = {
-  concerns: '妥当性（参考）',
+  concerns: '所見',
   loops: 'ループ別（キャッシュ効率）',
   groups: 'モデル × effort（コスト比）',
   topTurns: '高コストターン',
   whatIf: 'いま切り替えたら（目安）',
   cost: 'コスト',
+  reliability: '信頼度',
 } as const
+
+/** 所見に入る警告の短い名前（ペインのバッジ・テキストの【】の中）。 */
+export const FINDING_LABEL: Readonly<Record<FindingKind, string>> = {
+  rebuild: '再構築',
+  ttl: 'TTL 乖離',
+}
 
 /** 指摘の種類の短い名前と、1 行の説明。 */
 export const CONCERN_TEXT: Readonly<Record<ConcernKind, { readonly label: string; readonly summary: string }>> = {
@@ -23,7 +31,8 @@ export const CONCERN_TEXT: Readonly<Record<ConcernKind, { readonly label: string
   switch: { label: '切替', summary: 'モデル / effort の切替でキャッシュを再構築' },
 }
 
-export const NO_CONCERNS_TEXT = '指摘なし'
+/** 直近の指摘がないときの 1 行（ペインとテキストで共用）。 */
+export const NO_CONCERNS_TEXT = '過剰・不足の指摘なし'
 /** 直近の窓より前にだけ該当した指摘の小見出し。結論の ▲ には数えない。 */
 export const PAST_CONCERNS_HEADING = `過去の指摘（メインの直近 ${RECENT_CONCERN_MAIN_TURNS} ターンには該当なし）`
 /** 結論行で、過去の指摘の種類数を示す語。 */
@@ -38,7 +47,7 @@ export const TERM_TEXT = {
   hitRate: 'ヒット率: プロンプトのうちキャッシュから読んだ割合（高いほど安い）',
   afterLoad: '読み込み後: この Mod を読み込んでからの実コスト',
   sonnetEquivalent: 'Sonnet 換算: Sonnet 5.5 にしていた場合に減る額の目安',
-  diff: '差（実コスト − 推定）: + は推定より実額が大きい',
+  diff: '差（実 − 推定）: + は推定より実額が大きい',
 } as const
 export type TermKey = keyof typeof TERM_TEXT
 

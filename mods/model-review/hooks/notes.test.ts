@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
-import { buildNotes, splitNotes, type NoteKind } from './notes'
+import { buildNotes, splitFindings, splitNotes, type Note, type NoteKind } from './notes'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 
 // 架空データのみ。
@@ -235,4 +235,22 @@ test('D3 注記は動的な警告（再構築・TTL・切替）と信頼度（�
   expect(alerts.map(note => note.kind)).toEqual(['rebuild'])
   expect(alerts[0]?.brief).toBe('キャッシュ書込 > 読込が 3 ターン連続')
   expect(reliability.map(note => note.kind)).toEqual(['priceAge', 'planMode'])
+})
+
+test('所見に入るのは再構築と TTL 乖離だけで、それ以外（切替を含む）は元の順のまま信頼度に回す', () => {
+  // Arrange
+  const notes: Note[] = [
+    { kind: 'stale', text: 'a' },
+    { kind: 'rebuild', text: 'b' },
+    { kind: 'switch', text: 'c' },
+    { kind: 'ttl', text: 'd' },
+    { kind: 'planMode', text: 'e' },
+  ]
+
+  // Act
+  const { findings, trustNotes } = splitFindings(notes)
+
+  // Assert
+  expect(findings.map(note => note.text)).toEqual(['b', 'd'])
+  expect(trustNotes.map(note => note.text)).toEqual(['a', 'c', 'e'])
 })

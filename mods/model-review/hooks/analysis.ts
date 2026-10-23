@@ -10,7 +10,7 @@ import { numericEffortNote } from './effort'
 import { growthView, type GrowthView } from './growth'
 import { applyMute } from './mute'
 import { nextStepText } from './nextstep'
-import { buildNotes, splitNotes, type Note } from './notes'
+import { buildNotes, splitFindings, splitNotes, type FindingNote, type Note } from './notes'
 import {
   advisorCallText,
   costDiff,
@@ -45,6 +45,9 @@ export type ReviewAnalysis = {
   readonly notes: readonly Note[]
   readonly alerts: readonly Note[]
   readonly reliability: readonly Note[]
+  /** 所見の節に出す警告（再構築・TTL 乖離）と、信頼度の節に出す注記（切替を含む）。描画の置き場所だけを決める。 */
+  readonly findings: readonly FindingNote[]
+  readonly trustNotes: readonly Note[]
   readonly conclusion: Conclusion
   /** 結論が「目立った指摘なし」を言っているか（ペインで OK 行と空の見出しを出さないため）。 */
   readonly noConcerns: boolean
@@ -69,6 +72,7 @@ function computeAnalysis(review: ReviewState, nowMs: number | undefined, muted: 
   const { recent, past } = partitionByRecency(concerns)
   const notes = buildNotes(review, nowMs)
   const { alerts, reliability } = splitNotes(notes)
+  const { findings, trustNotes } = splitFindings(notes)
   return {
     records,
     archived,
@@ -85,6 +89,8 @@ function computeAnalysis(review: ReviewState, nowMs: number | undefined, muted: 
     notes,
     alerts,
     reliability,
+    findings,
+    trustNotes,
     conclusion: conclusionOf(concerns, alerts, coverage),
     noConcerns: saysNoConcerns(concerns, alerts, coverage),
     diff: costDiff(review),

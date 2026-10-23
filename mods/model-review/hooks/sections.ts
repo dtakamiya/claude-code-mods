@@ -6,11 +6,14 @@ import type { ReviewAnalysis } from './analysis'
 import type { Concern } from './analyze'
 import type { BreakdownView } from './breakdown'
 import type { GrowthView } from './growth'
+import type { FindingNote } from './notes'
 import type { CostDiff, EstimateFacts, LoopView } from './summary'
 
 export type ConcernsSection = {
   readonly kind: 'concerns'
   readonly recent: readonly Concern[]
+  /** 所見の中の警告（再構築・TTL 乖離）。指摘の後・過去の指摘の前に出す。 */
+  readonly findings: readonly FindingNote[]
   readonly past: readonly Concern[]
   readonly nextSteps: ReadonlyMap<Concern, string | null>
   readonly numericNote: string | null
@@ -38,12 +41,13 @@ export type Section = ConcernsSection | GroupsSection | TopTurnsSection | LoopsS
 
 /**
  * 節を表示する順に並べる。中身のない任意の節（高コストターン・ループ別・いま切り替えたら）は入れない。
- * 妥当性・モデル × effort・コストの節は常に入れる（妥当性の節を空のときに出すかどうかは描画側が決める）。
+ * 所見・モデル × effort・コストの節は常に入れる（所見の節を空のときに出すかどうかは描画側が決める）。
  */
 export function buildSections(analysis: ReviewAnalysis): readonly Section[] {
   const concerns: ConcernsSection = {
     kind: 'concerns',
     recent: analysis.recent,
+    findings: analysis.findings,
     past: analysis.past,
     nextSteps: analysis.nextSteps,
     numericNote: analysis.numericNote,

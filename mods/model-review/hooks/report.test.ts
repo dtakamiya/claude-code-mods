@@ -68,9 +68,9 @@ test('実コストと推定の差を、同じ基準点から計算して表示�
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('合計推定コスト: $0.5000')
-  expect(text).toContain('セッション実コスト（読み込み後）: $0.7500')
-  expect(text).toContain('差（実コスト − 推定）: +$0.2500（実が大きい。推定は単価表の値')
+  expect(text).toContain('推定: $0.5000')
+  expect(text).toContain('実（読み込み後）: $0.7500')
+  expect(text).toContain('差（実 − 推定）: +$0.2500（実が大きい。推定は単価表の値')
 })
 
 test('実コストが推定より小さいときの差は「-$」の形で、向きを添える（$-0.0187 の形にしない）', () => {
@@ -81,7 +81,7 @@ test('実コストが推定より小さいときの差は「-$」の形で、向
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('差（実コスト − 推定）: -$0.1000（推定が大きい。推定は単価表の値')
+  expect(text).toContain('差（実 − 推定）: -$0.1000（推定が大きい。推定は単価表の値')
   expect(text).not.toContain('$-')
 })
 
@@ -106,7 +106,7 @@ test('単価不明のモデルは推定コストを「単価不明」と表示�
   // Assert
   expect(text).toContain('claude-unlisted-9  effort high')
   expect(text).toContain('推定 単価不明')
-  expect(text).toContain('合計推定コスト: 算出できません（全 1 ターンが単価不明）')
+  expect(text).toContain('推定: 算出できません（全 1 ターンが単価不明）')
   expect(text).toContain('モデル: claude-unlisted-9')
 })
 
@@ -129,7 +129,7 @@ test('単価不明が 0 件のときは、除外の文言を出さない', () =>
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('合計推定コスト: $0.5000')
+  expect(text).toContain('推定: $0.5000')
   expect(text).not.toContain('ターンを除く')
 })
 
@@ -144,7 +144,7 @@ test('単価がわかるターンがなければ、高コストターンの見�
   expect(text).not.toContain('高コストターン')
 })
 
-test('妥当性の指摘があれば、種類と件数を見出しに出す', () => {
+test('所見の指摘があれば、種類と件数を見出しに出す（見出しは「所見 · ヒューリスティック」）', () => {
   // Arrange: 軽作業を Opus で 3 回実行（同じ設定は 1 行にまとまる）。
   const light = (turnId: string) =>
     turn({ turnId, model: 'claude-opus-5-5', effort: 'medium', costUsd: 0.5, sonnetCostUsd: 0.25 })
@@ -154,6 +154,7 @@ test('妥当性の指摘があれば、種類と件数を見出しに出す', ()
   const text = buildReportLines(review).join('\n')
 
   // Assert
+  expect(text).toContain('■ 所見 · ヒューリスティック')
   expect(text).toContain('【過剰】 軽作業に重いモデル / effort · 3 / 3 件')
   expect(text).toContain('claude-opus-5-5 / effort medium: 軽作業 3 件')
   expect(text).toContain('判定基準（参考）')
@@ -208,6 +209,8 @@ test('見出しの順序と用語はペインと同じで、妥当性が最初�
 
   // Assert: ペインの見出しがすべてテキストにあり、同じ順序で並ぶ。
   expect(paneOrder[0]).toBe(HEADING.concerns)
+  // 信頼度は末尾の見出し（用語・判定基準より前）。
+  expect(paneOrder.at(-1)).toBe(HEADING.reliability)
   expect(reportOrder.every(index => index >= 0)).toBe(true)
   expect(reportOrder).toEqual([...reportOrder].sort((a, b) => a - b))
 })
@@ -304,7 +307,7 @@ test('TTL の説明（1 時間単価）は、ペインとテキストの出力�
   // Assert: 前提（警告なし・内訳と差の行がある）
   expect(rows.some(row => row.kind === 'badge')).toBe(false)
   expect(rows.some(row => row.kind === 'note' && row.text.startsWith('内訳の合計'))).toBe(true)
-  expect(lines.some(line => line.includes('差（実コスト − 推定）'))).toBe(true)
+  expect(lines.some(line => line.includes('差（実 − 推定）'))).toBe(true)
   // Assert: 1 時間単価 はペインでは免責の 1 行、テキストでは免責の 1 行だけ。1 時間 TTL は出ない
   const paneHits = rows.filter(row => JSON.stringify(row).includes('1 時間単価'))
   expect(paneHits.map(row => row.kind)).toEqual(['note'])
@@ -313,4 +316,74 @@ test('TTL の説明（1 時間単価）は、ペインとテキストの出力�
   expect(textHits.map(line => line.startsWith('含まない:'))).toEqual([true])
   expect(JSON.stringify(rows)).not.toContain('1 時間 TTL')
   expect(lines.join('\n')).not.toContain('1 時間 TTL')
+})
+
+test('テキストの所見は再構築の警告を【再構築】の行で出し、見出しの後・モデル × effort の前に置く', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 4 回連続する（所見の警告）。
+  const rebuild = (turnId: string) => turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 } })
+  const lines = buildReportLines(withTurns(['r0', 'r1', 'r2', 'r3'].map(rebuild), null, null))
+
+  // Act
+  const headingIndex = lines.indexOf(`■ ${HEADING.concerns} · ヒューリスティック`)
+  const warningIndex = lines.findIndex(line => line.startsWith('  【再構築】 キャッシュ書込が読込を上回るターンが 4 回連続'))
+  const groupsIndex = lines.indexOf(`■ ${HEADING.groups}`)
+
+  // Assert
+  expect(headingIndex).toBeGreaterThanOrEqual(0)
+  expect(warningIndex).toBeGreaterThan(headingIndex)
+  expect(warningIndex).toBeLessThan(groupsIndex)
+})
+
+test('切替の注記は信頼度の節に入り、所見の中には出ない', () => {
+  // Arrange: 直近 10 ターンの中で Sonnet から Opus へ切り替える（切替の注記は信頼度）。
+  const turns = Array.from({ length: 3 }, (_, index) =>
+    turn({ turnId: `s${index}`, model: index < 1 ? 'claude-sonnet-5-5' : 'claude-opus-5-5' }),
+  )
+  const lines = buildReportLines(withTurns(turns, null, null))
+
+  // Act
+  const switchIndex = lines.findIndex(line => line.startsWith('切替の推定は'))
+  const reliabilityIndex = lines.indexOf(`■ ${HEADING.reliability}`)
+  const concernsIndex = lines.indexOf(`■ ${HEADING.concerns} · ヒューリスティック`)
+
+  // Assert
+  expect(switchIndex).toBeGreaterThan(reliabilityIndex)
+  expect(reliabilityIndex).toBeGreaterThan(concernsIndex)
+})
+
+test('テキストの信頼度は、コスト節の後に空行を挟み、判定基準の前に出す', () => {
+  // Arrange
+  const lines = buildReportLines(withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], 1.0, 1.75))
+
+  // Act
+  const costIndex = lines.indexOf(`■ ${HEADING.cost}`)
+  const reliabilityIndex = lines.indexOf(`■ ${HEADING.reliability}`)
+  const criteriaIndex = lines.findIndex(line => line.startsWith('判定基準（参考）'))
+
+  // Assert
+  expect(costIndex).toBeGreaterThanOrEqual(0)
+  expect(costIndex).toBeLessThan(reliabilityIndex)
+  expect(reliabilityIndex).toBeLessThan(criteriaIndex)
+  expect(lines[reliabilityIndex - 1]).toBe('')
+  expect(lines[criteriaIndex - 1]).toBe('')
+  expect(lines.slice(reliabilityIndex + 1, criteriaIndex).some(line => line.startsWith('含まない: '))).toBe(true)
+})
+
+test('判定基準の出力の上限は桁区切りで書く（1,000 tokens）', () => {
+  // Act
+  const text = buildReportLines(withTurns([turn({ turnId: 'a' })], null, null)).join('\n')
+
+  // Assert
+  expect(text).toContain('出力 1,000 tokens 以下')
+  expect(text).not.toContain('出力 1000 tokens')
+})
+
+test('指摘がないときの行は「過剰・不足の指摘なし」と書く（旧い「指摘なし」は出さない）', () => {
+  // Act
+  const lines = buildReportLines(withTurns([turn({ toolCount: 5 })], null, null))
+
+  // Assert
+  expect(lines).toContain(`  ${NO_CONCERNS_TEXT}`)
+  expect(NO_CONCERNS_TEXT).toBe('過剰・不足の指摘なし')
+  expect(lines).not.toContain('  指摘なし')
 })

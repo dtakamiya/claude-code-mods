@@ -297,8 +297,8 @@ test('基準点から現在までの実コストと、推定との差を表示�
   const ran = await $.command.run(COMMAND_RUN)
 
   // Assert
-  expect(ran.text).toContain('セッション実コスト（読み込み後）: $3.0000')
-  expect(ran.text).toContain('差（実コスト − 推定）: +$0.0000（推定は単価表の値')
+  expect(ran.text).toContain('実（読み込み後）: $3.0000')
+  expect(ran.text).toContain('差（実 − 推定）: +$0.0000（推定は単価表の値')
 })
 
 test('Pane は先頭の結論行を terminal と desktop の両方で描く', async ($, on) => {
@@ -461,14 +461,14 @@ test('起動時に基準額が取れなくても、後に取れた時点を基�
   const first = await $.command.run(COMMAND_RUN)
 
   // Assert
-  expect(first.text).toContain('セッション実コスト（読み込み後）: $0.0000')
+  expect(first.text).toContain('実（読み込み後）: $0.0000')
 
   // Act: 累計 16 になったら、基準点からの 3 が実コスト。
   usd = 16
   const second = await $.command.run(COMMAND_RUN)
 
   // Assert
-  expect(second.text).toContain('セッション実コスト（読み込み後）: $3.0000')
+  expect(second.text).toContain('実（読み込み後）: $3.0000')
 })
 
 const OPUS_USAGE = {
@@ -488,7 +488,7 @@ async function runLightOpusTurn($: Engine, turnId: string) {
   await $.turn.complete({ answer: '', durationMs: 1_000, isAborted: false, turnId, reason: 'answer', usage: OPUS_USAGE } as never)
 }
 
-test('Pane のタイトル行は先頭にターン数とサブエージェント数を置き、推定コストは出さない（コスト行に出す）', async ($, on) => {
+test('Pane のタイトル行は先頭にターン数とサブエージェント数を置き、推定コストは出さない（金額行に出す）', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
   await $.session.start(SESSION_START)
