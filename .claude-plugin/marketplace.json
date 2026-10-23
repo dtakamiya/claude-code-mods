@@ -5,6 +5,7 @@
     { "name": "context-doctor", "source": "./mods/context-doctor", "description": "コンテキストの内訳を分析し、課題点と改善点を提示する（読み取り専用）" },
     { "name": "session-recap", "source": "./mods/session-recap", "description": "ツール別の呼び出し回数とエラー件数を一覧にする（読み取り専用）" },
     { "name": "repeat-call-notice", "source": "./mods/repeat-call-notice", "description": "1 ターンで同じツールを同じ入力で繰り返し呼んだことを、ターン終了時にトーストで知らせる（読み取り専用）" },
-    { "name": "model-review", "source": "./mods/model-review", "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）" }
+    { "name": "model-review", "source": "./mods/model-review", "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）" },
+    { "name": "prompt-coach", "source": "./mods/prompt-coach", "description": "送ったプロンプトに対象・範囲・完了条件の欠けなどがあるとき、送信直後に 1 行で指南する（読み取り専用）" }
   ]
 }
