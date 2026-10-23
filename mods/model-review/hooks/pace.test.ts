@@ -201,10 +201,10 @@ test('サブスク（使用率あり）では金額を「API 換算」と明示�
   const rowsWithout = buildPaneRows(review, {}, T0, 80)
 
   // Assert
-  expect(withRate).toContain('合計推定コスト（API 換算・参考）')
+  expect(withRate).toContain('推定（API 換算・参考）')
   expect(withRate).toContain('使用率 5h: 72% · リセットまで 1 時間 10 分')
   expect(withRate).toContain('請求額ではありません')
-  expect(without).toContain('合計推定コスト:')
+  expect(without).toContain('推定:')
   expect(without).not.toContain('API 換算')
   expect(without).not.toContain('使用率')
   expect(JSON.stringify(rows)).toContain('API 換算の推定')
@@ -225,10 +225,10 @@ test('サブスクでは実額にも「API 換算」を添え、請求額に読�
 
   // Assert
   expect(report).toContain('実（API 換算） $0.5000（読み込み後）')
-  expect(report).toContain('セッション実コスト（API 換算・請求額ではない・読み込み後）: $0.5000')
-  expect(rows).toContain('/ 実（API 換算） $0.5000（読み込み後）')
+  expect(report).toContain('実（API 換算・請求額ではない・読み込み後）: $0.5000')
+  expect(rows).toContain('· 実（API 換算） $0.5000（読み込み後）')
   expect(reportWithout).toContain('実 $0.5000（読み込み後）')
-  expect(reportWithout).toContain('セッション実コスト（読み込み後）: $0.5000')
-  expect(rowsWithout).toContain('/ 実 $0.5000（読み込み後）')
+  expect(reportWithout).toContain('実（読み込み後）: $0.5000')
+  expect(rowsWithout).toContain('· 実 $0.5000（読み込み後）')
   expect(rowsWithout).not.toContain('API 換算')
 })

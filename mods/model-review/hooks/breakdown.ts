@@ -67,7 +67,7 @@ export function breakdownHint(breakdown: CostBreakdown): string | null {
   const { parts, totalUsd } = breakdown
   if (breakdown.includedTurns < BREAKDOWN_HINT_MIN_TURNS) return null
   if (parts.cacheWrite / totalUsd >= BREAKDOWN_HINT_SHARE) {
-    return '書込が大きい: プレフィックスが変わり続けている可能性（モデル・effort の切替、MCP・プラグインの変更を確認。注意欄に書込の連続が出ていればそれも参照）'
+    return '書込が大きい: プレフィックスが変わり続けている可能性（モデル・effort の切替、MCP・プラグインの変更を確認。所見に書込の連続が出ていればそれも参照）'
   }
   if (parts.output / totalUsd >= BREAKDOWN_HINT_SHARE) {
     return '出力が大きい: effort や冗長な出力を見直す'

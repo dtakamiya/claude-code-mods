@@ -12,7 +12,8 @@ export const UNPRICED_STALE_RATIO = 0.3
 
 /**
  * 注記の種類。動的な警告（rebuild / ttl / switch）と、数字をどこまで信じてよいかの信頼度（それ以外）に分ける。
- * 警告は結論行の「注意」に数え、ペインでは「注意」バッジにする。信頼度は結論行の件数に数えず、ペインでは末尾の注記にする。
+ * 警告は結論行の「注意」に数える。描画では、再構築・TTL 乖離を所見の中（FINDING_KINDS）、切替と信頼度を信頼度の節に出す。
+ * 信頼度は結論行の件数に数えない。
  */
 export type NoteKind = 'rebuild' | 'ttl' | 'switch' | 'stale' | 'priceAge' | 'diverged' | 'planMode'
 
@@ -23,17 +24,30 @@ export type Note = {
   readonly brief?: string
 }
 
+/** 所見（指摘の節の中）に出す警告。ペインでは指摘の後ろのバッジ、テキストでは【再構築】などの行。 */
+export type FindingKind = 'rebuild' | 'ttl'
+export type FindingNote = Note & { readonly kind: FindingKind }
+
 const ALERT_KINDS: ReadonlySet<NoteKind> = new Set(['rebuild', 'ttl', 'switch'])
 /** 結論行の状態を「要確認」に上げる警告。切替は推定方法の但し書きで、切替の指摘を止めている利用者の ✓ を変えないよう除く。 */
 const STATUS_RAISING_KINDS: ReadonlySet<NoteKind> = new Set(['rebuild', 'ttl'])
+/** 所見に入る警告。状態を上げる種類と同じ集合だが意味が別（所見の節に置く基準）なので、流用せず独立に持つ。 */
+const FINDING_KINDS: ReadonlySet<NoteKind> = new Set<NoteKind>(['rebuild', 'ttl'])
 
 export const isAlert = (note: Note): boolean => ALERT_KINDS.has(note.kind)
 export const raisesStatus = (note: Note): boolean => STATUS_RAISING_KINDS.has(note.kind)
+export const isFinding = (note: Note): note is FindingNote => FINDING_KINDS.has(note.kind)
 
 /** 注記を、動的な警告と信頼度に分ける（それぞれ元の順を保つ）。 */
 export const splitNotes = (notes: readonly Note[]): { readonly alerts: readonly Note[]; readonly reliability: readonly Note[] } => ({
   alerts: notes.filter(isAlert),
   reliability: notes.filter(note => !isAlert(note)),
+})
+
+/** 注記を、所見に入る警告と信頼度に分ける（それぞれ元の順を保つ）。描画側が節の置き場所を決めるのに使う。 */
+export const splitFindings = (notes: readonly Note[]): { readonly findings: readonly FindingNote[]; readonly trustNotes: readonly Note[] } => ({
+  findings: notes.filter(isFinding),
+  trustNotes: notes.filter(note => !isFinding(note)),
 })
 
 const FAST_MODE_CLAUSE = 'fast mode の割増'

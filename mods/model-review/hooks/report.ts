@@ -5,10 +5,10 @@ import { analyzeReview, type ReviewAnalysis } from './analysis'
 import { BREAKDOWN_LABEL } from './breakdown'
 import { GROWTH_LABEL } from './growth'
 import type { RateView } from './pace'
-import { formatUsd, formatUsdRange } from './format'
-import { ALWAYS_NOTE } from './notes'
+import { formatInt, formatUsd, formatUsdRange } from './format'
+import { ALWAYS_NOTE, type FindingNote } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
-import { HEADING, CONCERN_TEXT, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
+import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
 import { NO_RECORDS_CONCLUSION } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { HEAVY_TOOL_CALLS, LIGHT_MAX_OUTPUT_TOKENS, LIGHT_MAX_TOOL_CALLS, mainTurnsAfter, type Concern, type ConcernKind } from './analyze'
@@ -57,7 +57,7 @@ function rateLines(rate: RateView | null): string[] {
 }
 
 function costLines(section: CostSection, isSubscription: boolean): string[] {
-  const totalLabel = isSubscription ? '合計推定コスト（API 換算・参考）' : '合計推定コスト'
+  const totalLabel = isSubscription ? '推定（API 換算・参考）' : '推定'
   const { estimate, breakdown, growth, diff } = section
   const estimateLine = estimate.allUnpriced
     ? `${totalLabel}: ${allUnpricedText(section.totalTurns)}`
@@ -80,8 +80,8 @@ function costLines(section: CostSection, isSubscription: boolean): string[] {
     estimateLine,
     ...breakdownLines,
     ...growthLines,
-    `セッション実コスト（${isSubscription ? 'API 換算・請求額ではない・' : ''}読み込み後）: ${formatUsd(diff.actualUsd)}`,
-    `差（実コスト − 推定）: ${signedUsdText(diff.diffUsd)}（${diffDirection(diff.diffUsd)}推定は単価表の値。ターン外の要求は含まない）`,
+    `実（${isSubscription ? 'API 換算・請求額ではない・' : ''}読み込み後）: ${formatUsd(diff.actualUsd)}`,
+    `差（実 − 推定）: ${signedUsdText(diff.diffUsd)}（${diffDirection(diff.diffUsd)}推定は単価表の値。ターン外の要求は含まない）`,
   ]
 }
 
@@ -97,12 +97,19 @@ function oneConcernLines(concern: Concern, next: string | null): string[] {
   ]
 }
 
-/** 直近の指摘を先に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。止めている種類は最後に 1 行だけ。 */
+/** 所見の中の警告 1 行（指摘の【過剰】と同じ形）。 */
+const findingLine = (note: FindingNote): string => `  【${FINDING_LABEL[note.kind]}】 ${note.text}`
+
+/**
+ * 直近の指摘を先に、所見の警告（再構築・TTL 乖離）を指摘の後に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。
+ * 止めている種類は最後に 1 行だけ。
+ */
 function concernLines(section: ConcernsSection): string[] {
-  const { recent, past, nextSteps, numericNote, mutedLine } = section
+  const { recent, findings, past, nextSteps, numericNote, mutedLine } = section
   return [
     `■ ${HEADING.concerns} · ヒューリスティック`,
     ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, nextSteps.get(concern) ?? null))),
+    ...findings.map(findingLine),
     ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, null))]),
     ...(numericNote === null ? [] : [`  ${numericNote}`]),
     ...(mutedLine === null ? [] : [`  ${mutedLine}`]),
@@ -138,13 +145,14 @@ function loopLines(section: LoopsSection): string[] {
 
 const whatIfLines = (section: WhatIfSection): string[] => [`■ ${HEADING.whatIf}`, ...section.options.map(text => `  ${text}`), `  ${WHATIF_NOTE}`, '']
 
-/** コストの節。見出しの後に、金額・内訳・推移・実コスト・使用率・advisor を並べる。末尾の注記は footerLines。 */
+/** コストの節。見出しの後に、推定・内訳・推移・実コスト・使用率・advisor を並べ、節の終わりに空行を置く（次は信頼度）。 */
 function costSectionLines(section: CostSection, rate: RateView | null): string[] {
   return [
     `■ ${HEADING.cost}`,
     ...costLines(section, rate !== null),
     ...rateLines(rate),
     ...(section.advisorText === null ? [] : [`advisor ${section.advisorText}`]),
+    '',
   ]
 }
 
@@ -166,13 +174,14 @@ function sectionLines(section: Section, nowMs: number | undefined, rate: RateVie
 }
 
 const CRITERIA_LINES = [
-  `判定基準（参考）: 軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集系なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下。重い = ツール ${HEAVY_TOOL_CALLS} 回以上、または長時間・エラー。`,
+  `判定基準（参考）: 軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集系なし・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下。重い = ツール ${HEAVY_TOOL_CALLS} 回以上、または長時間・エラー。`,
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
 ]
 
-/** 末尾の注記（注記の全件・畳み込み・免責・判定基準）。コストの節の続きに並ぶ。 */
+/** 末尾の信頼度（切替などの注記・畳み込み・免責）と判定基準。コストの節の後に、空行を挟んで続く。 */
 const footerLines = (analysis: ReviewAnalysis): string[] => [
-  ...analysis.notes.map(note => note.text),
+  `■ ${HEADING.reliability}`,
+  ...analysis.trustNotes.map(note => note.text),
   ...(analysis.archiveNote === null ? [] : [analysis.archiveNote]),
   ALWAYS_NOTE,
   '',

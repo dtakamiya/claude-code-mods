@@ -3,7 +3,7 @@ import { test, expect } from 'claude-code/testing'
 import type { ReviewState, TurnRecord } from '../types'
 import { RECENT_CONCERN_MAIN_TURNS, findConcerns, isRecentConcern, mainTurnsAfter, type Concern } from './analyze'
 import { conclusionOf } from './conclusion'
-import { HEADING, PAST_CONCERNS_HEADING } from './labels'
+import { HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
 import { NEXT_STEP_PREFIX } from './nextstep'
 import { buildPaneRows } from './pane-model'
 import { buildReportLines } from './report'
@@ -134,7 +134,7 @@ test('過去の指摘は、テキストでもペインでも小見出しの下�
   // Assert: テキストは「指摘なし」の後に過去の小見出しと【過剰】。次の一手の行はない。
   const pastIndex = lines.indexOf(`  ${PAST_CONCERNS_HEADING}`)
   expect(pastIndex).toBeGreaterThan(0)
-  expect(lines[pastIndex - 1]).toBe('  指摘なし')
+  expect(lines[pastIndex - 1]).toBe(`  ${NO_CONCERNS_TEXT}`)
   expect(lines.slice(pastIndex).some(line => line.startsWith('  【過剰】'))).toBe(true)
   expect(lines.some(line => line.includes(`→ ${NEXT_STEP_PREFIX}`))).toBe(false)
 

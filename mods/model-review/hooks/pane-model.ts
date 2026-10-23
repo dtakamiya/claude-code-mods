@@ -7,13 +7,13 @@ import { GROWTH_LABEL, type GrowthView } from './growth'
 import type { RateView } from './pace'
 import { HEAVY_TOOL_CALLS, LIGHT_MAX_OUTPUT_TOKENS, LIGHT_MAX_TOOL_CALLS, mainTurnsAfter, modelRank, type Concern, type ConcernKind } from './analyze'
 import { shortModel } from './domain'
-import { cellWidth, formatUsd } from './format'
+import { cellWidth, formatInt, formatUsd } from './format'
 import type { Drafts, LoopDraft } from './recorder'
-import { CONCERN_TEXT, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
-import { ALERT_LABEL, CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
+import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
+import { CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { turnLabelText } from './turnref'
-import { alwaysNoteText } from './notes'
+import { alwaysNoteText, type FindingNote } from './notes'
 import {
   buildSections,
   type ConcernsSection,
@@ -25,14 +25,11 @@ import {
   type WhatIfSection,
 } from './sections'
 import {
-  ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
-  actualWord,
   concernDetailText,
-  estimateRangeText,
   groupFacts,
   hitRateText,
-  signedUsdText,
+  moneyLineBody,
   toolDetailText,
   turnOriginLabel,
 } from './summary'
@@ -143,15 +140,13 @@ function rateRows(rate: RateView | null): PaneRow[] {
   ]
 }
 
-function costLineRow(section: CostSection, isSubscription: boolean): PaneRow {
-  const estimateWord = isSubscription ? 'API 換算の推定' : '推定'
-  const estimateText = estimateRangeText(section.estimate)
-  const { diff } = section
-  if (diff === null) {
-    return { kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${ACTUAL_COST_UNAVAILABLE_TEXT}`, tone: 'plain' }
-  }
-  return { kind: 'kv', label: 'コスト', value: `${estimateWord} ${estimateText} / ${actualWord(isSubscription)} ${formatUsd(diff.actualUsd)}（読み込み後）/ 差 ${signedUsdText(diff.diffUsd)}`, tone: 'plain' }
-}
+/** タイトルの直下の金額行。テキストの「金額:」と同じ文面（moneyLineBody）を使う。 */
+const moneyRow = (analysis: ReviewAnalysis, isSubscription: boolean): PaneRow => ({
+  kind: 'kv',
+  label: '金額',
+  value: moneyLineBody(analysis.estimate, analysis.diff, isSubscription),
+  tone: 'plain',
+})
 
 /** 直近の指摘は種類の色と「次の一手」つき。過去の指摘は色なし（plain）で、次の一手を付けない。 */
 function oneConcernRows(concern: Concern, next: string | null, recent: boolean): PaneRow[] {
@@ -167,23 +162,28 @@ function oneConcernRows(concern: Concern, next: string | null, recent: boolean):
   ]
 }
 
+/** 所見の中の警告（再構築・TTL 乖離）。バッジは種類の名前、本文はそのまま。 */
+const findingRows = (findings: readonly FindingNote[]): PaneRow[] =>
+  findings.map((note): PaneRow => ({ kind: 'badge', label: FINDING_LABEL[note.kind], tone: 'warning', text: note.text }))
+
 /**
- * 妥当性の節（見出し・指摘・空行）。直近の指摘を先に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
- * 止めている種類は最後に注記 1 行だけ。結論が「指摘なし」を言うときは OK 行を出さない。
- * 中身が 1 行も残らないときは、見出しと空行ごと出さない。
+ * 所見の節（見出し・指摘・警告・空行）。直近の指摘を先に、所見の警告を指摘の後に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
+ * 止めている種類は最後に注記 1 行だけ。結論が「目立った指摘なし」を言うときは OK 行を出さない。
+ * 中身が 1 行も残らないときは、見出しと空行ごと出さない（警告も中身に数える）。
  */
 function concernSectionRows(section: ConcernsSection): PaneRow[] {
-  const { recent, past, nextSteps, numericNote, mutedLine, noConcerns } = section
+  const { recent, findings, past, nextSteps, numericNote, mutedLine, noConcerns } = section
   const body: PaneRow[] = [
     ...recent.flatMap(concern => oneConcernRows(concern, nextSteps.get(concern) ?? null, true)),
     ...(recent.length === 0 && !noConcerns ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow] : []),
+    ...findingRows(findings),
     ...(past.length === 0
       ? []
       : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, null, false))]),
     ...(numericNote === null ? [] : [{ kind: 'note', text: numericNote } satisfies PaneRow]),
     ...(mutedLine === null ? [] : [{ kind: 'note', text: mutedLine } satisfies PaneRow]),
   ]
-  return body.length === 0 ? [] : [{ kind: 'heading', text: CONCERN_DETAIL_HEADING }, ...body, { kind: 'blank' }]
+  return body.length === 0 ? [] : [{ kind: 'heading', text: HEADING.concerns }, ...body, { kind: 'blank' }]
 }
 
 function groupSectionRows(section: GroupsSection, columns: number | undefined): PaneRow[] {
@@ -246,24 +246,20 @@ function glossaryRows(terms: readonly TermKey[]): PaneRow[] {
   return [{ kind: 'note', text: `用語  ${terms.map(term => TERM_TEXT[term]).join(' / ')}` }]
 }
 
-/** コストの節。見出しの後に、金額・使用率・内訳・推移・advisor・用語を並べる。 */
-function costSectionRows(section: CostSection, analysis: ReviewAnalysis, rate: RateView | null): PaneRow[] {
-  return [
-    { kind: 'heading', text: HEADING.cost },
-    costLineRow(section, rate !== null),
+/**
+ * コストの節。使用率・内訳・推移・advisor の行があるときだけ、見出しと空行を出す（金額は直下の金額行に出すので、ここには置かない）。
+ */
+function costSectionRows(section: CostSection, rate: RateView | null): PaneRow[] {
+  const body: PaneRow[] = [
     ...rateRows(rate),
     ...breakdownRows(section.breakdown),
     ...growthRows(section.growth),
     ...advisorRows(section.advisorText),
-    ...glossaryRows(shownTerms(analysis)),
-    { kind: 'blank' },
   ]
+  return body.length === 0 ? [] : [{ kind: 'heading', text: HEADING.cost }, ...body, { kind: 'blank' }]
 }
 
-/** 件数は結論行だけに出し、見出しは内訳であることを示す。 */
-const CONCERN_DETAIL_HEADING = `${HEADING.concerns}· 見直し候補の内訳`
-
-const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${LIGHT_MAX_OUTPUT_TOKENS} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
+const CRITERIA_NOTE = `軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下 / 重い = ツール ${HEAVY_TOOL_CALLS} 回以上・長時間・エラー`
 /** 実コストが取れているときだけ、判定基準の末尾に付ける更新の案内。取れないときはコスト行の「再取得」の案内に任せる。 */
 const REFRESH_SUFFIX = '。更新は /model-review'
 
@@ -284,7 +280,7 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
-function sectionRows(section: Section, analysis: ReviewAnalysis, columns: number | undefined, nowMs: number | undefined, rate: RateView | null): PaneRow[] {
+function sectionRows(section: Section, columns: number | undefined, nowMs: number | undefined, rate: RateView | null): PaneRow[] {
   switch (section.kind) {
     case 'concerns':
       return concernSectionRows(section)
@@ -297,20 +293,27 @@ function sectionRows(section: Section, analysis: ReviewAnalysis, columns: number
     case 'whatIf':
       return whatIfRows(section)
     case 'cost':
-      return costSectionRows(section, analysis, rate)
+      return costSectionRows(section, rate)
   }
 }
 
-/** 末尾の注記（警告のバッジ・信頼度・畳み込み・免責・判定基準）。実コストがあるときは判定基準の末尾に更新の案内を付ける。 */
-function footerRows(analysis: ReviewAnalysis): PaneRow[] {
-  const criteria = analysis.diff === null ? CRITERIA_NOTE : `${CRITERIA_NOTE}${REFRESH_SUFFIX}`
+/** 信頼度の節（見出し・切替などの注記・畳み込み・免責）。所見の警告は所見の中に出すので、ここにはバッジを置かない。 */
+function reliabilityRows(analysis: ReviewAnalysis): PaneRow[] {
   return [
-    ...analysis.alerts.map((note): PaneRow => ({ kind: 'badge', label: ALERT_LABEL, tone: 'warning', text: note.text })),
-    ...analysis.reliability.map((note): PaneRow => ({ kind: 'note', text: note.text })),
+    { kind: 'heading', text: HEADING.reliability },
+    ...analysis.trustNotes.map((note): PaneRow => ({ kind: 'note', text: note.text })),
     ...(analysis.archiveNote === null ? [] : [{ kind: 'note', text: analysis.archiveNote } satisfies PaneRow]),
     { kind: 'note', text: paneAlwaysNote(analysis.advisorText !== null) },
-    { kind: 'note', text: criteria },
   ]
+}
+
+/**
+ * 最下段の用語と判定基準。信頼度の後に空行を挟み、用語は判定基準の直前に置く。
+ * 実コストがあるときは判定基準の末尾に更新の案内を付ける。
+ */
+function closingRows(analysis: ReviewAnalysis): PaneRow[] {
+  const criteria = analysis.diff === null ? CRITERIA_NOTE : `${CRITERIA_NOTE}${REFRESH_SUFFIX}`
+  return [{ kind: 'blank' }, ...glossaryRows(shownTerms(analysis)), { kind: 'note', text: criteria }]
 }
 
 /**
@@ -336,9 +339,11 @@ export function buildPaneRows(
     { kind: 'conclusion', ...analysis.conclusion },
     { kind: 'blank' },
     { kind: 'title', turns: analysis.totalTurns, subagents: analysis.subagents },
+    moneyRow(analysis, rate !== null),
     { kind: 'blank' },
     ...live,
-    ...buildSections(analysis).flatMap(section => sectionRows(section, analysis, columns, nowMs, rate)),
-    ...footerRows(analysis),
+    ...buildSections(analysis).flatMap(section => sectionRows(section, columns, nowMs, rate)),
+    ...reliabilityRows(analysis),
+    ...closingRows(analysis),
   ]
 }

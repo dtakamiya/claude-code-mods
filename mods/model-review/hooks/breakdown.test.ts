@@ -100,6 +100,8 @@ test('手がかりは書込または出力が半分以上のときだけ出す',
     breakdownHint(costBreakdown(Array.from({ length: BREAKDOWN_HINT_MIN_TURNS }, (_, index) => turn(index, parts)))!)
 
   expect(hintOf(WRITE_HEAVY)).toContain('書込が大きい')
+  expect(hintOf(WRITE_HEAVY)).toContain('所見に書込の連続が出ていればそれも参照')
+  expect(hintOf(WRITE_HEAVY)).not.toContain('注意欄')
   expect(hintOf({ input: 0.05, output: 0.6, cacheRead: 0.1, cacheWrite: 0.25 })).toContain('出力が大きい')
   expect(hintOf({ input: 0.05, output: 0.2, cacheRead: 0.65, cacheWrite: 0.1 })).toBeNull()
 })

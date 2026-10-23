@@ -4,10 +4,12 @@ import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL } from './conclusion'
 import { cellWidth, formatUsdRange } from './format'
-import { HEADING, NO_CONCERNS_TEXT } from './labels'
+import { FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, TERM_TEXT } from './labels'
 import { ALWAYS_NOTE } from './notes'
 import { BAR_WIDTH, MIN_BAR_WIDTH, barWidthFor, buildPaneRows, type PaneRow } from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
+import type { RateView } from './pace'
+import { costDiff, estimateFacts, moneyLineFrom } from './summary'
 
 // 架空データのみ。
 const turn = (overrides: Partial<TurnRecord>): TurnRecord => ({
@@ -37,7 +39,7 @@ test('記録がなければ、先頭に結論「まだ記録がありません�
   expect(rows[0]).toEqual({ kind: 'conclusion', text: '結論: まだ記録がありません', tone: 'plain' })
 })
 
-test('先頭はターン数・サブエージェント数のタイトル行（推定の金額はタイトルに出さず、コスト行に任せる）', () => {
+test('先頭はターン数・サブエージェント数のタイトル行（推定の金額はタイトルに出さず、直下の金額行に任せる）', () => {
   // Arrange
   const turns = [turn({}), turn({ turnId: 't2', agentId: 'a1', model: 'claude-haiku-5-5', costUsd: 1 })]
 
@@ -161,8 +163,8 @@ test('実コストと推定の差を符号付きで出す', () => {
   // Assert
   expect(rows).toContainEqual({
     kind: 'kv',
-    label: 'コスト',
-    value: '推定 $3.0000 / 実 $4.0000（読み込み後）/ 差 +$1.0000',
+    label: '金額',
+    value: '推定 $3.0000 · 実 $4.0000（読み込み後）· 差 +$1.0000（実が大きい）',
     tone: 'plain',
   })
 })
@@ -180,18 +182,19 @@ test('グループごとにコスト割合を出し、1% 未満はバーを埋�
   expect(byTier.haiku).toMatchObject({ percentText: '<1%', filled: 0 })
 })
 
-test('妥当性セクションは内訳より上にあり、見出しは件数を出さず「見直し候補の内訳」と書く', () => {
+test('所見セクションは内訳より上にあり、見出しは「所見」と書く', () => {
   // Act
   const heavy = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
   const rows = buildPaneRows(review([heavy('a'), heavy('b'), heavy('c')]))
 
   // Assert
   const headings = rows.flatMap(row => (row.kind === 'heading' ? [row.text] : []))
-  expect(headings[0]).toBe('妥当性（参考）· 見直し候補の内訳')
+  expect(headings[0]).toBe(HEADING.concerns)
+  expect(headings[0]).toBe('所見')
   expect(headings[1]).toContain('モデル × effort')
 })
 
-test('結論が指摘なしを言うとき、ペインは OK 行も妥当性の見出しも出さない（軽作業に重い設定ならバッジは出す）', () => {
+test('結論が指摘なしを言うとき、ペインは OK 行も所見の見出しも出さない（軽作業に重い設定ならバッジは出す）', () => {
   // Arrange
   const heavyForLight = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
 
@@ -230,8 +233,10 @@ test('全件単価不明のときは、判定不能の結論に加えて OK 行�
 })
 
 const rowsOf = (turns: TurnRecord[], cost?: ReviewState['sessionCostUsd']): PaneRow[] => buildPaneRows(review(turns, cost))
+/** 所見の中の警告（再構築・TTL 乖離）のバッジの名前。 */
+const FINDING_LABELS: readonly string[] = Object.values(FINDING_LABEL)
 const noteTexts = (rows: PaneRow[]): string[] =>
-  rows.flatMap(row => (row.kind === 'note' || (row.kind === 'badge' && row.label === ALERT_LABEL) ? [row.text] : []))
+  rows.flatMap(row => (row.kind === 'note' || (row.kind === 'badge' && FINDING_LABELS.includes(row.label)) ? [row.text] : []))
 
 test('グループ行のトークン表示の先頭にキャッシュヒット率を出す', () => {
   // Arrange: 読込 800 ÷（入力 100 + 読込 800 + 書込 100）= 80%。
@@ -313,7 +318,7 @@ test('実コストが 1 時間単価の上限内なら、TTL 単価差の注記�
 
   // Act
   const notes = noteTexts(rows)
-  const cost = rows.find(row => row.kind === 'kv' && row.label === 'コスト')
+  const cost = rows.find(row => row.kind === 'kv' && row.label === '金額')
 
   // Assert
   expect(notes.some(text => text.includes('1 時間単価にした上限'))).toBe(false)
@@ -441,27 +446,24 @@ test('ループ別の集計は、メインとサブエージェントの両方�
 
 test('推定は、上限のあるターンがあれば幅でコスト行に表示する', () => {
   // Arrange: 下限 $3、上限 $4.2。
-  const cost = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })])).find(row => row.kind === 'kv' && row.label === 'コスト')
+  const cost = buildPaneRows(review([turn({ costUsd: 3, costUpperUsd: 4.2 })])).find(row => row.kind === 'kv' && row.label === '金額')
 
   // Assert
   expect(cost?.kind === 'kv' ? cost.value : '').toContain('$3.0000〜$4.2000')
 })
 
-test('状況に応じた警告は「注意」バッジにし、常に出す免責は dim の注記のまま残す', () => {
-  // Arrange: 切替（モデル変更）で警告が出る記録。
-  const rows = rowsOf([
-    turn({ turnId: 't1' }),
-    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
-  ])
+test('再構築の警告は所見の中の「再構築」バッジにし、常に出す免責は注記のまま残す', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する。
+  const rows = rowsOf(rebuildingRun())
 
   // Act
-  const alerts = rows.filter(row => row.kind === 'badge' && row.label === ALERT_LABEL)
+  const findingBadges = rows.filter(row => row.kind === 'badge' && row.label === FINDING_LABEL.rebuild)
   const notes = rows.filter(row => row.kind === 'note')
 
   // Assert
-  expect(alerts.length).toBeGreaterThan(0)
+  expect(findingBadges).toHaveLength(1)
+  expect(findingBadges[0]).toMatchObject({ kind: 'badge', tone: 'warning' })
   expect(notes.some(row => row.kind === 'note' && row.text.includes('含まない:'))).toBe(true)
-  expect(notes.some(row => row.kind === 'note' && row.text.includes('切替の推定'))).toBe(false)
 })
 
 test('グループ行はトークンとキャッシュを別の行に分ける', () => {
@@ -516,21 +518,22 @@ test('結論の色は委譲だけなら suggestion にする', () => {
   expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain('委譲')
 })
 
-test('注意（状況に応じた警告）が 1 件以上あれば、結論行に「注意 N 件」を足す', () => {
-  // Arrange: 切替（モデル変更）で警告が出る記録。
-  const switched = [
+test('注意（動的な警告）が 1 件以上あれば、結論行に「注意 N 件」を足す。件数は所見の警告と信頼度の切替注記を数える', () => {
+  // Arrange: 切替（モデル変更）で警告が出る記録。切替はバッジではなく信頼度の注記になる。
+  const rows = rowsOf([
     turn({ turnId: 't1' }),
     turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
-  ]
-  const rows = rowsOf(switched)
-  const alertCount = rows.filter(row => row.kind === 'badge' && row.label === ALERT_LABEL).length
+  ])
+  const warningCount =
+    rows.filter(row => row.kind === 'badge' && FINDING_LABELS.includes(row.label)).length +
+    rows.filter(row => row.kind === 'note' && row.text.startsWith('切替の推定')).length
 
   // Act
   const [conclusion] = rows
 
   // Assert
-  expect(alertCount).toBeGreaterThan(0)
-  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain(`注意 ${alertCount} 件`)
+  expect(warningCount).toBeGreaterThan(0)
+  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain(`注意 ${warningCount} 件`)
 })
 
 test('注意がなければ、結論行に「注意」は出さない', () => {
@@ -548,8 +551,8 @@ test('実コストが取れないときは、ペイン・テキストと同じ�
   // Assert
   expect(rows).toContainEqual({
     kind: 'kv',
-    label: 'コスト',
-    value: '推定 $3.0000 / 実コスト 取得できません（取れない環境もあります。/model-review で再取得）',
+    label: '金額',
+    value: '推定 $3.0000 · 実コスト 取得できません（取れない環境もあります。/model-review で再取得）',
     tone: 'plain',
   })
 })
@@ -584,7 +587,7 @@ test('用語行は、画面に出ている行の用語だけを末尾にまと�
   expect(glossary[0]).toContain('ヒット率: ')
   expect(glossary[0]).toContain('読み込み後: ')
   expect(glossary[0]).toContain('Sonnet 換算: ')
-  expect(glossary[0]).toContain('差（実コスト − 推定）: + は推定より実額が大きい')
+  expect(glossary[0]).toContain(TERM_TEXT.diff)
 })
 
 test('用語行は、実コストも過剰もなければヒット率だけを説明する', () => {
@@ -594,7 +597,7 @@ test('用語行は、実コストも過剰もなければヒット率だけを�
   // Assert
   expect(glossary).toContain('ヒット率: ')
   expect(glossary).not.toContain('読み込み後')
-  expect(glossary).not.toContain('差（実コスト')
+  expect(glossary).not.toContain('差（実')
   expect(glossary).not.toContain('Sonnet 換算')
 })
 
@@ -619,4 +622,151 @@ test('用語の説明は 1 つ 40 字以内に収める', () => {
   // Assert
   expect(items).toHaveLength(4)
   expect(Math.max(...items.map(item => Array.from(item).length))).toBeLessThanOrEqual(40)
+})
+
+// ---- mr-012（段階 B）: 節の並び・金額行・所見と信頼度の振り分け ----
+
+/** キャッシュ書込が読込を上回るターン（再構築の警告の材料）。 */
+const rebuildingTurn = (turnId: string): TurnRecord =>
+  turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
+const rebuildingRun = (): TurnRecord[] => ['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuildingTurn)
+
+const indexOfRow = (rows: PaneRow[], predicate: (row: PaneRow) => boolean): number => rows.findIndex(predicate)
+const headingAt = (rows: PaneRow[], text: string): number => indexOfRow(rows, row => row.kind === 'heading' && row.text === text)
+const badgeAt = (rows: PaneRow[], label: string): number => indexOfRow(rows, row => row.kind === 'badge' && row.label === label)
+const noteStartingAt = (rows: PaneRow[], prefix: string): number => indexOfRow(rows, row => row.kind === 'note' && row.text.startsWith(prefix))
+
+test('金額行はタイトルの直下（rows[3]）に 1 つだけ出し、コスト節には出さない', () => {
+  // Arrange: 読み込み後の実コストがあるセッション。
+  const rows = rowsOf([turn({ toolCount: 5 })], { baseline: 10, current: 14 })
+
+  // Assert
+  expect(rows[2]).toEqual({ kind: 'title', turns: 1, subagents: 0 })
+  expect(rows[3]).toMatchObject({ kind: 'kv', label: '金額' })
+  expect(rows.filter(row => row.kind === 'kv' && row.label === '金額')).toHaveLength(1)
+  expect(rows.some(row => row.kind === 'kv' && row.label === 'コスト')).toBe(false)
+})
+
+test('サブスク（使用率が取れる）の金額行は、テキストの金額行と同じ文面になる', () => {
+  // Arrange
+  const state = review([turn({})], { baseline: 10, current: 14 })
+  const rate: RateView = { rows: [{ label: '5h', text: '72%' }], note: '使用率は枠の測定' }
+
+  // Act
+  const money = buildPaneRows(state, {}, undefined, undefined, undefined, rate).find(row => row.kind === 'kv' && row.label === '金額')
+  const value = money?.kind === 'kv' ? money.value : ''
+
+  // Assert
+  expect(`金額: ${value}`).toBe(moneyLineFrom(estimateFacts(state.turns, state.archived), costDiff(state), true))
+  expect(value).toContain('API 換算の推定')
+  expect(value).toContain('実（API 換算） $4.0000（読み込み後）')
+})
+
+test('実コストが推定より小さいときは、差を「-$」の符号と「推定が大きい」の向きで出す', () => {
+  // Arrange: 推定 $3、実 $1（基準 10 → 11）。
+  const rows = rowsOf([turn({ costUsd: 3 })], { baseline: 10, current: 11 })
+
+  // Assert
+  expect(rows).toContainEqual({
+    kind: 'kv',
+    label: '金額',
+    value: '推定 $3.0000 · 実 $1.0000（読み込み後）· 差 -$2.0000（推定が大きい）',
+    tone: 'plain',
+  })
+})
+
+test('再構築の警告は所見の中に置く: 直近の指摘の後、モデル × effort の節より前', () => {
+  // Arrange: 軽作業の Opus 3 件（直近の過剰）のあとに、キャッシュ書込が続く 5 ターン。
+  const rows = rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c'), ...rebuildingRun()])
+
+  // Act
+  const overspendAt = badgeAt(rows, '過剰')
+  const rebuildAt = badgeAt(rows, FINDING_LABEL.rebuild)
+
+  // Assert
+  expect(headingAt(rows, HEADING.concerns)).toBeLessThan(overspendAt)
+  expect(overspendAt).toBeLessThan(rebuildAt)
+  expect(rebuildAt).toBeLessThan(headingAt(rows, HEADING.groups))
+  expect(rows[rebuildAt]).toMatchObject({ kind: 'badge', tone: 'warning' })
+})
+
+test('TTL 乖離の警告も所見の中の「TTL 乖離」バッジで出す', () => {
+  // Arrange: 推定 $3、実 $4（+33%）、書込 100,000 tokens。
+  const rows = rowsOf([turn({ toolCount: 5, costUsd: 3, tokens: { input: 0, output: 10, cacheRead: 0, cacheWrite: 100_000 } })], {
+    baseline: 10,
+    current: 14,
+  })
+
+  // Assert
+  const ttlAt = badgeAt(rows, FINDING_LABEL.ttl)
+  expect(ttlAt).toBeGreaterThan(headingAt(rows, HEADING.concerns))
+  expect(ttlAt).toBeLessThan(headingAt(rows, HEADING.groups))
+})
+
+test('切替の警告は信頼度の節の注記にし、バッジは出さない', () => {
+  // Arrange: 切替（モデル変更）で警告が出る記録。
+  const rows = rowsOf([
+    turn({ turnId: 't1' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
+  ])
+
+  // Assert
+  expect(noteStartingAt(rows, '切替の推定')).toBeGreaterThan(headingAt(rows, HEADING.reliability))
+  expect(rows.some(row => row.kind === 'badge' && row.label === ALERT_LABEL)).toBe(false)
+  expect(rows.some(row => row.kind === 'badge' && row.text.includes('切替の推定'))).toBe(false)
+})
+
+test('末尾は信頼度・空行・用語・判定基準の順で、用語は判定基準の直前に来る', () => {
+  // Arrange: 用語が出る記録（実コストと過剰）。
+  const rows = rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')], { baseline: 10, current: 14 })
+
+  // Act
+  const reliabilityAt = headingAt(rows, HEADING.reliability)
+  const glossaryAt = noteStartingAt(rows, '用語')
+  const criteriaAt = noteStartingAt(rows, '軽作業 = ')
+
+  // Assert
+  expect(reliabilityAt).toBeLessThan(glossaryAt)
+  expect(glossaryAt).toBeLessThan(criteriaAt)
+  expect(criteriaAt).toBe(glossaryAt + 1)
+  expect(criteriaAt).toBe(rows.length - 1)
+})
+
+test('コスト節の中身がないとき（使用率・内訳・推移・advisor がない）は、見出しごと出さない', () => {
+  // Arrange: 内訳のない 1 ターン（推移も出ない）。
+  const rows = rowsOf([turn({})])
+
+  // Assert
+  expect(headingAt(rows, HEADING.cost)).toBe(-1)
+  expect(headingAt(rows, HEADING.reliability)).toBeGreaterThan(-1)
+})
+
+test('コスト節に中身（advisor の行）があるときは、見出しと行を出す', () => {
+  // Arrange: advisor の呼び出しが 1 回ある 1 ターン。
+  const rows = rowsOf([turn({ toolCount: 5, advisorCalls: 1 })])
+
+  // Assert
+  expect(headingAt(rows, HEADING.cost)).toBeGreaterThan(-1)
+  expect(rows).toContainEqual(expect.objectContaining({ kind: 'kv', label: 'advisor' }))
+})
+
+test('判定基準の出力の上限は、桁区切りの 1,000 で出す', () => {
+  // Act
+  const last = rowsOf([turn({})]).at(-1)
+
+  // Assert
+  expect(last?.kind === 'note' ? last.text : '').toContain('出力 1,000 tokens 以下')
+})
+
+test('ペインの見出し「信頼度」・警告バッジ「再構築」「TTL 乖離」・用語「差（実 − 推定）」は文字列どおりに出る', () => {
+  // Arrange
+  const rebuilt = rowsOf(rebuildingRun())
+  const ttl = rowsOf([turn({ toolCount: 5, costUsd: 3, tokens: { input: 0, output: 10, cacheRead: 0, cacheWrite: 100_000 } })], { baseline: 10, current: 14 })
+  const glossary = glossaryRows(rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')], { baseline: 10, current: 14 }))
+
+  // Assert
+  expect(rebuilt).toContainEqual(expect.objectContaining({ kind: 'heading', text: '信頼度' }))
+  expect(rebuilt).toContainEqual(expect.objectContaining({ kind: 'badge', label: '再構築', tone: 'warning' }))
+  expect(ttl).toContainEqual(expect.objectContaining({ kind: 'badge', label: 'TTL 乖離', tone: 'warning' }))
+  expect(glossary[0]).toContain('差（実 − 推定）: + は推定より実額が大きい')
 })
