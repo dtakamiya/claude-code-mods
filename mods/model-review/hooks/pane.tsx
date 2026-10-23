@@ -53,8 +53,8 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
               {dim(EMPTY_GLYPH.repeat(row.barWidth - row.filled))}
               {row.percentText === '' ? null : sub(`  ${row.percentText}`)}
             </Text>
-            <Text color="subtle" wrap="wrap">{`  ${row.tokenText}`}</Text>
-            <Text color="subtle" wrap="wrap">{`  ${row.cacheText}`}</Text>
+            {row.tokenText === '' ? null : <Text color="subtle" wrap="wrap">{`  ${row.tokenText}`}</Text>}
+            {row.cacheText === '' ? null : <Text color="subtle" wrap="wrap">{`  ${row.cacheText}`}</Text>}
           </Box>
         )
       case 'turn':

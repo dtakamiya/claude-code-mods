@@ -528,11 +528,38 @@ test('Pane のトークン行・キャッシュ行・ターン行は切り詰め
   await ui.unmount()
 })
 
+const HAIKU_USAGE = {
+  model: 'claude-haiku-5-5',
+  input_tokens: 1_000_000,
+  output_tokens: 100_000,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+}
+const PANE_WIDTHS = [36, 60, 100] as const
+
+/** 2 グループの記録: Sonnet の 1 ターン（推定 $3.0000）と、Haiku の 1 ターン。バーは 2 つ出る。 */
+async function runTwoModelRecord($: Engine) {
+  await runMainTurn($)
+  await $.turn.start({ text: '', turnId: 'turn-2' } as never)
+  await $.turn.complete({ answer: '', durationMs: 800, isAborted: false, turnId: 'turn-2', reason: 'answer', usage: HAIKU_USAGE } as never)
+}
+
+const mountPaneAt = ($: Engine, bodyColumns: number) =>
+  $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: { ...PANE_PROPS, bodyColumns } } as never)
+
+/** ペインを指定の桁数で描き、Text の文字と折返し指定を写し取る（アンマウントの後も読めるように）。 */
+async function paneTextsAt($: Engine, bodyColumns: number): Promise<{ text: string; wrap: unknown }[]> {
+  const ui = await mountPaneAt($, bodyColumns)
+  const texts = (await ui.findAll({ type: 'Text' })).map(element => ({ text: element.text, wrap: element.props.wrap }))
+  await ui.unmount()
+  return texts
+}
+
 test('Pane のバーは bodyColumns に合わせて縮み、金額が行の先頭に来て、見出し・タイトル・モデル行は切り詰めない', async ($, on) => {
   // Arrange
   answerEngine(on, () => 10, true)
   await $.session.start(SESSION_START)
-  await runMainTurn($)
+  await runTwoModelRecord($)
   await $.command.run(COMMAND_RUN)
   const barCells = async (bodyColumns: number) => {
     const ui = await $.ui.mount({ plugin: 'model-review', surface: 'terminal', component: 'Pane', requestId: 'model-review', props: { ...PANE_PROPS, bodyColumns } } as never)
@@ -554,6 +581,87 @@ test('Pane のバーは bodyColumns に合わせて縮み、金額が行の先�
   expect(narrow.wraps.length).toBeGreaterThan(0)
   expect(narrow.wraps).toContain('wrap')
   expect(narrow.wraps).not.toContain('truncate-end')
+})
+
+test('Pane の 2 グループのバーは、狭・通常・広で 7 / 12 / 14 セルになり、各行の先頭は金額（M1・M2）', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runTwoModelRecord($)
+  await $.command.run(COMMAND_RUN)
+  const cells: number[] = []
+
+  // Act
+  for (const bodyColumns of PANE_WIDTHS) {
+    const texts = await paneTextsAt($, bodyColumns)
+    const bar = texts.find(element => element.text.includes('$3.0000') && /[█░]/.test(element.text))
+    cells.push((bar?.text.match(/[█░]/g) ?? []).length)
+    expect(bar?.text.trimStart().startsWith('$3.0000')).toBe(true)
+  }
+
+  // Assert
+  expect(cells).toEqual([7, 12, 14])
+})
+
+test('Pane の狭幅（36）では高コストターン・グループのキャッシュ行・用語を出さず、通常・広では出す。トークン行の「ヒット」は残す（M3〜M6）', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runTwoModelRecord($)
+  await $.command.run(COMMAND_RUN)
+
+  for (const bodyColumns of PANE_WIDTHS) {
+    // Act
+    const texts = await paneTextsAt($, bodyColumns)
+    const shown = bodyColumns !== 36
+
+    // Assert
+    expect(texts.some(element => element.text.includes('高コストターン'))).toBe(shown)
+    expect(texts.some(element => element.text.trimStart().startsWith('キャッシュ 読'))).toBe(shown)
+    expect(texts.some(element => element.text.startsWith('用語  '))).toBe(shown)
+    expect(texts.some(element => element.text.trimStart().startsWith('ヒット'))).toBe(true)
+  }
+})
+
+test('Pane の狭幅でも見出し・タイトル・モデル行は切り詰めず、空の字下げの行を描かない（M7・M8）', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runTwoModelRecord($)
+  await $.command.run(COMMAND_RUN)
+
+  for (const bodyColumns of PANE_WIDTHS) {
+    // Act
+    const texts = await paneTextsAt($, bodyColumns)
+    const structural = texts.filter(element => element.text.startsWith('▎') || element.text.includes('サブエージェント ') || element.text.includes('effort '))
+
+    // Assert
+    expect(structural.length).toBeGreaterThan(0)
+    expect(structural.map(element => element.wrap)).toContain('wrap')
+    expect(structural.map(element => element.wrap)).not.toContain('truncate-end')
+    // '  ' だけの Text は、各グループのモデル行の字下げ（2）とバー行の字下げ（2）の 4 つ。トークン行・キャッシュ行の空の字下げは描かない。
+    expect(texts.filter(element => element.text === '  ')).toHaveLength(4)
+  }
+})
+
+test('Pane の 1 グループの記録では、バーと割合を出さず、金額の行だけ残す（M9）', async ($, on) => {
+  // Arrange
+  answerEngine(on, () => 10, true)
+  await $.session.start(SESSION_START)
+  await runMainTurn($)
+  await $.command.run(COMMAND_RUN)
+
+  for (const bodyColumns of PANE_WIDTHS) {
+    // Act
+    const texts = await paneTextsAt($, bodyColumns)
+
+    // Assert
+    expect(texts.some(element => /[█░]/.test(element.text))).toBe(false)
+    expect(texts.some(element => element.text.includes('100%'))).toBe(false)
+    expect(texts.some(element => element.text.trimStart().startsWith('$3.0000'))).toBe(true)
+    // '  ' だけの Text は、モデル行の字下げの 1 つだけ（バー行の字下げは出ない）。
+    expect(texts.filter(element => element.text === '  ')).toHaveLength(1)
+  }
 })
 
 test('Pane の過剰の例文は切り詰めず折り返す', async ($, on) => {
