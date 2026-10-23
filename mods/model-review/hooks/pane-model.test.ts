@@ -6,7 +6,17 @@ import { ALERT_LABEL } from './conclusion'
 import { cellWidth, formatUsdRange } from './format'
 import { FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, TERM_TEXT } from './labels'
 import { ALWAYS_NOTE } from './notes'
-import { BAR_WIDTH, MIN_BAR_WIDTH, barWidthFor, buildPaneRows, type PaneRow } from './pane-model'
+import {
+  BAR_WIDTH,
+  MIN_BAR_WIDTH,
+  NARROW_BELOW_COLUMNS,
+  WIDE_FROM_COLUMNS,
+  barWidthFor,
+  buildPaneRows,
+  paneAlwaysNote,
+  widthClassOf,
+  type PaneRow,
+} from './pane-model'
 import { beginTurn, recordStep, recordTool } from './recorder'
 import type { RateView } from './pace'
 import { costDiff, estimateFacts, moneyLineFrom } from './summary'
@@ -769,4 +779,294 @@ test('ペインの見出し「信頼度」・警告バッジ「再構築」「TT
   expect(rebuilt).toContainEqual(expect.objectContaining({ kind: 'badge', label: '再構築', tone: 'warning' }))
   expect(ttl).toContainEqual(expect.objectContaining({ kind: 'badge', label: 'TTL 乖離', tone: 'warning' }))
   expect(glossary[0]).toContain('差（実 − 推定）: + は推定より実額が大きい')
+})
+
+// ---- mr-011: ペインの幅対応（狭 <40 / 通常 / 広 ≥70）。F1〜F3 は spec の fixture の構成を架空データで組み直したもの ----
+// spec の F2 の内訳（グループごとのヒット率など）は未公開のため、グループ数と指摘の種類だけを spec に合わせた。
+// 行数は実測値で固定する。狭幅の行数は spec の予測より +1（狭幅の省略の注記 1 行）。
+// 区分のしきい値は仮置き（目視未確認）。テストは定数を参照する。
+
+const NARROW_OMITTED_NOTE = '狭幅のため一部省略'
+const PANE_WIDTHS = [36, 60, 100] as const
+
+/** 再構築（キャッシュ書込が読込を上回る）の Sonnet の 1 ターン。ヒット率は 0%。 */
+const rebuildingAt = (turnId: string, overrides: Partial<TurnRecord> = {}): TurnRecord =>
+  turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 0, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2, ...overrides })
+
+/** F1: 1 グループ（Sonnet 5 ターン）。委譲の指摘（主系統のツールが閾値に達する）と再構築の警告。 */
+const fixtureOne = (): TurnRecord[] => [
+  ...['f0', 'f1', 'f2', 'f3'].map(turnId => rebuildingAt(turnId)),
+  rebuildingAt('f4', { toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS }),
+]
+
+/** F2: 2 グループ（Sonnet 8・Opus 4）。過剰・委譲・切替の指摘、再構築、切替の注記、いま切り替えたら。 */
+const fixtureTwo = (): TurnRecord[] => [
+  ...['g0', 'g1', 'g2', 'g3', 'g4'].map(turnId => rebuildingAt(turnId)),
+  turn({ turnId: 'g5', toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS }),
+  turn({ turnId: 'g6', toolCount: 1 }),
+  turn({ turnId: 'g7', toolCount: 1 }),
+  turn({ turnId: 'g8', model: 'claude-opus-5-5', effort: 'medium', toolCount: 5, firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
+  lightOpus('g9'),
+  lightOpus('g10'),
+  { ...lightOpus('g11'), firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 },
+]
+
+/** F3: 1 グループ・指摘なし・高コストターン 1 件。 */
+const fixtureThree = (): TurnRecord[] => [turn({ toolCount: 5 })]
+
+const rowsAt = (turns: TurnRecord[], columns?: number): PaneRow[] => buildPaneRows(review(turns), {}, undefined, columns)
+const headingTexts = (rows: PaneRow[]): string[] => rows.flatMap(row => (row.kind === 'heading' ? [row.text] : []))
+const groupRowsIn = (rows: PaneRow[]): GroupRow[] => rows.filter((row): row is GroupRow => row.kind === 'group')
+const countKind = (rows: PaneRow[], kind: PaneRow['kind']): number => rows.filter(row => row.kind === kind).length
+const conclusionTextOf = (rows: PaneRow[]): string => {
+  const [first] = rows
+  return first?.kind === 'conclusion' ? first.text : ''
+}
+/** 信頼度の見出しの直下に続く注記（空行や次の節の手前まで）。 */
+function reliabilityNotes(rows: PaneRow[]): string[] {
+  const notes: string[] = []
+  for (const row of rows.slice(headingAt(rows, HEADING.reliability) + 1)) {
+    if (row.kind !== 'note') break
+    notes.push(row.text)
+  }
+  return notes
+}
+
+test('W1 幅の区分は、狭（<40）・通常（40〜69）・広（≥70）の境目で切り替わる', () => {
+  // Act
+  const classes = [NARROW_BELOW_COLUMNS - 1, NARROW_BELOW_COLUMNS, WIDE_FROM_COLUMNS - 1, WIDE_FROM_COLUMNS].map(columns => widthClassOf(columns))
+
+  // Assert
+  expect(classes).toEqual(['narrow', 'normal', 'normal', 'wide'])
+})
+
+test('W2 小数の桁数は < と ≥ で素直に比べる（39.5 は狭）', () => {
+  // Assert
+  expect(widthClassOf(NARROW_BELOW_COLUMNS - 0.5)).toBe('narrow')
+})
+
+test('W3 桁数が不明（undefined・NaN・Infinity・0・負数）は広と同じ扱いで、行もバーも広の値と同じ', () => {
+  for (const columns of [undefined, Number.NaN, Number.POSITIVE_INFINITY, 0, -5]) {
+    // Assert
+    expect(widthClassOf(columns)).toBe('wide')
+    expect(rowsAt(fixtureTwo(), columns)).toEqual(rowsAt(fixtureTwo(), 100))
+    expect(groupRowsIn(rowsAt(fixtureTwo(), columns)).map(row => row.barWidth)).toEqual([BAR_WIDTH, BAR_WIDTH])
+  }
+})
+
+test('W4 極端に狭い桁数（1・10）は狭に入り、バーは 0 で NaN にならない', () => {
+  for (const columns of [1, 10]) {
+    // Assert
+    expect(widthClassOf(columns)).toBe('narrow')
+    expect(groupRowsIn(rowsAt(fixtureTwo(), columns)).map(row => row.barWidth)).toEqual([0, 0])
+  }
+})
+
+test('W5 極端に広い桁数（500・10,000）は広に入り、バーは最大幅', () => {
+  for (const columns of [500, 10_000]) {
+    // Assert
+    expect(widthClassOf(columns)).toBe('wide')
+    expect(groupRowsIn(rowsAt(fixtureTwo(), columns)).map(row => row.barWidth)).toEqual([BAR_WIDTH, BAR_WIDTH])
+  }
+})
+
+test('R1 2 グループ（F2）の狭幅は、高コストターン・いま切り替えたら・用語を省き、信頼度は切替の注記と免責と省略の注記だけにする', () => {
+  // Act
+  const narrow = rowsAt(fixtureTwo(), 36)
+
+  // Assert
+  // 通常の 37 行 − 高コストターン 5 行（見出し・3 件・空行）− いま切り替えたら 5 行（見出し・2 件・注記・空行）− 用語 1 行 + 狭幅の省略の注記 1 行。
+  // spec の予測（F2 は 33 行・狭 27 行）とは fixture の中身が違う（いま切り替えたら節の有無・指摘の行数）ので、実測の 37 / 27 で固定する。
+  expect(narrow).toHaveLength(27)
+  expect(headingTexts(narrow)).not.toContain(HEADING.topTurns)
+  expect(headingTexts(narrow)).not.toContain(HEADING.whatIf)
+  expect(countKind(narrow, 'turn')).toBe(0)
+  expect(narrow.findIndex(row => row.kind === 'note' && row.text.startsWith('用語'))).toBe(-1)
+  expect(groupRowsIn(narrow).map(row => row.barWidth)).toEqual([7, 7])
+  for (const group of groupRowsIn(narrow)) {
+    expect(group.tokenText).toMatch(/^ヒット \d+%$/)
+    expect(group.cacheText).toBe('')
+  }
+  const notes = reliabilityNotes(narrow)
+  expect(notes).toHaveLength(3)
+  expect(notes[0]?.startsWith('切替の推定')).toBe(true)
+  expect(notes.slice(1)).toEqual([ALWAYS_NOTE, NARROW_OMITTED_NOTE])
+})
+
+test('R1 2 グループ（F2）の通常・広は全行を出し、信頼度は切替の注記と免責だけ（省略の注記は出さない）', () => {
+  for (const columns of [60, 100]) {
+    // Act
+    const rows = rowsAt(fixtureTwo(), columns)
+
+    // Assert
+    expect(rows).toHaveLength(37)
+    expect(headingTexts(rows)).toEqual(expect.arrayContaining([HEADING.topTurns, HEADING.whatIf]))
+    expect(countKind(rows, 'turn')).toBe(3)
+    expect(rows.findIndex(row => row.kind === 'note' && row.text.startsWith('用語'))).toBeGreaterThan(-1)
+    expect(groupRowsIn(rows).map(row => row.barWidth)).toEqual(columns === 60 ? [12, 12] : [14, 14])
+    for (const group of groupRowsIn(rows)) expect(group.cacheText).toMatch(/^キャッシュ 読 /)
+    const notes = reliabilityNotes(rows)
+    expect(notes).toHaveLength(2)
+    expect(notes[1]).toBe(ALWAYS_NOTE)
+  }
+})
+
+test('R2 1 グループ（F1）は、バーと割合を出さず金額は残し、狭幅は高コストターンと用語を省く', () => {
+  // Act
+  const narrow = rowsAt(fixtureOne(), 36)
+  const normal = rowsAt(fixtureOne(), 60)
+
+  // Assert
+  // 通常の 24 行 − 高コストターン 5 行 − 用語 1 行 + 狭幅の省略の注記 1 行。
+  expect(narrow).toHaveLength(19)
+  expect(normal).toHaveLength(24)
+  expect(rowsAt(fixtureOne(), 100)).toHaveLength(24)
+  for (const rows of [narrow, normal]) {
+    const [group] = groupRowsIn(rows)
+    expect(group).toMatchObject({ barWidth: 0, filled: 0, percentText: '' })
+    expect(group?.costText).toMatch(/^\$/)
+  }
+  expect(countKind(normal, 'turn')).toBe(3)
+  expect(countKind(narrow, 'turn')).toBe(0)
+})
+
+test('R3 1 グループ・指摘なし（F3）は、バーも割合もなく、狭幅は高コストターンと用語を省く', () => {
+  // Assert
+  // 通常の 16 行 − 高コストターン 3 行 − 用語 1 行 + 狭幅の省略の注記 1 行。
+  expect(rowsAt(fixtureThree(), 36)).toHaveLength(13)
+  expect(rowsAt(fixtureThree(), 60)).toHaveLength(16)
+  expect(rowsAt(fixtureThree(), 100)).toHaveLength(16)
+  for (const columns of PANE_WIDTHS) {
+    const [group] = groupRowsIn(rowsAt(fixtureThree(), columns))
+    expect(group).toMatchObject({ barWidth: 0, percentText: '' })
+    expect(headingTexts(rowsAt(fixtureThree(), columns))).not.toContain(HEADING.concerns)
+  }
+})
+
+test('R4 記録がないときは、どの幅でも結論と案内の 2 行だけ', () => {
+  for (const columns of PANE_WIDTHS) {
+    // Assert
+    expect(rowsAt([], columns).map(row => row.kind)).toEqual(['conclusion', 'message'])
+  }
+})
+
+test('R5 実行中のターンの行は、どの幅でも切り捨てられず残る', () => {
+  for (const columns of PANE_WIDTHS) {
+    // Arrange
+    let drafts = beginTurn({}, { turnId: 'live-1' })
+    drafts = recordStep(drafts, {
+      turnId: 'live-1',
+      model: 'claude-sonnet-5-5',
+      effort: 'high',
+      usage: { model: 'claude-sonnet-5-5', input_tokens: 1_000_000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    })
+    drafts = recordTool(drafts, { tool: 'Read' })
+
+    // Act
+    const rows = buildPaneRows(review([turn({ toolCount: 5 })]), drafts, undefined, columns)
+
+    // Assert
+    expect(rows.some(row => row.kind === 'kv' && row.label === '実行中')).toBe(true)
+  }
+})
+
+test('R6 単価不明のグループ（割合なし）は、狭幅でもバーが空で割合を出さず、バー行は桁数に収まる', () => {
+  // Arrange
+  const turns = [...fixtureTwo(), turn({ turnId: 'u', model: 'gateway-model', costUsd: null, costUpperUsd: null })]
+
+  for (const columns of PANE_WIDTHS) {
+    // Act
+    const groups = groupRowsIn(rowsAt(turns, columns))
+
+    // Assert
+    expect(groups).toHaveLength(3)
+    expect(groups.find(row => row.costText === '単価不明')).toMatchObject({ filled: 0, percentText: '' })
+    for (const row of groups) if (row.barWidth > 0) expect(barRowCells(row)).toBeLessThanOrEqual(columns)
+  }
+})
+
+test('R7 いま切り替えたら（切替見積り）は、狭幅では見出しを出さず、通常・広では出す', () => {
+  // Assert
+  expect(headingTexts(rowsAt(fixtureTwo(), 36))).not.toContain(HEADING.whatIf)
+  expect(headingTexts(rowsAt(fixtureTwo(), 60))).toContain(HEADING.whatIf)
+  expect(headingTexts(rowsAt(fixtureTwo(), 100))).toContain(HEADING.whatIf)
+})
+
+test('R8 信頼度の注記（単価不明・単価表の取得・モデルの食い違い・plan mode）は、狭幅では省き、通常・広では全部出す', () => {
+  // Arrange: 単価不明のターン・plan mode・モデルの食い違いを足し、単価表の取得から 73 日後の時刻で描く。
+  const turns = [...fixtureTwo(), turn({ turnId: 'n1', model: 'gateway-model', costUsd: null, costUpperUsd: null }), turn({ turnId: 'n2', planMode: true, divergedSteps: 1 })]
+  const notesAt = (columns: number): string[] => reliabilityNotes(buildPaneRows(review(turns), {}, Date.parse('2026-12-31T00:00:00Z'), columns))
+  const has = (notes: string[], prefix: string): boolean => notes.some(text => text.startsWith(prefix))
+
+  // Act
+  const narrow = notesAt(36)
+  const normal = notesAt(60)
+
+  // Assert
+  expect(has(narrow, '切替の推定')).toBe(true)
+  expect(has(narrow, '単価不明')).toBe(false)
+  expect(has(narrow, '単価表の取得')).toBe(false)
+  expect(has(narrow, 'モデルがターン開始時')).toBe(false)
+  expect(has(narrow, 'plan mode のターン')).toBe(false)
+  expect(narrow.at(-1)).toBe(NARROW_OMITTED_NOTE)
+  expect(has(normal, '単価不明')).toBe(true)
+  expect(has(normal, '単価表の取得')).toBe(true)
+  expect(has(normal, 'モデルがターン開始時')).toBe(true)
+  expect(has(normal, 'plan mode のターン')).toBe(true)
+  expect(normal).not.toContain(NARROW_OMITTED_NOTE)
+})
+
+test('R9 結論行の「注意 N 件」は、所見の警告バッジと切替の注記の数に、どの幅でも一致する', () => {
+  for (const columns of PANE_WIDTHS) {
+    // Arrange
+    const rows = rowsAt(fixtureTwo(), columns)
+    const warningCount =
+      rows.filter(row => row.kind === 'badge' && FINDING_LABELS.includes(row.label)).length +
+      rows.filter(row => row.kind === 'note' && row.text.startsWith('切替の推定')).length
+
+    // Assert
+    expect(warningCount).toBeGreaterThan(0)
+    expect(conclusionTextOf(rows)).toContain(`注意 ${warningCount} 件`)
+  }
+})
+
+test('C1 先頭は結論・空行・タイトル・金額の行で、どの幅でも同じ位置に来る', () => {
+  for (const columns of PANE_WIDTHS) {
+    // Act
+    const rows = rowsAt(fixtureTwo(), columns)
+
+    // Assert
+    expect(rows[0]?.kind).toBe('conclusion')
+    expect(rows[1]?.kind).toBe('blank')
+    expect(rows[2]?.kind).toBe('title')
+    expect(rows[3]).toMatchObject({ kind: 'kv', label: '金額' })
+  }
+})
+
+test('C2 結論からモデル × effort の見出しの直前までは、どの幅でも同じ行（所見を含む）', () => {
+  // Arrange
+  const beforeGroups = (columns: number): PaneRow[] => {
+    const rows = rowsAt(fixtureTwo(), columns)
+    return rows.slice(0, headingAt(rows, HEADING.groups))
+  }
+
+  // Assert
+  expect(headingTexts(beforeGroups(36))).toContain(HEADING.concerns)
+  expect(beforeGroups(36)).toEqual(beforeGroups(60))
+  expect(beforeGroups(60)).toEqual(beforeGroups(100))
+})
+
+test('C3 見出しの順は幅によらず「所見 → モデル × effort」で始まり、狭幅は通常の並びから高コストターンといま切り替えたらを抜いたもの', () => {
+  // Arrange
+  const wide = headingTexts(rowsAt(fixtureTwo(), 100))
+
+  // Assert
+  expect(headingTexts(rowsAt(fixtureTwo(), 36)).slice(0, 2)).toEqual([HEADING.concerns, HEADING.groups])
+  expect(headingTexts(rowsAt(fixtureTwo(), 36))).toEqual(wide.filter(text => text !== HEADING.topTurns && text !== HEADING.whatIf))
+  expect(headingTexts(rowsAt(fixtureTwo(), 60))).toEqual(wide)
+})
+
+test('C4 桁数が不明（undefined）の行は、広（100）の行と同じ', () => {
+  // Assert
+  expect(rowsAt(fixtureTwo(), undefined)).toEqual(rowsAt(fixtureTwo(), 100))
 })

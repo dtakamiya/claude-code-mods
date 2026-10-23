@@ -43,6 +43,33 @@ const BAR_MAX_SHARE_OF_COLUMNS = 5
 /** バー行の固定部分: 先頭の字下げ 2 + 金額との間 2 + 割合との間 2 + 割合（`100%` で 4）。 */
 const BAR_ROW_FIXED_CELLS = 10
 
+/**
+ * 狭（< NARROW_BELOW_COLUMNS）の区分のしきい値（本文の桁数）。仮置き・目視未確認（mr-011）。実機で inline・dock の桁数を見て決め直す。
+ * 狭幅だけ行を省く。通常と広は全行を出す。
+ */
+export const NARROW_BELOW_COLUMNS = 40
+/** 広（≥ WIDE_FROM_COLUMNS）の区分のしきい値。仮置き・目視未確認（mr-011）。 */
+export const WIDE_FROM_COLUMNS = 70
+/** 狭幅で行を省いたことを、信頼度の節の末尾に 1 行で示す（省いた内容は /model-review text で全文が読める）。 */
+const NARROW_OMITTED_NOTE = '狭幅のため一部省略'
+
+export type WidthClass = 'narrow' | 'normal' | 'wide'
+
+/** 桁数として使える値（有限で正の数）だけを返す。undefined・NaN・Infinity・0・負数は不明（undefined）。 */
+function knownColumns(columns: number | undefined): number | undefined {
+  return columns !== undefined && Number.isFinite(columns) && columns > 0 ? columns : undefined
+}
+
+/** 桁数の区分。不明（undefined を含む）は広と同じ扱い。 */
+export function widthClassOf(columns: number | undefined): WidthClass {
+  const known = knownColumns(columns)
+  if (known === undefined || known >= WIDE_FROM_COLUMNS) return 'wide'
+  return known < NARROW_BELOW_COLUMNS ? 'narrow' : 'normal'
+}
+
+/** 描画の条件。columns は正規化後の桁数（不明は undefined）、narrow は狭幅で行を省くかどうか。 */
+type Layout = { readonly columns: number | undefined; readonly narrow: boolean }
+
 export type Tier = 'haiku' | 'sonnet' | 'opus' | 'other'
 
 export type PaneRow =
@@ -94,10 +121,14 @@ function percentText(share: number | null): string {
   return share < MIN_VISIBLE_SHARE ? '<1%' : `${Math.round(share * 100)}%`
 }
 
-function groupRow(group: ArchivedGroup, totalUsd: number, columns: number | undefined): PaneRow {
+/**
+ * グループの行。1 グループのときはバーも割合も出さない（比べる相手がなく、満タンと 100% は情報がない）。
+ * 狭幅はトークン行をヒット率だけにし、キャッシュ行は出さない（ヒット率は判断の中心なので残す）。
+ */
+function groupRow(group: ArchivedGroup, totalUsd: number, layout: Layout, singleGroup: boolean): PaneRow {
   const facts = groupFacts(group)
   const share = costShare(group.costUsd, totalUsd)
-  const barWidth = barWidthFor(columns, facts.costText)
+  const barWidth = singleGroup ? 0 : barWidthFor(layout.columns, facts.costText)
   return {
     kind: 'group',
     model: shortModel(group.model),
@@ -106,10 +137,10 @@ function groupRow(group: ArchivedGroup, totalUsd: number, columns: number | unde
     turns: group.turns,
     barWidth,
     filled: filledCells(share, barWidth),
-    percentText: percentText(share),
+    percentText: singleGroup ? '' : percentText(share),
     costText: facts.costText,
-    tokenText: `${facts.hit === null ? '' : `${facts.hit} · `}入力 ${facts.input} · 出力 ${facts.output}`,
-    cacheText: `キャッシュ 読 ${facts.cacheRead} / 書 ${facts.cacheWrite}`,
+    tokenText: layout.narrow ? (facts.hit ?? '') : `${facts.hit === null ? '' : `${facts.hit} · `}入力 ${facts.input} · 出力 ${facts.output}`,
+    cacheText: layout.narrow ? '' : `キャッシュ 読 ${facts.cacheRead} / 書 ${facts.cacheWrite}`,
   }
 }
 
@@ -186,8 +217,13 @@ function concernSectionRows(section: ConcernsSection): PaneRow[] {
   return body.length === 0 ? [] : [{ kind: 'heading', text: HEADING.concerns }, ...body, { kind: 'blank' }]
 }
 
-function groupSectionRows(section: GroupsSection, columns: number | undefined): PaneRow[] {
-  return [{ kind: 'heading', text: HEADING.groups }, ...section.groups.map(group => groupRow(group, section.totalUsd, columns)), { kind: 'blank' }]
+function groupSectionRows(section: GroupsSection, layout: Layout): PaneRow[] {
+  const singleGroup = section.groups.length === 1
+  return [
+    { kind: 'heading', text: HEADING.groups },
+    ...section.groups.map(group => groupRow(group, section.totalUsd, layout, singleGroup)),
+    { kind: 'blank' },
+  ]
 }
 
 function topTurnRows(section: TopTurnsSection, nowMs?: number): PaneRow[] {
@@ -280,44 +316,51 @@ function liveRows(drafts: Drafts): PaneRow[] {
   ]
 }
 
-function sectionRows(section: Section, columns: number | undefined, nowMs: number | undefined, rate: RateView | null): PaneRow[] {
+/** 狭幅で省くのは高コストターンといま切り替えたら。所見・モデル × effort・コストは幅によらず出す。 */
+function sectionRows(section: Section, layout: Layout, nowMs: number | undefined, rate: RateView | null): PaneRow[] {
   switch (section.kind) {
     case 'concerns':
       return concernSectionRows(section)
     case 'groups':
-      return groupSectionRows(section, columns)
+      return groupSectionRows(section, layout)
     case 'topTurns':
-      return topTurnRows(section, nowMs)
+      return layout.narrow ? [] : topTurnRows(section, nowMs)
     case 'loops':
       return loopRows(section)
     case 'whatIf':
-      return whatIfRows(section)
+      return layout.narrow ? [] : whatIfRows(section)
     case 'cost':
       return costSectionRows(section, rate)
   }
 }
 
-/** 信頼度の節（見出し・切替などの注記・畳み込み・免責）。所見の警告は所見の中に出すので、ここにはバッジを置かない。 */
-function reliabilityRows(analysis: ReviewAnalysis): PaneRow[] {
+/**
+ * 信頼度の節（見出し・切替などの注記・畳み込み・免責）。所見の警告は所見の中に出すので、ここにはバッジを置かない。
+ * 狭幅は switch 以外の注記と畳み込みの注記を省く（switch は結論の「注意」の件数に数えるので残す）。免責は残す。
+ */
+function reliabilityRows(analysis: ReviewAnalysis, narrow: boolean): PaneRow[] {
+  const notes = narrow ? analysis.trustNotes.filter(note => note.kind === 'switch') : analysis.trustNotes
   return [
     { kind: 'heading', text: HEADING.reliability },
-    ...analysis.trustNotes.map((note): PaneRow => ({ kind: 'note', text: note.text })),
-    ...(analysis.archiveNote === null ? [] : [{ kind: 'note', text: analysis.archiveNote } satisfies PaneRow]),
+    ...notes.map((note): PaneRow => ({ kind: 'note', text: note.text })),
+    ...(narrow || analysis.archiveNote === null ? [] : [{ kind: 'note', text: analysis.archiveNote } satisfies PaneRow]),
     { kind: 'note', text: paneAlwaysNote(analysis.advisorText !== null) },
+    ...(narrow ? [{ kind: 'note', text: NARROW_OMITTED_NOTE } satisfies PaneRow] : []),
   ]
 }
 
 /**
- * 最下段の用語と判定基準。信頼度の後に空行を挟み、用語は判定基準の直前に置く。
+ * 最下段の用語と判定基準。信頼度の後に空行を挟み、用語は判定基準の直前に置く。狭幅は用語を省く。
  * 実コストがあるときは判定基準の末尾に更新の案内を付ける。
  */
-function closingRows(analysis: ReviewAnalysis): PaneRow[] {
+function closingRows(analysis: ReviewAnalysis, narrow: boolean): PaneRow[] {
   const criteria = analysis.diff === null ? CRITERIA_NOTE : `${CRITERIA_NOTE}${REFRESH_SUFFIX}`
-  return [{ kind: 'blank' }, ...glossaryRows(shownTerms(analysis)), { kind: 'note', text: criteria }]
+  return [{ kind: 'blank' }, ...(narrow ? [] : glossaryRows(shownTerms(analysis))), { kind: 'note', text: criteria }]
 }
 
 /**
- * `columns` はペイン本文の桁数（bodyColumns）。バー幅を合わせる。省略時は最大幅。
+ * `columns` はペイン本文の桁数（bodyColumns）。バー幅と行の省略を決める。省略時は広い扱い（最大幅・全行）。
+ * 桁数の正規化はここで 1 回だけ行い、バー幅と区分の両方に同じ値を渡す。
  * `muted` は設定で止めている指摘の種類（結論・指摘の節から外す）。
  * 節の順序と出し分けは sections.ts、集計は analysis.ts（同じ記録なら前回の結果を使う）。
  */
@@ -330,6 +373,7 @@ export function buildPaneRows(
   rate: RateView | null = null,
 ): PaneRow[] {
   const live = liveRows(drafts)
+  const layout: Layout = { columns: knownColumns(columns), narrow: widthClassOf(columns) === 'narrow' }
   if (review.turns.length === 0) {
     const body: PaneRow[] = live.length === 0 ? [{ kind: 'message', text: NO_TURNS_LINE }] : live.slice(0, -1)
     return [{ kind: 'conclusion', ...NO_RECORDS_CONCLUSION }, ...body]
@@ -342,8 +386,8 @@ export function buildPaneRows(
     moneyRow(analysis, rate !== null),
     { kind: 'blank' },
     ...live,
-    ...buildSections(analysis).flatMap(section => sectionRows(section, columns, nowMs, rate)),
-    ...reliabilityRows(analysis),
-    ...closingRows(analysis),
+    ...buildSections(analysis).flatMap(section => sectionRows(section, layout, nowMs, rate)),
+    ...reliabilityRows(analysis, layout.narrow),
+    ...closingRows(analysis, layout.narrow),
   ]
 }
