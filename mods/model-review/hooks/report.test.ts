@@ -186,7 +186,7 @@ test('コマンド出力にも、ヒット率・高コストターン・切替�
   expect(text).toContain('fast mode')
 })
 
-test('見出しの順序と用語はペインと同じで、妥当性が最初に来る', () => {
+test('見出しの順序と用語はペインと同じで、所見が最初に来る', () => {
   // Arrange: 指摘・ループ別・切替見積りが全部出る記録。
   const review = withTurns(
     [
@@ -386,4 +386,41 @@ test('指摘がないときの行は「過剰・不足の指摘なし」と書�
   expect(lines).toContain(`  ${NO_CONCERNS_TEXT}`)
   expect(NO_CONCERNS_TEXT).toBe('過剰・不足の指摘なし')
   expect(lines).not.toContain('  指摘なし')
+})
+
+test('テキストの TTL 乖離は【TTL 乖離】の行で所見に出し、見出しの後・モデル × effort の前に置く', () => {
+  // Arrange: 推定 $3、実 $4（+33%）、書込 100,000 tokens（ペインの TTL 乖離と同じ記録）。
+  const review = withTurns([turn({ toolCount: 5, costUsd: 3, tokens: { input: 0, output: 10, cacheRead: 0, cacheWrite: 100_000 } })], 10, 14)
+
+  // Act
+  const lines = buildReportLines(review)
+  const headingIndex = lines.indexOf('■ 所見 · ヒューリスティック')
+  const warningIndex = lines.indexOf(
+    '  【TTL 乖離】 実コストが、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます',
+  )
+  const groupsIndex = lines.indexOf('■ モデル × effort（コスト比）')
+
+  // Assert
+  expect(headingIndex).toBeGreaterThanOrEqual(0)
+  expect(warningIndex).toBeGreaterThan(headingIndex)
+  expect(warningIndex).toBeLessThan(groupsIndex)
+})
+
+test('ペインとテキストは、見出し「信頼度」・警告「再構築」・用語「差（実 − 推定）」を同じ文字列で出す', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続し、実コストが基準点から増えた記録。
+  const rebuilt = ['r0', 'r1', 'r2', 'r3', 'r4'].map(turnId =>
+    turn({ turnId, toolCount: 5, editCount: 2, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 } }),
+  )
+  const review = withTurns(rebuilt, 10, 14)
+
+  // Act
+  const paneRows = buildPaneRows(review)
+  const lines = buildReportLines(review)
+
+  // Assert
+  expect(paneRows).toContainEqual(expect.objectContaining({ kind: 'heading', text: '信頼度' }))
+  expect(paneRows).toContainEqual(expect.objectContaining({ kind: 'badge', label: '再構築' }))
+  expect(lines).toContain('■ 信頼度')
+  expect(lines.some(line => line.startsWith('  【再構築】 '))).toBe(true)
+  expect(lines.some(line => line.includes('差（実 − 推定）: +$'))).toBe(true)
 })

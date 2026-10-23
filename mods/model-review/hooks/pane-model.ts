@@ -168,7 +168,7 @@ const findingRows = (findings: readonly FindingNote[]): PaneRow[] =>
 
 /**
  * 所見の節（見出し・指摘・警告・空行）。直近の指摘を先に、所見の警告を指摘の後に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
- * 止めている種類は最後に注記 1 行だけ。結論が「指摘なし」を言うときは OK 行を出さない。
+ * 止めている種類は最後に注記 1 行だけ。結論が「目立った指摘なし」を言うときは OK 行を出さない。
  * 中身が 1 行も残らないときは、見出しと空行ごと出さない（警告も中身に数える）。
  */
 function concernSectionRows(section: ConcernsSection): PaneRow[] {

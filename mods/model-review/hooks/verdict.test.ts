@@ -166,7 +166,7 @@ test('切替の注記は注意の件数には数えるが、状態を ▲ に上
   expect(lines[0]).toBe(conclusionText(rows))
   // 切替は所見のバッジにせず、信頼度の注記に出す。
   expect(rows.filter(row => row.kind === 'badge' && row.label === '注意')).toHaveLength(0)
-  expect(rows.some(row => row.kind === 'note' && row.text.includes('切替の推定'))).toBe(true)
+  expect(rows.some(row => row.kind === 'note' && row.text === '切替の推定は、切替直後の最初の応答のキャッシュ書込から算出しています。長い中断によるキャッシュ切れとは区別できません。Bedrock・Vertex・gateway 経由では effort 変更でもキャッシュは維持されません')).toBe(true)
 })
 
 test('D3 単価表が古いだけなら、動的な警告がないので ✓ のまま。注意に数えず、ペインでは信頼度の注記に回る', () => {

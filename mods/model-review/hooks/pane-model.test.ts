@@ -194,7 +194,7 @@ test('所見セクションは内訳より上にあり、見出しは「所見�
   expect(headings[1]).toContain('モデル × effort')
 })
 
-test('結論が指摘なしを言うとき、ペインは OK 行も妥当性の見出しも出さない（軽作業に重い設定ならバッジは出す）', () => {
+test('結論が指摘なしを言うとき、ペインは OK 行も所見の見出しも出さない（軽作業に重い設定ならバッジは出す）', () => {
   // Arrange
   const heavyForLight = (turnId: string) => turn({ turnId, model: 'claude-opus-5-5', effort: 'max' })
 
@@ -756,4 +756,17 @@ test('判定基準の出力の上限は、桁区切りの 1,000 で出す', () =
 
   // Assert
   expect(last?.kind === 'note' ? last.text : '').toContain('出力 1,000 tokens 以下')
+})
+
+test('ペインの見出し「信頼度」・警告バッジ「再構築」「TTL 乖離」・用語「差（実 − 推定）」は文字列どおりに出る', () => {
+  // Arrange
+  const rebuilt = rowsOf(rebuildingRun())
+  const ttl = rowsOf([turn({ toolCount: 5, costUsd: 3, tokens: { input: 0, output: 10, cacheRead: 0, cacheWrite: 100_000 } })], { baseline: 10, current: 14 })
+  const glossary = glossaryRows(rowsOf([lightOpus('a'), lightOpus('b'), lightOpus('c')], { baseline: 10, current: 14 }))
+
+  // Assert
+  expect(rebuilt).toContainEqual(expect.objectContaining({ kind: 'heading', text: '信頼度' }))
+  expect(rebuilt).toContainEqual(expect.objectContaining({ kind: 'badge', label: '再構築', tone: 'warning' }))
+  expect(ttl).toContainEqual(expect.objectContaining({ kind: 'badge', label: 'TTL 乖離', tone: 'warning' }))
+  expect(glossary[0]).toContain('差（実 − 推定）: + は推定より実額が大きい')
 })
