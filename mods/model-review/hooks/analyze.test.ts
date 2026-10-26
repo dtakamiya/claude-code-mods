@@ -14,6 +14,7 @@ import {
   MIN_OVERSPEC_TURNS,
   MIN_UNDERSPEC_TURNS,
   MAIN_DELEGATION_MIN_TOOL_CALLS,
+  MIN_DELEGATION_WINDOW_COST_USD,
   UNDERSPEC_ERROR_STREAK,
   RANK_HAIKU,
   estimateRange,
@@ -29,6 +30,9 @@ import {
 // 架空データのみ。既定値は「重い」側に寄らない軽い 1 ターン。
 const repeat = (count: number, make: (index: number) => TurnRecord): TurnRecord[] =>
   Array.from({ length: count }, (_, index) => make(index))
+
+// 委譲の窓コスト閾値を超える額（架空）。
+const BIG_COST = MIN_DELEGATION_WINDOW_COST_USD * 2
 
 const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
   turnId: 'turn-x',
@@ -216,8 +220,8 @@ test('Haiku を低 effort で使ったエラー終了だけでは、不足とし
 test('メインループが非 Haiku でツールを 30 回以上呼び、サブエージェントを使っていなければ委譲を確認する', () => {
   // Arrange: メインのツール合計が閾値ちょうど。
   const records = [
-    turn({ turnId: 'm1', toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS - 4, editCount: 2 }),
-    turn({ turnId: 'm2', toolCount: 4 }),
+    turn({ turnId: 'm1', toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS - 4, editCount: 2, costUsd: BIG_COST }),
+    turn({ turnId: 'm2', toolCount: 4, costUsd: BIG_COST }),
   ]
 
   // Act
@@ -240,7 +244,7 @@ test('委譲は直近 DELEGATION_WINDOW_TURNS ターンの窓だけで見て、�
   // Arrange: サブエージェントは窓の外（先頭）。窓内のメインのツール合計は閾値以上。
   const records = [
     turn({ turnId: 'old-sub', agentId: 'agent-1', model: 'claude-sonnet-5-5', effort: 'medium' }),
-    ...repeat(DELEGATION_WINDOW_TURNS, index => turn({ turnId: `m${index}`, toolCount: 2 })),
+    ...repeat(DELEGATION_WINDOW_TURNS, index => turn({ turnId: `m${index}`, toolCount: 2, costUsd: BIG_COST / DELEGATION_WINDOW_TURNS })),
   ]
 
   // Act
@@ -649,7 +653,7 @@ test('編集が多い実装中心の窓では、ツールが多くても委譲�
 
 test('編集の割合が上限ちょうどなら、委譲を確認する（境界）', () => {
   // Arrange: ツール 30 回のうち編集 6 回（20%）。
-  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, editCount: 6 })]
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, editCount: 6, costUsd: BIG_COST })]
 
   // Act / Assert
   expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toMatchObject({ count: 1 })
@@ -690,4 +694,34 @@ test('plan mode のターンでも、effort 起因の過剰は残る', () => {
 
   // Assert
   expect(concern).toMatchObject({ kind: 'overspec', count: 3 })
+})
+
+test('S10 窓内のメインの推定コストが閾値未満（低額セッション）なら、委譲の指摘は出さない', () => {
+  // Arrange: ツールは閾値ちょうど、合計は閾値の直下。
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, costUsd: MIN_DELEGATION_WINDOW_COST_USD - 0.01 })]
+
+  // Act / Assert
+  expect(findConcerns(records).find(concern => concern.kind === 'delegation')).toBeUndefined()
+})
+
+test('窓内のメインの推定コストが閾値ちょうどなら委譲を指摘し、金額（対象の推定コスト）を添える（境界）', () => {
+  // Arrange
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, costUsd: MIN_DELEGATION_WINDOW_COST_USD })]
+
+  // Act
+  const delegation = findConcerns(records).find(concern => concern.kind === 'delegation')
+
+  // Assert
+  expect(delegation?.amountUsd).toBe(MIN_DELEGATION_WINDOW_COST_USD)
+})
+
+test('窓内の単価がすべて不明で金額が出せないときは、委譲を黙って消さず金額なしで指摘する', () => {
+  // Arrange
+  const records = [turn({ toolCount: MAIN_DELEGATION_MIN_TOOL_CALLS, costUsd: null })]
+
+  // Act
+  const delegation = findConcerns(records).find(concern => concern.kind === 'delegation')
+
+  // Assert
+  expect(delegation).toMatchObject({ count: 1, amountUsd: null })
 })

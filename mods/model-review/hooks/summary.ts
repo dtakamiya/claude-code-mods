@@ -21,7 +21,7 @@ export const NO_TURNS_LINE = '記録されたターンはまだありません�
 export const CONCERN_AMOUNT_LABEL: Readonly<Record<Concern['kind'], string | null>> = {
   overspec: 'Sonnet 換算',
   underspec: null,
-  delegation: null,
+  delegation: '対象の推定',
   subagent: '推定',
   switch: '推定',
 }

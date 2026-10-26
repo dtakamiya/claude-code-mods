@@ -25,6 +25,8 @@ export const LONG_TURN_MS = 120_000
 export const MAIN_DELEGATION_MIN_TOOL_CALLS = 30
 /** 委譲の判定は、記録の末尾（新しい順）からこの数のターンだけを窓として見る。古いサブエージェントの利用で指摘を消さないため（仮置き）。 */
 export const DELEGATION_WINDOW_TURNS = 20
+/** 委譲は、窓内のメインの非 Haiku ターンの推定コスト合計がこの額未満なら指摘しない。任せても得が小さい低額セッションで注意を取らないため（仮置き、H5）。単価不明のみで合計が出ないときは判定せず指摘を残す。 */
+export const MIN_DELEGATION_WINDOW_COST_USD = 0.5
 /** 時間による重い判定は、ツールがこの回数以上使われたターンにだけ適用する。承認待ちなど、ツールを使わない長い停止を重い作業と誤認しないため（仮置き）。 */
 export const MIN_TOOLS_FOR_DURATION_HEAVY = 3
 /** 過剰は、該当ターンがこの数以上あるときだけ指摘する。1〜2 ターンの軽さは切替の根拠にならない（仮置き）。 */
@@ -89,7 +91,7 @@ export type Concern = {
   readonly kind: ConcernKind
   readonly count: number
   readonly examples: readonly string[]
-  /** 金額の目安（USD）。過剰は Sonnet 換算の差額。分からなければ null。 */
+  /** 金額の目安（USD）。過剰は Sonnet 換算の差額、委譲は窓内のメイン非 Haiku の推定コスト合計（任せる対象の大きさ）。分からなければ null。 */
   readonly amountUsd: number | null
   /** 件数の母数（全ターン数）。割合で読める種類にだけ付ける。 */
   readonly outOf?: number
@@ -389,18 +391,20 @@ function overspecConcern(records: readonly TurnRecord[]): Concern | null {
 /** 直近 DELEGATION_WINDOW_TURNS ターンの窓だけで、メインの非 Haiku ツール回数とサブエージェントの有無を見る。 */
 function delegationConcern(records: readonly TurnRecord[]): Concern | null {
   const recent = records.slice(-DELEGATION_WINDOW_TURNS)
-  const mainNonHaikuTools = recent
-    .filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
-    .reduce((sum, record) => sum + record.toolCount, 0)
-  const mainNonHaikuEdits = recent
-    .filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
-    .reduce((sum, record) => sum + record.editCount, 0)
+  const mainNonHaiku = recent.filter(record => record.agentId === null && modelRank(record.model) !== RANK_HAIKU)
+  const mainNonHaikuTools = mainNonHaiku.reduce((sum, record) => sum + record.toolCount, 0)
+  const mainNonHaikuEdits = mainNonHaiku.reduce((sum, record) => sum + record.editCount, 0)
   const usesSubagents = recent.some(record => record.agentId !== null)
   if (mainNonHaikuTools < MAIN_DELEGATION_MIN_TOOL_CALLS || usesSubagents) return null
   if (mainNonHaikuEdits / mainNonHaikuTools > DELEGATION_MAX_EDIT_SHARE) return null
-  return concernOf('delegation', 1, [
-    `直近 ${DELEGATION_WINDOW_TURNS} ターンで、メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、サブエージェントを使っていない`,
-  ])
+  const windowCostUsd = sumKnown(mainNonHaiku.map(record => record.costUsd))
+  if (windowCostUsd !== null && windowCostUsd < MIN_DELEGATION_WINDOW_COST_USD) return null
+  return concernOf(
+    'delegation',
+    1,
+    [`直近 ${DELEGATION_WINDOW_TURNS} ターンで、メインループが非 Haiku モデルでツールを ${mainNonHaikuTools} 回呼んだが、サブエージェントを使っていない`],
+    windowCostUsd,
+  )
 }
 
 export type AgentTypeSummary = {
