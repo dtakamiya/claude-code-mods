@@ -19,7 +19,7 @@
 ## 表示する内容
 
 - モデル × effort ごとのターン数、トークン、キャッシュのヒット率、推定コスト。
-- 指摘: 過剰（軽作業に重いモデル/effort）、不足（重い作業・エラー連続に軽いモデル/low）、委譲（メインが多くのツールを使うのにサブエージェント未使用）、サブエージェントの比重、切替。
+- 指摘: 過剰（軽作業に重いモデル/effort）、不足（重い作業・エラー連続に軽いモデル/low）、委譲（メインが多くのツールを使うのにサブエージェント未使用。窓内の推定コストが $0.5 未満なら出さず、出すときは対象の推定コストを添える）、サブエージェントの比重、切替。
 - 直近と過去の区別（0.20.0）: 指摘ごとに「最後は N ターン前」を出す。結論の ▲ はメインの直近 20 ターン（仮置き）に該当がある指摘だけで決め、それより前にだけ該当した指摘は「過去の指摘」として別に並べる（対処が効けば ✓ に戻る）。
 - plan mode のターン（0.25.0）: `prompt.attachment` の plan_mode を観察して印を付け、モデル起因の過剰から外す（effort 起因は残す）。注記に件数を出す。
 - opusplan の候補（0.30.0）: plan 外で Opus の過剰があり plan mode も使っているとき、次の一手に `/model opusplan`（計画は Opus・実行は Sonnet）を添える。直近のメインが Sonnet 以下なら出さない。
@@ -76,4 +76,4 @@
 
 ## 開発
 
-`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。動作確認済みバージョン: Claude Code 2.1.309（validate / test / tsc）。
+`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。動作確認済みバージョン: Claude Code 2.1.310（validate / test / tsc）。

@@ -143,7 +143,7 @@ test('不足があれば「要対応」（error）、委譲だけなら「参考
   // Arrange: 重い作業（ツール 12 回）を Haiku の low で 2 件 / ツール多数のメイン Sonnet（委譲だけ）。
   const heavyHaiku = (id: string): TurnRecord => healthy(id, { model: 'claude-haiku-5-5', effort: 'low', toolCount: 12 })
   const underspec = verdictOf(review([heavyHaiku('h1'), heavyHaiku('h2')]))
-  const delegation = verdictOf(review(times(6, index => healthy(`d${index}`, { toolCount: 6, editCount: 0 }))))
+  const delegation = verdictOf(review(times(6, index => healthy(`d${index}`, { toolCount: 6, editCount: 0, costUsd: 1 }))))
 
   // Assert
   expect(underspec.text.startsWith('✖ 要対応 · 結論: 見直し候補')).toBe(true)
