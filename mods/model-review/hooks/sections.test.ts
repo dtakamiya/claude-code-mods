@@ -59,7 +59,7 @@ test('ペインとテキストは同じ節を同じ順序で出す（見出し�
   // Act
   const text = buildReportLines(review).join('\n')
   const paneHeadings = buildPaneRows(review).flatMap(row => (row.kind === 'heading' ? [row.text] : []))
-  const textPositions = kinds.map(kind => text.indexOf(`■ ${SECTION_HEADING[kind]}`))
+  const textPositions = kinds.map(kind => text.indexOf(`■ ${kind === 'groups' ? HEADING.groupsText : SECTION_HEADING[kind]}`))
   const panePositions = kinds.map(kind => paneHeadings.findIndex(heading => heading.startsWith(SECTION_HEADING[kind])))
 
   // Assert: どちらにも全部あり、順序が buildSections と同じ

@@ -13,13 +13,13 @@ test('formatStatus: コストと使用率を 1 行にする', () => {
 })
 
 test('formatStatus: rateLimits が空ならコストだけ、どちらも無ければ undefined', () => {
-  expect(formatStatus({ costUsd: 0.5, rateLimits: [] })).toBe('実コスト $0.50')
+  expect(formatStatus({ costUsd: 0.5, rateLimits: [] })).toBe('累計コスト $0.50')
   expect(formatStatus({ rateLimits: [] })).toBeUndefined()
 })
 
-test('formatStatus: 使用率が取れる環境（サブスク）では、コストを「実コスト」ではなく「API換算」と書く', () => {
+test('formatStatus: 使用率が取れる環境（サブスク）では、コストを「累計コスト」ではなく「API換算」と書く', () => {
   expect(formatStatus({ costUsd: 1.234, rateLimits: [five(72)] })).toBe('API換算 $1.23 · 5h 72%')
-  expect(formatStatus({ costUsd: 1.234, rateLimits: [] })).toBe('実コスト $1.23')
+  expect(formatStatus({ costUsd: 1.234, rateLimits: [] })).toBe('累計コスト $1.23')
 })
 
 test('evaluateAlerts: サブスクのコスト上限のトーストは「API 換算」で、請求額ではないと添える。サブスク外は今のまま', () => {
@@ -27,7 +27,7 @@ test('evaluateAlerts: サブスクのコスト上限のトーストは「API 換
   const subscribed = evaluateAlerts({ costUsd: 5.12, rateLimits: [five(10)] }, limits, new Set())
   const metered = evaluateAlerts({ costUsd: 5.12, rateLimits: [] }, limits, new Set())
   expect(subscribed.alerts).toEqual(['API 換算コストが上限 $5.0000 に達しました（現在 $5.12・請求額ではありません）'])
-  expect(metered.alerts).toEqual(['実コストが上限 $5.0000 に達しました（現在 $5.12）'])
+  expect(metered.alerts).toEqual(['累計コストが上限 $5.0000 に達しました（現在 $5.12）'])
 })
 
 test('formatStatus: 有限でない値は出さない', () => {

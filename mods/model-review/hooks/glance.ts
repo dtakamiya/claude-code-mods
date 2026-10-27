@@ -51,7 +51,7 @@ const isSubscription = (glance: Glance): boolean => glance.rateLimits.length > 0
 export function formatStatus(glance: Glance, hints: ReadonlyMap<string, string> = new Map()): string | undefined {
   const parts: string[] = []
   if (glance.costUsd !== undefined && Number.isFinite(glance.costUsd)) {
-    parts.push(`${isSubscription(glance) ? 'API換算' : '実コスト'} ${formatCostShort(glance.costUsd)}`)
+    parts.push(`${isSubscription(glance) ? 'API換算' : '累計コスト'} ${formatCostShort(glance.costUsd)}`)
   }
   for (const window of glance.rateLimits) {
     if (Number.isFinite(window.percentUsed)) parts.push(`${rateLabel(window.kind)} ${formatPercent(window.percentUsed)}${hints.has(window.kind) ? `（${hints.get(window.kind)}）` : ''}`)
@@ -74,7 +74,7 @@ export function evaluateAlerts(glance: Glance, limits: Limits, notified: Readonl
       'cost',
       isSubscription(glance)
         ? `API 換算コストが上限 ${formatUsd(limits.costUsd)} に達しました（現在 ${formatCostShort(glance.costUsd)}・請求額ではありません）`
-        : `実コストが上限 ${formatUsd(limits.costUsd)} に達しました（現在 ${formatCostShort(glance.costUsd)}）`,
+        : `累計コストが上限 ${formatUsd(limits.costUsd)} に達しました（現在 ${formatCostShort(glance.costUsd)}）`,
     )
   }
   if (limits.ratePercent !== null) {

@@ -562,7 +562,7 @@ test('実コストが取れないときは、ペイン・テキストと同じ�
   expect(rows).toContainEqual({
     kind: 'kv',
     label: '金額',
-    value: '推定 $3.0000 · 実コスト 取得できません（取れない環境もあります。/model-review で再取得）',
+    value: '推定 $3.0000 · 読み込み後の実額 取得できません（取れない環境もあります。/model-review で再取得）',
     tone: 'plain',
   })
 })

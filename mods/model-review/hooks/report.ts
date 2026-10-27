@@ -5,7 +5,7 @@ import { analyzeReview, type ReviewAnalysis } from './analysis'
 import { BREAKDOWN_LABEL } from './breakdown'
 import { GROWTH_LABEL } from './growth'
 import type { RateView } from './pace'
-import { formatInt, formatUsd, formatUsdRange } from './format'
+import { formatInt, formatUsd } from './format'
 import { ALWAYS_NOTE, type FindingNote } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
 import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
@@ -22,16 +22,12 @@ import {
   type WhatIfSection,
 } from './sections'
 import {
-  ACTUAL_COST_UNAVAILABLE_TEXT,
   NO_TURNS_LINE,
-  allUnpricedText,
   concernDetailText,
   groupFacts,
   moneyLineFrom,
-  signedUsdText,
   toolDetailText,
   turnOriginLabel,
-  unpricedExclusionText,
 } from './summary'
 import { hasSeq, turnRefText } from './turnref'
 
@@ -56,12 +52,15 @@ function rateLines(rate: RateView | null): string[] {
   return rate === null ? [] : [...rate.rows.map(row => `使用率 ${row.label}: ${row.text}`), `  ${rate.note}`]
 }
 
-function costLines(section: CostSection, isSubscription: boolean): string[] {
-  const totalLabel = isSubscription ? '推定（API 換算・参考）' : '推定'
-  const { estimate, breakdown, growth, diff } = section
-  const estimateLine = estimate.allUnpriced
-    ? `${totalLabel}: ${allUnpricedText(section.totalTurns)}`
-    : `${totalLabel}: ${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${estimate.unpricedTurns > 0 ? unpricedExclusionText(estimate.unpricedTurns) : ''}`
+/** 差の推定の基準の注記。金額行の「差」に付く説明で、金額行を長くしないよう別行にする。 */
+const DIFF_BASIS_NOTE = '※ 差の推定は単価表の値。ターン外の要求は含まない'
+
+/**
+ * コストの節の本文。推定・実・差は結論の次の金額行に 1 回だけ出すので、ここでは再掲しない。
+ * 内訳・推移と、差がある場合の基準の注記だけを並べる。
+ */
+function costLines(section: CostSection): string[] {
+  const { breakdown, growth, diff } = section
   const breakdownLines =
     breakdown === null ? [] : [`${BREAKDOWN_LABEL}: ${breakdown.items}`, ...(breakdown.hint === null ? [] : [`  → ${breakdown.hint}`]), `  ${breakdown.note}`]
   const growthLines =
@@ -73,20 +72,8 @@ function costLines(section: CostSection, isSubscription: boolean): string[] {
           ...(growth.hint === null ? [] : [`  → ${growth.hint}`]),
           `  ${growth.note}`,
         ]
-  if (diff === null) {
-    return [estimateLine, ...breakdownLines, ...growthLines, `セッション${ACTUAL_COST_UNAVAILABLE_TEXT.replace(' ', ': ')}`]
-  }
-  return [
-    estimateLine,
-    ...breakdownLines,
-    ...growthLines,
-    `実（${isSubscription ? 'API 換算・請求額ではない・' : ''}読み込み後）: ${formatUsd(diff.actualUsd)}`,
-    `差（実 − 推定）: ${signedUsdText(diff.diffUsd)}（${diffDirection(diff.diffUsd)}推定は単価表の値。ターン外の要求は含まない）`,
-  ]
+  return [...breakdownLines, ...growthLines, ...(diff === null ? [] : [DIFF_BASIS_NOTE])]
 }
-
-/** 差の向き。括弧を重ねないよう、後ろの説明と同じ括弧の中に入れる文の頭として返す。差が 0 なら空文字。 */
-const diffDirection = (diffUsd: number): string => (diffUsd > 0 ? '実が大きい。' : diffUsd < 0 ? '推定が大きい。' : '')
 
 /** 指摘 1 件の行。過去の指摘には「次の一手」を付けない（いま直す対象ではないため）。 */
 function oneConcernLines(concern: Concern, next: string | null): string[] {
@@ -149,7 +136,7 @@ const whatIfLines = (section: WhatIfSection): string[] => [`■ ${HEADING.whatIf
 function costSectionLines(section: CostSection, rate: RateView | null): string[] {
   return [
     `■ ${HEADING.cost}`,
-    ...costLines(section, rate !== null),
+    ...costLines(section),
     ...rateLines(rate),
     ...(section.advisorText === null ? [] : [`advisor ${section.advisorText}`]),
     '',
@@ -161,7 +148,7 @@ function sectionLines(section: Section, nowMs: number | undefined, rate: RateVie
     case 'concerns':
       return concernLines(section)
     case 'groups':
-      return [`■ ${HEADING.groups}`, ...section.groups.map(groupLine), '']
+      return [`■ ${HEADING.groupsText}`, ...section.groups.map(groupLine), '']
     case 'topTurns':
       return topTurnLines(section, nowMs)
     case 'loops':

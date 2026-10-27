@@ -93,7 +93,7 @@ test('直近ターンでの切替は、切替の注記を出す', () => {
   expect(notes).toHaveLength(1)
 })
 
-const TTL_MARK = '実コストが'
+const TTL_MARK = '読み込み後の実額が'
 const ttlNotesOf = (sessionCostUsd: ReviewState['sessionCostUsd'], turns: TurnRecord[]): string[] =>
   textsOf({ turns, sessionCostUsd }).filter(text => text.includes(TTL_MARK))
 /** 基準点より前に積んだ、上限推定だけが大きいターン（実コストには入らない）。 */

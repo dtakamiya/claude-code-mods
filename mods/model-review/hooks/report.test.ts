@@ -68,9 +68,22 @@ test('実コストと推定の差を、同じ基準点から計算して表示�
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('推定: $0.5000')
-  expect(text).toContain('実（読み込み後）: $0.7500')
-  expect(text).toContain('差（実 − 推定）: +$0.2500（実が大きい。推定は単価表の値')
+  expect(text).toContain('金額: 推定 $0.5000 · 実 $0.7500（読み込み後）· 差 +$0.2500（実が大きい）')
+  expect(text).toContain('※ 差の推定は単価表の値')
+})
+
+test('金額（推定・実・差）はコストの節で再掲せず、金額行の 1 回だけ出す。差の符号表記も 1 形式', () => {
+  // Arrange
+  const review = withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], 1.0, 1.75)
+
+  // Act
+  const lines = buildReportLines(review)
+  const costLines = lines.slice(lines.indexOf('■ コスト'), lines.indexOf('■ 信頼度'))
+
+  // Assert
+  expect(lines.filter(line => line.includes('$0.7500'))).toHaveLength(1)
+  expect(lines.filter(line => line.includes('+$0.2500'))).toHaveLength(1)
+  expect(costLines.some(line => /^(推定|実|差)/.test(line))).toBe(false)
 })
 
 test('実コストが推定より小さいときの差は「-$」の形で、向きを添える（$-0.0187 の形にしない）', () => {
@@ -81,7 +94,7 @@ test('実コストが推定より小さいときの差は「-$」の形で、向
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('差（実 − 推定）: -$0.1000（推定が大きい。推定は単価表の値')
+  expect(text).toContain('差 -$0.1000（推定が大きい）')
   expect(text).not.toContain('$-')
 })
 
@@ -93,7 +106,8 @@ test('基準点がない環境では実コストを取得できないと表示�
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('セッション実コスト: 取得できません')
+  expect(text).toContain('金額: 推定 $0.2500 · 読み込み後の実額 取得できません')
+  expect(text).not.toContain('実コスト')
 })
 
 test('単価不明のモデルは推定コストを「単価不明」と表示する', () => {
@@ -106,7 +120,8 @@ test('単価不明のモデルは推定コストを「単価不明」と表示�
   // Assert
   expect(text).toContain('claude-unlisted-9  effort high')
   expect(text).toContain('推定 単価不明')
-  expect(text).toContain('推定: 算出できません（全 1 ターンが単価不明）')
+  expect(text).toContain('金額: 推定 単価不明（全 1 ターン）')
+  expect(text).not.toContain('算出できません')
   expect(text).toContain('モデル: claude-unlisted-9')
 })
 
@@ -129,7 +144,7 @@ test('単価不明が 0 件のときは、除外の文言を出さない', () =>
   const text = buildReportLines(review).join('\n')
 
   // Assert
-  expect(text).toContain('推定: $0.5000')
+  expect(text).toContain('金額: 推定 $0.5000')
   expect(text).not.toContain('ターンを除く')
 })
 
@@ -205,7 +220,8 @@ test('見出しの順序と用語はペインと同じで、所見が最初に�
   const text = buildReportLines(review).join('\n')
   const headingsOf = (rows: PaneRow[]) => rows.flatMap(row => (row.kind === 'heading' ? [row.text.split('· ')[0]?.trim() ?? ''] : []))
   const paneOrder = headingsOf(buildPaneRows(review))
-  const reportOrder = paneOrder.map(heading => text.indexOf(`■ ${heading}`))
+  // テキストの見出しだけ「（コスト比）」を付けない（行に割合がないため）。
+  const reportOrder = paneOrder.map(heading => text.indexOf(`■ ${heading === HEADING.groups ? HEADING.groupsText : heading}`))
 
   // Assert: ペインの見出しがすべてテキストにあり、同じ順序で並ぶ。
   expect(paneOrder[0]).toBe(HEADING.concerns)
@@ -307,7 +323,7 @@ test('TTL の説明（1 時間単価）は、ペインとテキストの出力�
   // Assert: 前提（警告なし・内訳と差の行がある）
   expect(rows.some(row => row.kind === 'badge')).toBe(false)
   expect(rows.some(row => row.kind === 'note' && row.text.startsWith('内訳の合計'))).toBe(true)
-  expect(lines.some(line => line.includes('差（実 − 推定）'))).toBe(true)
+  expect(lines.some(line => line.includes('差 +$'))).toBe(true)
   // Assert: 1 時間単価 はペインでは免責の 1 行、テキストでは免責の 1 行だけ。1 時間 TTL は出ない
   const paneHits = rows.filter(row => JSON.stringify(row).includes('1 時間単価'))
   expect(paneHits.map(row => row.kind)).toEqual(['note'])
@@ -326,7 +342,7 @@ test('テキストの所見は再構築の警告を【再構築】の行で出�
   // Act
   const headingIndex = lines.indexOf(`■ ${HEADING.concerns} · ヒューリスティック`)
   const warningIndex = lines.findIndex(line => line.startsWith('  【再構築】 キャッシュ書込が読込を上回るターンが 4 回連続'))
-  const groupsIndex = lines.indexOf(`■ ${HEADING.groups}`)
+  const groupsIndex = lines.indexOf(`■ ${HEADING.groupsText}`)
 
   // Assert
   expect(headingIndex).toBeGreaterThanOrEqual(0)
@@ -396,9 +412,9 @@ test('テキストの TTL 乖離は【TTL 乖離】の行で所見に出し、�
   const lines = buildReportLines(review)
   const headingIndex = lines.indexOf('■ 所見 · ヒューリスティック')
   const warningIndex = lines.indexOf(
-    '  【TTL 乖離】 実コストが、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます',
+    '  【TTL 乖離】 読み込み後の実額が、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます',
   )
-  const groupsIndex = lines.indexOf('■ モデル × effort（コスト比）')
+  const groupsIndex = lines.indexOf('■ モデル × effort')
 
   // Assert
   expect(headingIndex).toBeGreaterThanOrEqual(0)
@@ -406,7 +422,7 @@ test('テキストの TTL 乖離は【TTL 乖離】の行で所見に出し、�
   expect(warningIndex).toBeLessThan(groupsIndex)
 })
 
-test('ペインとテキストは、見出し「信頼度」・警告「再構築」・用語「差（実 − 推定）」を同じ文字列で出す', () => {
+test('ペインとテキストは、見出し「信頼度」・警告「再構築」・用語「差」を同じ文字列で出す', () => {
   // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続し、実コストが基準点から増えた記録。
   const rebuilt = ['r0', 'r1', 'r2', 'r3', 'r4'].map(turnId =>
     turn({ turnId, toolCount: 5, editCount: 2, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 } }),
@@ -422,5 +438,5 @@ test('ペインとテキストは、見出し「信頼度」・警告「再構�
   expect(paneRows).toContainEqual(expect.objectContaining({ kind: 'badge', label: '再構築' }))
   expect(lines).toContain('■ 信頼度')
   expect(lines.some(line => line.startsWith('  【再構築】 '))).toBe(true)
-  expect(lines.some(line => line.includes('差（実 − 推定）: +$'))).toBe(true)
+  expect(lines.some(line => line.includes('差 +$'))).toBe(true)
 })

@@ -116,7 +116,7 @@ export function estimateFacts(records: readonly TurnRecord[], archived?: Archive
 }
 
 /** 全ターン単価不明のときの推定の文面。 */
-export const allUnpricedText = (turnCount: number): string => `算出できません（全 ${turnCount} ターンが単価不明）`
+export const allUnpricedText = (turnCount: number): string => `単価不明（全 ${turnCount} ターン）`
 
 /** 単価不明のターンを合計から除いたことの文面。0 件なら空文字（除いたものがない）。 */
 export const unpricedExclusionText = (unpricedTurns: number): string =>
@@ -161,7 +161,7 @@ export function estimateRangeText(estimate: EstimateFacts): string {
 }
 
 /** 実コストが取れないときの文言。ペイン・テキストの金額行・コストの節で同じ説明にする。 */
-export const ACTUAL_COST_UNAVAILABLE_TEXT = '実コスト 取得できません（取れない環境もあります。/model-review で再取得）'
+export const ACTUAL_COST_UNAVAILABLE_TEXT = '読み込み後の実額 取得できません（取れない環境もあります。/model-review で再取得）'
 
 /** 実額の語。サブスクの累計コストは API 単価での換算で請求額ではないので、そう明示する。 */
 export const actualWord = (isSubscription: boolean): string => (isSubscription ? '実（API 換算）' : '実')
