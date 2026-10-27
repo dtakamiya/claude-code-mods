@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
-import { findSwitches } from './switches'
+import { findSwitches, MIN_REBUILD_WRITE_TOKENS } from './switches'
 
 // 架空データのみ。
 const turn = (overrides: Partial<TurnRecord> = {}): TurnRecord => ({
@@ -149,7 +149,7 @@ test('切替の再構築コストは、最初の応答のプロンプト全体�
 
 test('単価不明のモデルへの切替は、数えるがコストは null にする', () => {
   // Arrange
-  const records = [turn({}), turn({ turnId: 't2', model: 'claude-unlisted-9', firstStepCacheWrite: 1_000 })]
+  const records = [turn({}), turn({ turnId: 't2', model: 'claude-unlisted-9', firstStepCacheWrite: 10_000 })]
 
   // Act
   const summary = findSwitches(records)
@@ -184,4 +184,70 @@ test('Vertex（@YYYYMMDD）・Bedrock の ID は effort 変更を切替に数え
   expect(findSwitches(pair('anthropic.claude-sonnet-5-5')).count).toBe(1)
   expect(findSwitches(pair('claude-sonnet-5-5')).count).toBe(0)
   expect(findSwitches(pair('team@gateway')).count).toBe(0)
+})
+
+test('書込が下限未満の戻り切替は、再構築なしとして件数・合計から分ける', () => {
+  // Arrange: Sonnet → Opus（100,000 書込 = 再構築）→ Sonnet（500 書込 = 再構築なし）。架空データ。
+  const records = [
+    turn({ turnId: 't1', model: 'claude-sonnet-5-5' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000 }),
+    turn({ turnId: 't3', model: 'claude-sonnet-5-5', firstStepCacheWrite: 500 }),
+  ]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.count).toBe(1)
+  expect(summary.noRebuildCount).toBe(1)
+  expect(summary.costUsd?.toFixed(4)).toBe('0.4800')
+  expect(summary.examples).toHaveLength(1)
+  expect(summary.examples[0]).toContain('t2')
+  expect(summary.latest?.turnId).toBe('t2')
+})
+
+test('書込がちょうど下限の切替は再構築ありとして数える', () => {
+  // Arrange
+  const records = [
+    turn({ turnId: 't1' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: MIN_REBUILD_WRITE_TOKENS }),
+  ]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.count).toBe(1)
+  expect(summary.noRebuildCount).toBe(0)
+})
+
+test('書込が分からない切替は、再構築なしと言えないので件数に残す', () => {
+  // Arrange: firstStepCacheWrite なし（旧記録）と compact 直後
+  const records = [
+    turn({ turnId: 't1' }),
+    turn({ turnId: 't2', model: 'claude-opus-5-5' }),
+    turn({ turnId: 't3', firstStepCacheWrite: 10, afterCompact: true }),
+  ]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.count).toBe(2)
+  expect(summary.noRebuildCount).toBe(0)
+  expect(summary.costUsd).toBeNull()
+})
+
+test('すべて再構築なしの切替だけなら、件数 0 で合計は null', () => {
+  // Arrange
+  const records = [turn({ turnId: 't1' }), turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 0 })]
+
+  // Act
+  const summary = findSwitches(records)
+
+  // Assert
+  expect(summary.count).toBe(0)
+  expect(summary.noRebuildCount).toBe(1)
+  expect(summary.costUsd).toBeNull()
+  expect(summary.latest).toBeNull()
 })

@@ -180,3 +180,14 @@ test('サブスクの金額本体は API 換算の語を使う', () => {
     'API 換算の推定 $3.0000〜$3.9000 · 実（API 換算） $3.5000（読み込み後）· 差 +$0.5000（実が大きい）',
   )
 })
+
+test('切替の指摘は、再構築なしとして外した件数を件数の後ろに示す', () => {
+  // Arrange
+  const concern: Concern = { kind: 'switch', count: 1, examples: [], amountUsd: 0.48, noRebuildCount: 2 }
+
+  // Act
+  const text = concernDetailText(concern)
+
+  // Assert
+  expect(text).toBe('モデル / effort の切替でキャッシュを再構築 · 1 件（再構築なし 2 件は除く） · 推定 $0.4800')
+})
