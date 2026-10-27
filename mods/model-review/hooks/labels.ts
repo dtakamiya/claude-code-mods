@@ -7,6 +7,8 @@ export const HEADING = {
   concerns: '所見',
   loops: 'ループ別（キャッシュ効率）',
   groups: 'モデル × effort（コスト比）',
+  /** テキストの見出し。行に割合（コスト比）が無いので語を付けない（ペインはバーと割合を出すので付ける）。 */
+  groupsText: 'モデル × effort',
   topTurns: '高コストターン',
   whatIf: 'いま切り替えたら（目安）',
   cost: 'コスト',
@@ -45,7 +47,7 @@ export const CONCLUSION_NONE_TEXT = '目立った指摘なし'
 /** ペインに出ている行の用語だけ、末尾の用語行でまとめて説明する。各 40 字以内。 */
 export const TERM_TEXT = {
   hitRate: 'ヒット率: プロンプトのうちキャッシュから読んだ割合（高いほど安い）',
-  afterLoad: '読み込み後: この Mod を読み込んでからの実コスト',
+  afterLoad: '読み込み後: この Mod を読み込んでからの実額',
   sonnetEquivalent: 'Sonnet 換算: Sonnet 5.5 にしていた場合に減る額の目安',
   diff: '差（実 − 推定）: + は推定より実額が大きい',
 } as const

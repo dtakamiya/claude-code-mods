@@ -93,7 +93,7 @@ test('直近ターンでの切替は、切替の注記を出す', () => {
   expect(notes).toHaveLength(1)
 })
 
-const TTL_MARK = '実コストが'
+const TTL_MARK = '読み込み後の実額が'
 const ttlNotesOf = (sessionCostUsd: ReviewState['sessionCostUsd'], turns: TurnRecord[]): string[] =>
   textsOf({ turns, sessionCostUsd }).filter(text => text.includes(TTL_MARK))
 /** 基準点より前に積んだ、上限推定だけが大きいターン（実コストには入らない）。 */
@@ -253,4 +253,16 @@ test('所見に入るのは再構築と TTL 乖離だけで、それ以外（切
   // Assert
   expect(findings.map(note => note.text)).toEqual(['b', 'd'])
   expect(trustNotes.map(note => note.text)).toEqual(['a', 'c', 'e'])
+})
+
+test('TTL 乖離の短文（結論行に出る brief）は「読み込み後の実額」で書き、旧語「実コスト」を使わない', () => {
+  // Arrange: 基準点より後のターンの上限推定を、読み込み後の実額が大きく超える（既存テストと同じ記録）。
+  const turns = [preBaselineTurn, preBaselineTurn, preBaselineTurn, postBaselineTurn, postBaselineTurn]
+
+  // Act
+  const note = buildNotes({ turns, sessionCostUsd: { baseline: 5, current: 5.5, baselineTurns: 3 } }).find(n => n.text.includes(TTL_MARK))
+
+  // Assert
+  expect(note?.brief).toBe('読み込み後の実額が推定の上限も大きく上回る')
+  expect(note?.brief).not.toContain('実コスト')
 })

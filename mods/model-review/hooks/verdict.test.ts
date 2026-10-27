@@ -203,7 +203,8 @@ test('D0 基準点より前のターンは、差の推定に入れない（符�
   expect(micro(diff?.estimateUsd)).toBe(30_000)
   expect(micro(diff?.diffUsd)).toBe(10_000)
   expect(rows.some(row => row.kind === 'kv' && row.value.includes('差 +$0.0100'))).toBe(true)
-  expect(lines).toContain('差（実 − 推定）: +$0.0100（実が大きい。推定は単価表の値。ターン外の要求は含まない）')
+  expect(lines).toContain('※ 差の推定は単価表の値。ターン外の要求は含まない')
+  expect(lines.filter(line => line.includes('+$0.0100'))).toHaveLength(1)
 })
 
 test('D0 畳み込み済みのターンは、基準点より後に畳んだぶんだけを差の推定に足す', () => {
@@ -254,6 +255,6 @@ test('D2 実コストが取れないとき、全ターン単価不明のとき�
   const unpriced = buildReportLines(review([healthy('a', { costUsd: null, costUpperUsd: null })]))
 
   // Assert
-  expect(noActual[1]).toBe('金額: 推定 $0.0100〜$0.0120 · 実コスト 取得できません（取れない環境もあります。/model-review で再取得）')
-  expect(unpriced[1]).toBe('金額: 推定 算出できません（全 1 ターンが単価不明） · 実コスト 取得できません（取れない環境もあります。/model-review で再取得）')
+  expect(noActual[1]).toBe('金額: 推定 $0.0100〜$0.0120 · 読み込み後の実額 取得できません（取れない環境もあります。/model-review で再取得）')
+  expect(unpriced[1]).toBe('金額: 推定 単価不明（全 1 ターン） · 読み込み後の実額 取得できません（取れない環境もあります。/model-review で再取得）')
 })

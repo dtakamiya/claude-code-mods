@@ -1,6 +1,6 @@
 {
   "name": "model-review",
-  "version": "0.38.1",
+  "version": "0.39.0",
   "description": "現在のセッションのモデル・effort・トークン・推定コストと、モデル選択の妥当性を表示する（読み取り専用）",
   "author": {
     "name": "dtakamiya"
@@ -9,14 +9,14 @@
   "userConfig": {
     "showStatus": {
       "type": "boolean",
-      "title": "status 行に実コストと使用率を出す",
-      "description": "セッションの実コストと、取れる場合は 5h / 7d の使用率を status 行に 1 行出す",
+      "title": "status 行に累計コストと使用率を出す",
+      "description": "セッションの累計コストと、取れる場合は 5h / 7d の使用率を status 行に 1 行出す",
       "default": true
     },
     "costLimitUsd": {
       "type": "number",
       "title": "コスト上限（USD、0 で無効）",
-      "description": "実コストがこの額に達したらトーストで 1 度知らせる。0 は無効。仮置きの運用値で、既定は無効",
+      "description": "累計コストがこの額に達したらトーストで 1 度知らせる。0 は無効。仮置きの運用値で、既定は無効",
       "default": 0
     },
     "rateLimitPercent": {

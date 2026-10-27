@@ -297,8 +297,8 @@ test('基準点から現在までの実コストと、推定との差を表示�
   const ran = await $.command.run(COMMAND_RUN)
 
   // Assert
-  expect(ran.text).toContain('実（読み込み後）: $3.0000')
-  expect(ran.text).toContain('差（実 − 推定）: +$0.0000（推定は単価表の値')
+  expect(ran.text).toContain('実 $3.0000（読み込み後）· 差 +$0.0000')
+  expect(ran.text).toContain('※ 差の推定は単価表の値')
 })
 
 test('Pane は先頭の結論行を terminal と desktop の両方で描く', async ($, on) => {
@@ -446,7 +446,7 @@ test('usage の取得に失敗しても session.start は次のハンドラに�
 
   // Assert
   expect(started).toEqual({ cwd: SESSION_CWD })
-  expect(ran.text).toContain('セッション実コスト: 取得できません')
+  expect(ran.text).toContain('読み込み後の実額 取得できません')
 })
 
 test('起動時に基準額が取れなくても、後に取れた時点を基準にし、以後の実コストはその時点からの差になる', async ($, on) => {
@@ -461,14 +461,14 @@ test('起動時に基準額が取れなくても、後に取れた時点を基�
   const first = await $.command.run(COMMAND_RUN)
 
   // Assert
-  expect(first.text).toContain('実（読み込み後）: $0.0000')
+  expect(first.text).toContain('実 $0.0000（読み込み後）')
 
   // Act: 累計 16 になったら、基準点からの 3 が実コスト。
   usd = 16
   const second = await $.command.run(COMMAND_RUN)
 
   // Assert
-  expect(second.text).toContain('実（読み込み後）: $3.0000')
+  expect(second.text).toContain('実 $3.0000（読み込み後）')
 })
 
 const OPUS_USAGE = {
