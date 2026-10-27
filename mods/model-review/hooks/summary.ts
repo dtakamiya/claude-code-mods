@@ -33,6 +33,10 @@ const concernAmountSuffix = (concern: Concern): string => {
   return concern.amountUsd === null || label === null ? '' : ` · ${label} ${formatUsd(concern.amountUsd)}`
 }
 
+/** 切替の件数の後ろに付ける、再構築がないため件数に入れなかった切替の件数。なければ空文字。 */
+const noRebuildSuffix = (concern: Concern): string =>
+  concern.noRebuildCount === undefined ? '' : `（再構築なし ${concern.noRebuildCount} 件は除く）`
+
 /** 最後に該当したのがメインの何ターン前か（` · 最後は 3 ターン前`）。分からない種類は空文字。 */
 export const lastSeenSuffix = (concern: Concern): string => {
   if (concern.lastTurnsAgo === undefined) return ''
@@ -41,7 +45,7 @@ export const lastSeenSuffix = (concern: Concern): string => {
 
 /** 指摘の 1 行分の文面（種類の説明 · 件数 · 金額 · 最後に該当したターン）。種類の名前（【過剰】など）は含まない。 */
 export const concernDetailText = (concern: Concern): string =>
-  `${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${concernAmountSuffix(concern)}${lastSeenSuffix(concern)}`
+  `${CONCERN_TEXT[concern.kind].summary} · ${countText(concern)}${noRebuildSuffix(concern)}${concernAmountSuffix(concern)}${lastSeenSuffix(concern)}`
 
 /** キャッシュ読 ÷ 全プロンプト。分母が 0 なら null。 */
 export const hitRateText = (tokens: ModelGroup['tokens']): string | null => {

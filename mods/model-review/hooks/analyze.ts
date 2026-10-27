@@ -101,6 +101,8 @@ export type Concern = {
   readonly underspec?: UnderspecFacts
   /** 最後に該当したターンの後に完了したメインのターン数（0 = 最新のメインのターンで該当）。委譲は直近の窓だけで判定するので付けない。 */
   readonly lastTurnsAgo?: number
+  /** 切替のときだけ付く。再構築がないとみなして件数・合計から外した切替の件数（0 のときは付けない）。 */
+  readonly noRebuildCount?: number
 }
 
 export function modelRank(model: string): number {
@@ -483,7 +485,9 @@ function underspecConcern(records: readonly TurnRecord[]): Concern | null {
 
 function switchConcern(records: readonly TurnRecord[]): Concern | null {
   const summary = findSwitches(records)
-  return withLast(concernOf('switch', summary.count, summary.examples, summary.costUsd), records, summary.latest)
+  const concern = concernOf('switch', summary.count, summary.examples, summary.costUsd)
+  const withExcluded = concern !== null && summary.noRebuildCount > 0 ? { ...concern, noRebuildCount: summary.noRebuildCount } : concern
+  return withLast(withExcluded, records, summary.latest)
 }
 
 /** 「N 件」を割合で読む種類。 */

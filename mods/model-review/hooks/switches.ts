@@ -16,6 +16,11 @@ export const CACHE_SAFE_EFFORT_MODELS: ReadonlySet<string> = new Set([
   'claude-fable-5-1',
 ])
 export const SWITCH_EXAMPLE_LIMIT = 3
+/**
+ * 切替直後の最初の応答の書込がこの値（トークン）未満なら、再構築は起きていないとみなして件数・合計から分ける。
+ * 通常のターンでも新しい内容の分は書くので、0 でなく下限を置く。仮置き（実データ未検証・H4）。
+ */
+export const MIN_REBUILD_WRITE_TOKENS = 2_000
 
 type SwitchKind = 'model' | 'effort'
 
@@ -23,10 +28,15 @@ type SwitchEvent = {
   readonly record: TurnRecord
   readonly text: string
   readonly costUsd: number | null
+  /** 再構築が起きたか。書込が分からない切替は、起きていないと言えないので true。 */
+  readonly rebuilt: boolean
 }
 
 export type SwitchSummary = {
+  /** 再構築があった（または書込が分からず否定できない）切替の件数。 */
   readonly count: number
+  /** 書込が下限未満で、再構築がないとみなして件数・合計から外した切替の件数。 */
+  readonly noRebuildCount: number
   /** 再構築コストの推定合計。単価がわかる切替がなければ null。 */
   readonly costUsd: number | null
   readonly examples: readonly string[]
@@ -71,12 +81,15 @@ function eventOf(prev: TurnRecord, current: TurnRecord, turnsAgo: number): Switc
   if (kind === null) return null
   // 0.3.0 の記録（firstStepCacheWrite なし）は不明（null）として扱い、0 円とは読ませない。
   // reload を跨いだ記録（partial）と compact 直後の記録は、書込が切替のせいと言えないので不明扱い。
-  const costUsd =
+  const writeUnknown =
     current.firstStepCacheWrite === undefined || current.partial === true || current.afterCompact === true
-      ? null
-      : cacheRebuildCostUsd(current.model, current.firstStepCacheWrite, current.firstStepPromptTokens)
+  const costUsd = writeUnknown
+    ? null
+    : cacheRebuildCostUsd(current.model, current.firstStepCacheWrite ?? 0, current.firstStepPromptTokens)
+  // 書込が分からない切替は、再構築がないとは言えないので件数に残す。
+  const rebuilt = writeUnknown || (current.firstStepCacheWrite ?? 0) >= MIN_REBUILD_WRITE_TOKENS
   const costText = costUsd === null ? '' : ` · 再構築の推定 ${formatUsd(costUsd)}`
-  return { record: current, text: `${describe(kind, prev, current, turnsAgo)}${costText}`, costUsd }
+  return { record: current, text: `${describe(kind, prev, current, turnsAgo)}${costText}`, costUsd, rebuilt }
 }
 
 /** メインループの切替を数える。サブエージェントのターンは対象外。 */
@@ -86,12 +99,14 @@ export function findSwitches(records: readonly TurnRecord[]): SwitchSummary {
     const prev = main[index - 1]
     return prev === undefined ? [] : (eventOf(prev, record, main.length - 1 - index) ?? [])
   })
-  const events = [...chronological].sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1))
+  const rebuiltChronological = chronological.filter(event => event.rebuilt)
+  const events = [...rebuiltChronological].sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1))
   const known = events.flatMap(event => event.costUsd ?? [])
   return {
     count: events.length,
+    noRebuildCount: chronological.length - events.length,
     costUsd: known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0),
     examples: events.slice(0, SWITCH_EXAMPLE_LIMIT).map(event => event.text),
-    latest: chronological[chronological.length - 1]?.record ?? null,
+    latest: rebuiltChronological[rebuiltChronological.length - 1]?.record ?? null,
   }
 }
