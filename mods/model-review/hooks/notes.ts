@@ -105,7 +105,7 @@ function ttlNote(review: ReviewState): readonly Note[] {
     {
       kind: 'ttl',
       text: '読み込み後の実額が、キャッシュ書込を 1 時間単価にした上限の推定も大きく上回っています。fast mode・advisor・ターン外の要求・単価表の古さなどが考えられます',
-      brief: '実コストが推定の上限も大きく上回る',
+      brief: '読み込み後の実額が推定の上限も大きく上回る',
     },
   ]
 }

@@ -18,7 +18,7 @@ const PANE_TITLE = 'モデル振り返り'
 const ADVISOR_TOOL_NAME = 'advisor'
 const PANE_OPENED_TEXT = 'モデル振り返りペインを開きました。'
 // 例外の中身は入力由来の文字列を含みうるので出さず、固定文言だけをログに残す。
-const COST_READ_FAILED_TEXT = 'model-review: 累計コストの取得に失敗したため、実コストを記録しなかった'
+const COST_READ_FAILED_TEXT = 'model-review: 累計コストの取得に失敗したため、読み込み後の実額を記録しなかった'
 const GLANCE_FAILED_TEXT = 'model-review: status 行の更新に失敗したため、この更新を省いた'
 const RECORD_FAILED_TEXT = 'model-review: 記録に失敗したため、この更新を記録しなかった'
 
