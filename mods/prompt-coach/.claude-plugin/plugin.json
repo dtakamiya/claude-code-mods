@@ -1,0 +1,1 @@
+{ "name": "prompt-coach", "version": "0.1.0", "description": "送ったプロンプトに対象・範囲・完了条件の欠けなどがあるとき、送信直後に 1 行で指南する（読み取り専用）", "author": { "name": "dtakamiya" } }
