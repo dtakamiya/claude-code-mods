@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { ArchivedTurns, ReviewState, TurnRecord } from '../types'
+import { ALERT_LABEL } from './conclusion'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 import { buildPaneRows, type PaneRow } from './pane-model'
 import { NO_TURNS_LINE, buildReportLines } from './report'
@@ -152,7 +153,7 @@ test('不足があれば「要対応」（error）、委譲だけなら「参考
   expect(delegation.tone).toBe('suggestion')
 })
 
-test('切替の注記は注意の件数には数えるが、状態を ▲ に上げない（切替を止めている利用者は ✓ のまま）', () => {
+test('切替の注記は警告の件数にも数えず、状態も ▲ に上げない（切替を止めている利用者は ✓ のまま）', () => {
   // Arrange: 切替の指摘（concern）は止め、切替の注記（推定方法の但し書き）だけが出る記録。
   const turns = [healthy('a'), healthy('b', { model: 'claude-opus-5-5', toolCount: 5, editCount: 2, firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 })]
   const muted = new Set(['switch'] as const)
@@ -162,10 +163,10 @@ test('切替の注記は注意の件数には数えるが、状態を ▲ に上
   const lines = buildReportLines(review(turns), undefined, muted)
 
   // Assert
-  expect(conclusionText(rows)).toBe('✓ 問題なし · 結論: 目立った指摘なし · 注意 1 件')
+  expect(conclusionText(rows)).toBe('✓ 問題なし · 結論: 目立った指摘なし')
   expect(lines[0]).toBe(conclusionText(rows))
   // 切替は所見のバッジにせず、信頼度の注記に出す。
-  expect(rows.filter(row => row.kind === 'badge' && row.label === '注意')).toHaveLength(0)
+  expect(rows.filter(row => row.kind === 'badge' && row.label === ALERT_LABEL)).toHaveLength(0)
   expect(rows.some(row => row.kind === 'note' && row.text === '切替の推定は、切替直後の最初の応答のキャッシュ書込から算出しています。長い中断によるキャッシュ切れとは区別できません。Bedrock・Vertex・gateway 経由では effort 変更でもキャッシュは維持されません')).toBe(true)
 })
 

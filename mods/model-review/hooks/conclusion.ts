@@ -6,8 +6,8 @@ import { raisesStatus, type Note } from './notes'
 export type Tone = 'success' | 'warning' | 'error' | 'suggestion' | 'plain'
 export type Conclusion = { text: string; tone: Tone }
 
-/** 状況に応じた警告（buildNotes）のバッジ。常に出す免責・判定基準（dim の注記）と見分ける。 */
-export const ALERT_LABEL = '注意'
+/** 結論行の末尾に件数を添える語。所見の節に出る警告（再構築・TTL 乖離）の数で、画面の見出し「所見」から辿れる。 */
+export const ALERT_LABEL = '所見の警告'
 /** 結論行の状態。印と語で重さが分かる（色だけに頼らない）。 */
 type Status = { readonly mark: string; readonly word: string; readonly tone: Tone }
 const STATUS = {
@@ -34,7 +34,7 @@ function worstConcernTone(present: readonly Concern[]): Tone {
   return CONCERN_SEVERITY.find(tone => tones.has(tone)) ?? 'plain'
 }
 
-/** 注意（buildNotes のうち動的な警告）が 1 件以上あるときだけ、結論行の末尾に件数を足す。 */
+/** 所見の警告（buildNotes のうち再構築・TTL 乖離）が 1 件以上あるときだけ、結論行の末尾に件数を足す。 */
 const alertSuffix = (alertCount: number): string => (alertCount === 0 ? '' : ` · ${ALERT_LABEL} ${alertCount} 件`)
 
 export const NO_RECORDS_CONCLUSION: Conclusion = { text: `結論: ${CONCLUSION_NO_RECORDS_TEXT}`, tone: 'plain' }
@@ -84,7 +84,7 @@ function statusOf(present: readonly Concern[], alerts: readonly Note[], coverage
 /**
  * 結論の 1 行。▲ と件数・色は、直近の窓（isRecentConcern）に該当がある種類だけで決める。
  * 窓より前にだけ該当した種類は「過去の指摘 N 種」として数だけ添え、それだけなら問題なしにする。
- * `alerts` は動的な警告（再構築の連続・TTL 乖離・切替）。再構築と TTL は状態を上げ、切替は件数にだけ数える。
+ * `alerts` は所見に出る警告（再構築の連続・TTL 乖離）。状態を上げ、件数にも数える。切替は「切替 N 件」の指摘と信頼度の注記で出るので数えない。
  * 単価の古さなどの信頼度は状態に入れない（ペインでは末尾の注記）。
  */
 export function conclusionOf(concerns: readonly Concern[], alerts: readonly Note[], coverage: PriceCoverage = FULL_COVERAGE): Conclusion {
