@@ -15,7 +15,7 @@ export const RANK_HAIKU = 0
 export const RANK_SONNET = 1
 export const RANK_OPUS = 2
 
-/** 「軽作業」: ツール呼び出しがこの回数以下、編集系なし、出力トークンがこの値以下。 */
+/** 「軽作業」: ツール呼び出しがこの回数以下、編集なし、出力トークンがこの値以下。 */
 export const LIGHT_MAX_TOOL_CALLS = 3
 export const LIGHT_MAX_OUTPUT_TOKENS = 1_000
 /** 「重い」ターン: ツール呼び出しがこの回数以上、またはこの時間（ms）以上。 */

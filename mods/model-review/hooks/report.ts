@@ -132,15 +132,10 @@ function loopLines(section: LoopsSection): string[] {
 
 const whatIfLines = (section: WhatIfSection): string[] => [`■ ${HEADING.whatIf}`, ...section.options.map(text => `  ${text}`), `  ${WHATIF_NOTE}`, '']
 
-/** コストの節。見出しの後に、推定・内訳・推移・実コスト・使用率・advisor を並べ、節の終わりに空行を置く（次は信頼度）。 */
+/** コストの節。中身（内訳・推移・差の注記・使用率・advisor）があるときだけ、見出しと空行を出す（ペインの costSectionRows と同じ条件）。 */
 function costSectionLines(section: CostSection, rate: RateView | null): string[] {
-  return [
-    `■ ${HEADING.cost}`,
-    ...costLines(section),
-    ...rateLines(rate),
-    ...(section.advisorText === null ? [] : [`advisor ${section.advisorText}`]),
-    '',
-  ]
+  const body = [...costLines(section), ...rateLines(rate), ...(section.advisorText === null ? [] : [`advisor ${section.advisorText}`])]
+  return body.length === 0 ? [] : [`■ ${HEADING.cost}`, ...body, '']
 }
 
 function sectionLines(section: Section, nowMs: number | undefined, rate: RateView | null): string[] {
@@ -161,7 +156,7 @@ function sectionLines(section: Section, nowMs: number | undefined, rate: RateVie
 }
 
 const CRITERIA_LINES = [
-  `判定基準（参考）: 軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集系なし・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下。重い = ツール ${HEAVY_TOOL_CALLS} 回以上、または長時間・エラー。`,
+  `判定基準（参考）: 軽作業 = ツール ${LIGHT_MAX_TOOL_CALLS} 回以下・編集なし・出力 ${formatInt(LIGHT_MAX_OUTPUT_TOKENS)} tokens 以下。重い = ツール ${HEAVY_TOOL_CALLS} 回以上、または長時間・エラー。`,
   `単価は pricing.ts の表（platform.claude.com の価格表、${PRICE_TABLE_FETCHED_AT} 取得）。Haiku 5.5 はプロンプト 10 万 tokens 超の応答で単価が上がるため、応答ごとに判定している。`,
 ]
 

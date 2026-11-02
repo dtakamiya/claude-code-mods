@@ -156,7 +156,7 @@ const diffDirectionText = (diffUsd: number): string => (diffUsd > 0 ? '（実が
 /** 合計推定の文面。全ターン単価不明なら理由、単価不明のターンがあれば除いたことを添える。 */
 export function estimateRangeText(estimate: EstimateFacts): string {
   if (estimate.allUnpriced) return allUnpricedText(estimate.unpricedTurns)
-  const unpriced = estimate.unpricedTurns > 0 ? ` ${unpricedExclusionText(estimate.unpricedTurns)}` : ''
+  const unpriced = unpricedExclusionText(estimate.unpricedTurns)
   return `${formatUsdRange(estimate.lowUsd, estimate.highUsd)}${unpriced}`
 }
 
