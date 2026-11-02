@@ -1,6 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
+import { ALERT_LABEL } from './conclusion'
 import { HEADING, NO_CONCERNS_TEXT } from './labels'
 import { buildPaneRows, type PaneRow } from './pane-model'
 import { NO_TURNS_LINE, buildReportLines, formatInt, formatUsd } from './report'
@@ -37,7 +38,7 @@ test('記録がないときは案内の 1 行だけを返す', () => {
   expect(lines).toEqual(['結論: まだ記録がありません', NO_TURNS_LINE])
 })
 
-test('先頭行はペインの結論行と一致する（記録なし・指摘なし・指摘あり。単価表が古くても信頼度の注記は注意に数えない）', () => {
+test('先頭行はペインの結論行と一致する（記録なし・指摘なし・指摘あり。単価表が古くても信頼度の注記は所見の警告に数えない）', () => {
   // Arrange: lightOpus 3 件は過剰、toolCount 5 は指摘なし。
   const light = (id: string) => turn({ turnId: id, model: 'claude-opus-5-5', toolCount: 1, tokens: { input: 1_000, output: 100, cacheRead: 0, cacheWrite: 0 } })
   const reviews = [
@@ -53,9 +54,9 @@ test('先頭行はペインの結論行と一致する（記録なし・指摘�
     const [first] = lines
     const [conclusion] = buildPaneRows(review, {}, nowMs)
 
-    // Assert: ペインと一致し、注意は 0 件（結論行に「注意」は出ない）。注記そのものはテキストに残る。
+    // Assert: ペインと一致し、所見の警告は 0 件（結論行に「所見の警告」は出ない）。注記そのものはテキストに残る。
     expect(conclusion?.kind === 'conclusion' ? conclusion.text : undefined).toBe(first)
-    expect(first).not.toContain('注意')
+    expect(first).not.toContain(ALERT_LABEL)
     if (review.turns.length > 0) expect(lines.some(line => line.includes('単価表の取得から'))).toBe(true)
   }
 })

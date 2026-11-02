@@ -147,7 +147,7 @@ test('バー幅が変わっても、埋まるセルの割合は同じ（75% / 25
   expect(groupsAt(60)[0]?.barWidth).toBeLessThan(groupsAt(80)[0]?.barWidth ?? 0)
 })
 
-test('色以外でも状態が分かる: 結論は記号（▲ / ✓）と文言、注意は「注意」の文言、割合は数字で出る', () => {
+test('色以外でも状態が分かる: 結論は記号（▲ / ✓）と文言、警告は「所見の警告」の文言、割合は数字で出る', () => {
   // Act
   const rows = groupsAt(60)
   const [conclusion] = buildPaneRows(review([turn({ toolCount: 5 })]), {}, undefined, 60)
@@ -219,8 +219,8 @@ test('結論が指摘なしを言うとき、ペインは OK 行も所見の見�
   expect(flagged.some(row => row.kind === 'badge' && row.label === '過剰')).toBe(true)
 })
 
-test('結論が要確認（注意で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
-  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる注意）。
+test('結論が要確認（所見の警告で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる警告）。
   const rebuild = (turnId: string) => turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
   const rows = buildPaneRows(review(['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuild)))
 

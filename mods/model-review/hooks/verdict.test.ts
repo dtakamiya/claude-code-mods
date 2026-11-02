@@ -170,7 +170,7 @@ test('切替の注記は警告の件数にも数えず、状態も ▲ に上げ
   expect(rows.some(row => row.kind === 'note' && row.text === '切替の推定は、切替直後の最初の応答のキャッシュ書込から算出しています。長い中断によるキャッシュ切れとは区別できません。Bedrock・Vertex・gateway 経由では effort 変更でもキャッシュは維持されません')).toBe(true)
 })
 
-test('D3 単価表が古いだけなら、動的な警告がないので ✓ のまま。注意に数えず、ペインでは信頼度の注記に回る', () => {
+test('D3 単価表が古いだけなら、動的な警告がないので ✓ のまま。所見の警告に数えず、ペインでは信頼度の注記に回る', () => {
   // Arrange: 取得日から基準日数を十分超えた時刻。
   const nowMs = Date.parse(PRICE_TABLE_FETCHED_AT) + (PRICE_TABLE_STALE_DAYS + 30) * 86_400_000
   const state = review(times(3, index => healthy(`h${index}`)))
