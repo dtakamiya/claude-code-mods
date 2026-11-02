@@ -108,10 +108,10 @@ test('直近と過去の指摘が混ざるとき、結論は直近の種類だ�
   const past: Concern = { kind: 'underspec', count: 2, examples: [], amountUsd: null, lastTurnsAgo: RECENT_CONCERN_MAIN_TURNS }
 
   // Act
-  const conclusion = conclusionOf([past, recent], [{ kind: 'switch', text: '切替の推定' }])
+  const conclusion = conclusionOf([past, recent], [])
 
   // Assert
-  expect(conclusion).toEqual({ text: '△ 参考 · 結論: 見直し候補 1 件（委譲 1） · 過去の指摘 1 種 · 注意 1 件', tone: 'suggestion' })
+  expect(conclusion).toEqual({ text: '△ 参考 · 結論: 見直し候補 1 件（委譲 1） · 過去の指摘 1 種', tone: 'suggestion' })
 })
 
 test('委譲は直近の窓だけで判定するので、何ターン前かを付けず常に直近として扱う', () => {

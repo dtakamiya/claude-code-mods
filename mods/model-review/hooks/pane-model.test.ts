@@ -147,7 +147,7 @@ test('バー幅が変わっても、埋まるセルの割合は同じ（75% / 25
   expect(groupsAt(60)[0]?.barWidth).toBeLessThan(groupsAt(80)[0]?.barWidth ?? 0)
 })
 
-test('色以外でも状態が分かる: 結論は記号（▲ / ✓）と文言、注意は「注意」の文言、割合は数字で出る', () => {
+test('色以外でも状態が分かる: 結論は記号（▲ / ✓）と文言、警告は「所見の警告」の文言、割合は数字で出る', () => {
   // Act
   const rows = groupsAt(60)
   const [conclusion] = buildPaneRows(review([turn({ toolCount: 5 })]), {}, undefined, 60)
@@ -219,8 +219,8 @@ test('結論が指摘なしを言うとき、ペインは OK 行も所見の見�
   expect(flagged.some(row => row.kind === 'badge' && row.label === '過剰')).toBe(true)
 })
 
-test('結論が要確認（注意で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
-  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる注意）。
+test('結論が要確認（所見の警告で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
+  // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる警告）。
   const rebuild = (turnId: string) => turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
   const rows = buildPaneRows(review(['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuild)))
 
@@ -528,25 +528,23 @@ test('結論の色は委譲だけなら suggestion にする', () => {
   expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain('委譲')
 })
 
-test('注意（動的な警告）が 1 件以上あれば、結論行に「注意 N 件」を足す。件数は所見の警告と信頼度の切替注記を数える', () => {
-  // Arrange: 切替（モデル変更）で警告が出る記録。切替はバッジではなく信頼度の注記になる。
+test('切替だけなら、結論行に警告の件数を足さない（切替は「切替 N 件」の指摘と信頼度の注記に出るので二重に数えない）', () => {
+  // Arrange: 切替（モデル変更）だけが起きる記録。所見の警告（再構築・TTL 乖離）はない。
   const rows = rowsOf([
     turn({ turnId: 't1' }),
     turn({ turnId: 't2', model: 'claude-opus-5-5', firstStepCacheWrite: 100_000, firstStepPromptTokens: 200_000 }),
   ])
-  const warningCount =
-    rows.filter(row => row.kind === 'badge' && FINDING_LABELS.includes(row.label)).length +
-    rows.filter(row => row.kind === 'note' && row.text.startsWith('切替の推定')).length
 
   // Act
   const [conclusion] = rows
+  const text = conclusion?.kind === 'conclusion' ? conclusion.text : ''
 
   // Assert
-  expect(warningCount).toBeGreaterThan(0)
-  expect(conclusion?.kind === 'conclusion' ? conclusion.text : '').toContain(`注意 ${warningCount} 件`)
+  expect(text).toContain('切替 1')
+  expect(text).not.toContain(ALERT_LABEL)
 })
 
-test('注意がなければ、結論行に「注意」は出さない', () => {
+test('警告がなければ、結論行に警告の件数は出さない', () => {
   // Act
   const [conclusion] = rowsOf([turn({ toolCount: 5 })])
 
@@ -1016,17 +1014,15 @@ test('R8 信頼度の注記（単価不明・単価表の取得・モデルの�
   expect(normal).not.toContain(NARROW_OMITTED_NOTE)
 })
 
-test('R9 結論行の「注意 N 件」は、所見の警告バッジと切替の注記の数に、どの幅でも一致する', () => {
+test('R9 結論行の「所見の警告 N 件」は、所見に出る警告バッジの数に、どの幅でも一致する', () => {
   for (const columns of PANE_WIDTHS) {
     // Arrange
     const rows = rowsAt(fixtureTwo(), columns)
-    const warningCount =
-      rows.filter(row => row.kind === 'badge' && FINDING_LABELS.includes(row.label)).length +
-      rows.filter(row => row.kind === 'note' && row.text.startsWith('切替の推定')).length
+    const warningCount = rows.filter(row => row.kind === 'badge' && FINDING_LABELS.includes(row.label)).length
 
     // Assert
     expect(warningCount).toBeGreaterThan(0)
-    expect(conclusionTextOf(rows)).toContain(`注意 ${warningCount} 件`)
+    expect(conclusionTextOf(rows)).toContain(`${ALERT_LABEL} ${warningCount} 件`)
   }
 })
 

@@ -336,7 +336,7 @@ function sectionRows(section: Section, layout: Layout, nowMs: number | undefined
 
 /**
  * 信頼度の節（見出し・切替などの注記・畳み込み・免責）。所見の警告は所見の中に出すので、ここにはバッジを置かない。
- * 狭幅は switch 以外の注記と畳み込みの注記を省く（switch は結論の「注意」の件数に数えるので残す）。免責は残す。
+ * 狭幅は switch 以外の注記と畳み込みの注記を省く（switch は信頼度の注記として残す）。免責は残す。
  */
 function reliabilityRows(analysis: ReviewAnalysis, narrow: boolean): PaneRow[] {
   const notes = narrow ? analysis.trustNotes.filter(note => note.kind === 'switch') : analysis.trustNotes
