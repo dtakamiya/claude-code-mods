@@ -441,3 +441,44 @@ test('ペインとテキストは、見出し「信頼度」・警告「再構�
   expect(lines.some(line => line.startsWith('  【再構築】 '))).toBe(true)
   expect(lines.some(line => line.includes('差 +$'))).toBe(true)
 })
+
+test('コスト節に中身（内訳・推移・差の注記・使用率・advisor）がないときは、見出しごと出さない（ペインと同じ条件）', () => {
+  // Arrange: 実額も差もない 1 ターン。
+  const review = withTurns([turn({ turnId: 'a' })], null, null)
+
+  // Act
+  const lines = buildReportLines(review)
+  const paneRows = buildPaneRows(review)
+
+  // Assert
+  expect(lines).not.toContain(`■ ${HEADING.cost}`)
+  expect(lines).toContain(`■ ${HEADING.reliability}`)
+  expect(paneRows.some(row => row.kind === 'heading' && row.text === HEADING.cost)).toBe(false)
+})
+
+test('差があるときは、従来どおりコスト節の見出しと差の基準の注記を出す', () => {
+  // Arrange
+  const review = withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], 1.0, 1.75)
+
+  // Act
+  const lines = buildReportLines(review)
+
+  // Assert
+  expect(lines).toContain(`■ ${HEADING.cost}`)
+  expect(lines).toContain('※ 差の推定は単価表の値。ターン外の要求は含まない')
+})
+
+test('判定基準の「編集なし」の語は、テキストとペインで同じ（旧「編集系なし」は出さない）', () => {
+  // Arrange
+  const review = withTurns([turn({ turnId: 'a' })], null, null)
+
+  // Act
+  const text = buildReportLines(review).join('\n')
+  const paneNote = buildPaneRows(review).flatMap(row => (row.kind === 'note' ? [row.text] : [])).join('\n')
+
+  // Assert
+  expect(text).toContain('編集なし')
+  expect(paneNote).toContain('編集なし')
+  expect(text).not.toContain('編集系なし')
+  expect(paneNote).not.toContain('編集系なし')
+})

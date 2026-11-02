@@ -16,6 +16,7 @@ import {
   subagentCount,
   toolDetailText,
   turnOriginLabel,
+  estimateRangeText,
   unpricedExclusionText,
 } from './summary'
 
@@ -190,4 +191,16 @@ test('切替の指摘は、再構築なしとして外した件数を件数の�
 
   // Assert
   expect(text).toBe('モデル / effort の切替でキャッシュを再構築 · 1 件（再構築なし 2 件は除く） · 推定 $0.4800')
+})
+
+test('単価不明を併記する推定の文面は、金額と「（」の間に余分な空白を入れない', () => {
+  // Arrange
+  const estimate = { costUsd: 0.0288, unpricedTurns: 1, allUnpriced: false, lowUsd: 0.0288, highUsd: 0.0288 }
+
+  // Act
+  const text = estimateRangeText(estimate)
+
+  // Assert
+  expect(text).toBe('$0.0288（単価不明 1 ターンを除く）')
+  expect(text).not.toContain(' （')
 })
