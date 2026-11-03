@@ -279,7 +279,9 @@ test('キャッシュ未使用が連続すると nocache の警告を出し、�
   // Assert
   expect(notes).toHaveLength(1)
   expect(notes[0]?.text).toContain('効いていない可能性があります')
-  expect(notes[0]?.text).toContain('90,000')
+  expect(notes[0]?.text).toContain('3ターン合計 90,000 tokens')
+  expect(notes[0]?.text).toContain('使用量が記録されていない場合もあります')
+  expect(notes[0]?.text).not.toContain('接続先')
   expect(notes[0]?.brief).toBe('キャッシュ未使用（読込・書込とも 0）が 3 ターン連続')
   expect(kindsOf(flagged)).not.toContain('rebuild')
   expect(kindsOf(twoOnly)).not.toContain('nocache')

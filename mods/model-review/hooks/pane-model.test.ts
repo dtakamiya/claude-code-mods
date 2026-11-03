@@ -226,7 +226,7 @@ const concernRowsOf = (rows: PaneRow[]): PaneRow[] => {
   const end = rows.findIndex((row, index) => index > start && row.kind === 'blank')
   return rows.slice(start, end < 0 ? undefined : end)
 }
-const scopedNote = (text: string): PaneRow => ({ kind: 'note', text: `  ${text}` })
+const scopedNote = (text: string): PaneRow => ({ kind: 'note', text })
 const rebuildTurn = (turnId: string) =>
   turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
 const noCacheTurn = (turnId: string, input = 30_000) => turn({ turnId, tokens: { input, output: 300, cacheRead: 0, cacheWrite: 0 }, toolCount: 5, editCount: 2 })

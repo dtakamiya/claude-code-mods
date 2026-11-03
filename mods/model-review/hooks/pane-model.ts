@@ -200,10 +200,10 @@ const findingRows = (findings: readonly FindingNote[]): PaneRow[] =>
 const unpricedRows = (totalTurns: number | null): PaneRow[] =>
   totalTurns === null ? [] : [{ kind: 'badge', label: UNPRICED_BADGE_LABEL, tone: 'plain', text: unpricedOverspecText(totalTurns) }]
 
-/** 範囲つきの「指摘なし」。✓ は付けず、注記色で字下げする。直近の指摘がなく、結論が「目立った指摘なし」でないときだけ出す。 */
+/** 範囲つきの「指摘なし」。✓ は付けず、注記色で字下げしない（字下げすると直前の警告の補足に読める）。直近の指摘がなく、結論が「目立った指摘なし」でないときだけ出す。 */
 const scopedNoConcernRows = (section: ConcernsSection): PaneRow[] =>
   section.recent.length === 0 && !section.noConcerns
-    ? [{ kind: 'note', text: `  ${section.allUnpricedTurns === null ? NO_CONCERNS_SCOPED_TEXT : NO_OTHER_CONCERNS_TEXT}` }]
+    ? [{ kind: 'note', text: `${section.allUnpricedTurns === null ? NO_CONCERNS_SCOPED_TEXT : NO_OTHER_CONCERNS_TEXT}` }]
     : []
 
 /**

@@ -88,7 +88,7 @@ test('止めた種類は結論行の件数に入らず、指摘の節には「�
 
   // Assert: 結論は ✓、指摘の節は「指摘なし」と止めている 1 行。過剰の行・バッジ・次の一手は出ない。
   expect(lines[0]).toBe('✓ 問題なし · 結論: 目立った指摘なし')
-  expect(lines).toContain(`  ${NO_CONCERNS_SCOPED_TEXT}`)
+  expect(lines).toContain(NO_CONCERNS_SCOPED_TEXT)
   expect(lines).toContain('  止めている指摘（設定 mutedConcerns）: 過剰 3 / 3 件')
   expect(lines.some(line => line.startsWith('  【過剰】'))).toBe(false)
   expect(rows[0]).toMatchObject({ kind: 'conclusion', text: lines[0], tone: 'success' })

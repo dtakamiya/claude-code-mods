@@ -135,7 +135,7 @@ test('過去の指摘は、テキストでもペインでも小見出しの下�
   const pastIndex = lines.indexOf(`  ${PAST_CONCERNS_HEADING}`)
   expect(pastIndex).toBeGreaterThan(0)
   expect(lines[pastIndex - 1]?.startsWith('■ ' + HEADING.concerns)).toBe(true)
-  expect(lines[lines.indexOf('', pastIndex) - 1]).toBe(`  ${NO_CONCERNS_SCOPED_TEXT}`)
+  expect(lines[lines.indexOf('', pastIndex) - 1]).toBe(NO_CONCERNS_SCOPED_TEXT)
   expect(lines.slice(pastIndex).some(line => line.startsWith('  【過剰】'))).toBe(true)
   expect(lines.some(line => line.includes(`→ ${NEXT_STEP_PREFIX}`))).toBe(false)
 

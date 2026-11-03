@@ -400,9 +400,10 @@ test('指摘がないときの行は範囲つきの「過剰・不足: 指摘な
   const lines = buildReportLines(withTurns([turn({ toolCount: 5 })], null, null))
 
   // Assert
-  expect(lines).toContain(`  ${NO_CONCERNS_SCOPED_TEXT}`)
+  expect(lines).toContain(NO_CONCERNS_SCOPED_TEXT)
   expect(NO_CONCERNS_SCOPED_TEXT).toBe('過剰・不足: 指摘なし')
   expect(lines).not.toContain('  指摘なし')
+  expect(lines).not.toContain(`  ${NO_CONCERNS_SCOPED_TEXT}`)
   expect(lines).not.toContain('  過剰・不足の指摘なし')
 })
 
@@ -493,7 +494,7 @@ test('S4 全ターン単価不明: テキストの所見は判定不能の行と
 
   // Assert
   expect(lines).toContain(`  【判定不能】 ${unpricedOverspecText(4)}`)
-  expect(lines).toContain(`  ${NO_OTHER_CONCERNS_TEXT}`)
+  expect(lines).toContain(NO_OTHER_CONCERNS_TEXT)
   expect(lines.join('\n')).not.toContain('過剰・不足の指摘なし')
 })
 
@@ -508,5 +509,5 @@ test('S6 キャッシュ未使用: テキストの所見に【キャッシュ未
   // Assert
   expect(lines[0]).toContain('▲ 要確認')
   expect(warn).toBeGreaterThan(0)
-  expect(lines[warn + 1]).toBe(`  ${NO_CONCERNS_SCOPED_TEXT}`)
+  expect(lines[warn + 1]).toBe(NO_CONCERNS_SCOPED_TEXT)
 })

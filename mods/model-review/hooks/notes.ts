@@ -93,7 +93,7 @@ function noCacheNote(records: readonly TurnRecord[]): readonly Note[] {
   return [
     {
       kind: 'nocache',
-      text: `直近のメイン ${streak} ターンで、キャッシュの読込・書込がともに 0 です（入力 ${formatInt(promptTokens)} tokens）。キャッシュが効いていない可能性があります（接続先や設定で無効、または使用量が記録されていない場合もあります）`,
+      text: `直近のメイン ${streak} ターンで、キャッシュの読込・書込がともに 0 です（${streak}ターン合計 ${formatInt(promptTokens)} tokens）。キャッシュが効いていない可能性があります。使用量が記録されていない場合もあります`,
       brief: `キャッシュ未使用（読込・書込とも 0）が ${streak} ターン連続`,
     },
   ]

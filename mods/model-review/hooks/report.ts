@@ -101,7 +101,7 @@ function concernLines(section: ConcernsSection): string[] {
     ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, null))]),
     ...(numericNote === null ? [] : [`  ${numericNote}`]),
     ...(mutedLine === null ? [] : [`  ${mutedLine}`]),
-    ...(recent.length === 0 ? [`  ${allUnpricedTurns === null ? NO_CONCERNS_SCOPED_TEXT : NO_OTHER_CONCERNS_TEXT}`] : []),
+    ...(recent.length === 0 ? [`${allUnpricedTurns === null ? NO_CONCERNS_SCOPED_TEXT : NO_OTHER_CONCERNS_TEXT}`] : []),
     '',
   ]
 }
