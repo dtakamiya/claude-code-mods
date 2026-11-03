@@ -34,7 +34,7 @@ function worstConcernTone(present: readonly Concern[]): Tone {
   return CONCERN_SEVERITY.find(tone => tones.has(tone)) ?? 'plain'
 }
 
-/** 所見の警告（buildNotes のうち再構築・TTL 乖離）が 1 件以上あるときだけ、結論行の末尾に件数を足す。 */
+/** 所見の警告（buildNotes のうち再構築・TTL 乖離・キャッシュ未使用）が 1 件以上あるときだけ、結論行の末尾に件数を足す。 */
 const alertSuffix = (alertCount: number): string => (alertCount === 0 ? '' : ` · ${ALERT_LABEL} ${alertCount} 件`)
 
 export const NO_RECORDS_CONCLUSION: Conclusion = { text: `結論: ${CONCLUSION_NO_RECORDS_TEXT}`, tone: 'plain' }
@@ -46,7 +46,7 @@ const pastText = (pastKinds: number): string => (pastKinds === 0 ? '' : `${PAST_
 export type PriceCoverage = { readonly unpricedTurns: number; readonly totalTurns: number }
 const FULL_COVERAGE: PriceCoverage = { unpricedTurns: 0, totalTurns: 0 }
 
-const isAllUnpriced = ({ unpricedTurns, totalTurns }: PriceCoverage): boolean => totalTurns > 0 && unpricedTurns === totalTurns
+export const isAllUnpriced = ({ unpricedTurns, totalTurns }: PriceCoverage): boolean => totalTurns > 0 && unpricedTurns === totalTurns
 /** 一部のターンだけ単価不明のときの添え書き。全部不明のときは理由そのものになるので添えない。 */
 const partialUnpricedText = ({ unpricedTurns, totalTurns }: PriceCoverage): string =>
   unpricedTurns > 0 && unpricedTurns < totalTurns ? ` · 単価不明 ${unpricedTurns}/${totalTurns} ターン` : ''
@@ -61,7 +61,7 @@ function concernStatus(present: readonly Concern[]): Status | null {
 
 /**
  * 結論が「目立った指摘なし」を言うか。直近の窓に指摘がなく、状態を上げる警告もなく、全ターン単価不明でもないとき。
- * conclusionOf の最後の分岐と、ペイン（pane-model.ts）の「✓ 指摘なし」行・見出しの判定が、この 1 つを共有する。
+ * conclusionOf の最後の分岐と、ペイン（pane-model.ts）の範囲つき「指摘なし」行・見出しの判定が、この 1 つを共有する。
  */
 export function saysNoConcerns(concerns: readonly Concern[], alerts: readonly Note[], coverage: PriceCoverage): boolean {
   const { recent } = partitionByRecency(concerns.filter(concern => concern.count > 0))
@@ -69,7 +69,7 @@ export function saysNoConcerns(concerns: readonly Concern[], alerts: readonly No
 }
 
 /**
- * 状態は重い順に 要対応（不足）> 要確認（過剰・サブ・切替の指摘、または再構築の連続・TTL 乖離）>
+ * 状態は重い順に 要対応（不足）> 要確認（過剰・サブ・切替の指摘、または再構築の連続・TTL 乖離・キャッシュ未使用）>
  * 判定不能（全ターン単価不明）> 参考（委譲だけ）> 問題なし。
  * 問題なしは「判定でき、かつ指摘も動的な警告もない」ときだけ。
  */

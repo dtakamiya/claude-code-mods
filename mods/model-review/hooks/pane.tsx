@@ -85,13 +85,6 @@ export function PaneBody({ ui, rows }: { ui: Ui; rows: readonly PaneRow[] }) {
         return <Text color="subtle" wrap="wrap">{`  ・${row.text}`}</Text>
       case 'next':
         return <Text color="suggestion" wrap="wrap">{`  → ${row.text}`}</Text>
-      case 'ok':
-        return (
-          <Text>
-            <Text color="success" bold>{'✓ '}</Text>
-            <Text>{row.text}</Text>
-          </Text>
-        )
       case 'note':
         return <Text color="subtle" wrap="wrap">{row.text}</Text>
       case 'message':

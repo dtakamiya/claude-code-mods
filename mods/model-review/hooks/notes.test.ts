@@ -266,3 +266,23 @@ test('TTL 乖離の短文（結論行に出る brief）は「読み込み後の�
   expect(note?.brief).toBe('読み込み後の実額が推定の上限も大きく上回る')
   expect(note?.brief).not.toContain('実コスト')
 })
+
+test('キャッシュ未使用が連続すると nocache の警告を出し、断定せず「効いていない可能性」と書く。再構築とは同時に出ない', () => {
+  // Arrange
+  const bare = (id: string): TurnRecord => ({ ...turn, turnId: id, tokens: { input: 30_000, output: 100, cacheRead: 0, cacheWrite: 0 } })
+  const flagged: ReviewState = { ...review, turns: [bare('a'), bare('b'), bare('c')] }
+  const twoOnly: ReviewState = { ...review, turns: [bare('a'), bare('b')] }
+
+  // Act
+  const notes = buildNotes(flagged).filter(note => note.kind === 'nocache')
+
+  // Assert
+  expect(notes).toHaveLength(1)
+  expect(notes[0]?.text).toContain('効いていない可能性があります')
+  expect(notes[0]?.text).toContain('90,000')
+  expect(notes[0]?.brief).toBe('キャッシュ未使用（読込・書込とも 0）が 3 ターン連続')
+  expect(kindsOf(flagged)).not.toContain('rebuild')
+  expect(kindsOf(twoOnly)).not.toContain('nocache')
+  expect(splitFindings(buildNotes(flagged)).findings.map(note => note.kind)).toEqual(['nocache'])
+  expect(splitNotes(buildNotes(flagged)).alerts.map(note => note.kind)).toEqual(['nocache'])
+})

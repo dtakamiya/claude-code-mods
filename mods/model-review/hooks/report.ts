@@ -8,7 +8,7 @@ import type { RateView } from './pace'
 import { formatInt, formatUsd } from './format'
 import { ALWAYS_NOTE, type FindingNote } from './notes'
 import { PRICE_TABLE_FETCHED_AT } from './pricing'
-import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING } from './labels'
+import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_SCOPED_TEXT, NO_OTHER_CONCERNS_TEXT, PAST_CONCERNS_HEADING, UNPRICED_BADGE_LABEL, unpricedOverspecText } from './labels'
 import { NO_RECORDS_CONCLUSION } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { HEAVY_TOOL_CALLS, LIGHT_MAX_OUTPUT_TOKENS, LIGHT_MAX_TOOL_CALLS, mainTurnsAfter, type Concern, type ConcernKind } from './analyze'
@@ -88,18 +88,20 @@ function oneConcernLines(concern: Concern, next: string | null): string[] {
 const findingLine = (note: FindingNote): string => `  【${FINDING_LABEL[note.kind]}】 ${note.text}`
 
 /**
- * 直近の指摘を先に、所見の警告（再構築・TTL 乖離）を指摘の後に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。
+ * 直近の指摘を先に、所見の警告（再構築・TTL 乖離・キャッシュ未使用）を指摘の後に、窓より前にだけ該当した指摘は小見出しの下に分けて並べる。
  * 止めている種類は最後に 1 行だけ。
  */
 function concernLines(section: ConcernsSection): string[] {
-  const { recent, findings, past, nextSteps, numericNote, mutedLine } = section
+  const { recent, findings, past, nextSteps, numericNote, mutedLine, allUnpricedTurns } = section
   return [
     `■ ${HEADING.concerns} · ヒューリスティック`,
-    ...(recent.length === 0 ? [`  ${NO_CONCERNS_TEXT}`] : recent.flatMap(concern => oneConcernLines(concern, nextSteps.get(concern) ?? null))),
+    ...recent.flatMap(concern => oneConcernLines(concern, nextSteps.get(concern) ?? null)),
     ...findings.map(findingLine),
+    ...(allUnpricedTurns === null ? [] : [`  【${UNPRICED_BADGE_LABEL}】 ${unpricedOverspecText(allUnpricedTurns)}`]),
     ...(past.length === 0 ? [] : [`  ${PAST_CONCERNS_HEADING}`, ...past.flatMap(concern => oneConcernLines(concern, null))]),
     ...(numericNote === null ? [] : [`  ${numericNote}`]),
     ...(mutedLine === null ? [] : [`  ${mutedLine}`]),
+    ...(recent.length === 0 ? [`  ${allUnpricedTurns === null ? NO_CONCERNS_SCOPED_TEXT : NO_OTHER_CONCERNS_TEXT}`] : []),
     '',
   ]
 }

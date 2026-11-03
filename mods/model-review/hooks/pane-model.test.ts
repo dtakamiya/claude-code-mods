@@ -4,7 +4,7 @@ import type { ReviewState, TurnRecord } from '../types'
 import { MAIN_DELEGATION_MIN_TOOL_CALLS } from './analyze'
 import { ALERT_LABEL } from './conclusion'
 import { cellWidth, formatUsdRange } from './format'
-import { FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, TERM_TEXT } from './labels'
+import { FINDING_LABEL, HEADING, NO_CONCERNS_SCOPED_TEXT, NO_OTHER_CONCERNS_TEXT, TERM_TEXT, unpricedOverspecText } from './labels'
 import { ALWAYS_NOTE } from './notes'
 import {
   BAR_WIDTH,
@@ -214,32 +214,78 @@ test('結論が指摘なしを言うとき、ペインは OK 行も所見の見�
 
   // Assert
   expect(clean[0]).toMatchObject({ kind: 'conclusion', text: '✓ 問題なし · 結論: 目立った指摘なし' })
-  expect(clean.some(row => row.kind === 'ok')).toBe(false)
+  expect(clean.some(row => row.kind === 'note' && row.text.includes('指摘なし'))).toBe(false)
   expect(clean.some(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))).toBe(false)
   expect(flagged.some(row => row.kind === 'badge' && row.label === '過剰')).toBe(true)
 })
 
-test('結論が要確認（所見の警告で ▲）のときは、指摘がなくても OK 行と見出しを出す', () => {
+/** 所見の節（見出しから次の空行まで）の行。 */
+const concernRowsOf = (rows: PaneRow[]): PaneRow[] => {
+  const start = rows.findIndex(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))
+  if (start < 0) return []
+  const end = rows.findIndex((row, index) => index > start && row.kind === 'blank')
+  return rows.slice(start, end < 0 ? undefined : end)
+}
+const scopedNote = (text: string): PaneRow => ({ kind: 'note', text: `  ${text}` })
+const rebuildTurn = (turnId: string) =>
+  turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
+const noCacheTurn = (turnId: string, input = 30_000) => turn({ turnId, tokens: { input, output: 300, cacheRead: 0, cacheWrite: 0 }, toolCount: 5, editCount: 2 })
+
+test('結論が要確認（所見の警告で ▲）のとき、範囲つきの「指摘なし」は警告の後ろの最後に置き、✓ を出さない', () => {
   // Arrange: キャッシュ書込が読込を上回るターンが 5 回連続する（状態を上げる警告）。
-  const rebuild = (turnId: string) => turn({ turnId, tokens: { input: 100, output: 300, cacheRead: 100, cacheWrite: 40_000 }, durationMs: 800, toolCount: 5, editCount: 2 })
-  const rows = buildPaneRows(review(['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuild)))
+  const rows = buildPaneRows(review(['r0', 'r1', 'r2', 'r3', 'r4'].map(rebuildTurn)))
+
+  // Act
+  const section = concernRowsOf(rows)
 
   // Assert
   expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'warning' })
-  expect(rows).toContainEqual({ kind: 'ok', text: NO_CONCERNS_TEXT })
-  expect(rows.some(row => row.kind === 'heading' && row.text.startsWith(HEADING.concerns))).toBe(true)
+  expect(section.map(row => row.kind)).toEqual(['heading', 'badge', 'note'])
+  expect(section[2]).toEqual(scopedNote(NO_CONCERNS_SCOPED_TEXT))
+  expect(JSON.stringify(rows)).not.toContain('✓ 過剰')
+  expect(rows.some(row => (row.kind as string) === 'ok')).toBe(false)
 })
 
-test('全件単価不明のときは、判定不能の結論に加えて OK 行を出す', () => {
+test('S4 全件単価不明のときは、判定不能のバッジと「ほかの過剰・不足: 指摘なし」を出し、✓ も旧文言も出さない', () => {
   // Arrange
   const unpriced = (turnId: string) => turn({ turnId, costUsd: null, costUpperUsd: null })
 
   // Act
-  const rows = buildPaneRows(review(['u0', 'u1', 'u2'].map(unpriced)))
+  const rows = buildPaneRows(review(['u0', 'u1', 'u2', 'u3'].map(unpriced)))
+  const section = concernRowsOf(rows)
 
   // Assert
   expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'plain' })
-  expect(rows).toContainEqual({ kind: 'ok', text: NO_CONCERNS_TEXT })
+  expect(section).toEqual([
+    { kind: 'heading', text: HEADING.concerns },
+    { kind: 'badge', label: '判定不能', tone: 'plain', text: unpricedOverspecText(4) },
+    scopedNote(NO_OTHER_CONCERNS_TEXT),
+  ])
+  expect(JSON.stringify(rows)).not.toContain('過剰・不足の指摘なし')
+  expect(JSON.stringify(rows)).not.toContain('✓')
+})
+
+test('S4b 一部のターンだけ単価不明なら、所見に判定不能は出さない（結論行の「単価不明 n/m ターン」で足りる）', () => {
+  // Arrange
+  const rows = buildPaneRows(review([turn({ turnId: 'a', costUsd: null, costUpperUsd: null }), turn({ turnId: 'b' }), turn({ turnId: 'c' })]))
+
+  // Assert
+  expect(JSON.stringify(rows)).not.toContain('判定不能 ')
+  expect(concernRowsOf(rows)).toEqual([])
+})
+
+test('S6 キャッシュ未使用: 結論は要確認、所見に警告バッジ、その後ろに範囲つきの指摘なし', () => {
+  // Arrange
+  const rows = buildPaneRows(review(['n0', 'n1', 'n2'].map(id => noCacheTurn(id))))
+
+  // Act
+  const section = concernRowsOf(rows)
+
+  // Assert
+  expect(rows[0]).toMatchObject({ kind: 'conclusion', tone: 'warning' })
+  expect((rows[0] as { text: string }).text).toBe('▲ 要確認 · 結論: キャッシュ未使用（読込・書込とも 0）が 3 ターン連続')
+  expect(section[1]).toMatchObject({ kind: 'badge', label: FINDING_LABEL.nocache, tone: 'warning' })
+  expect(section.at(-1)).toEqual(scopedNote(NO_CONCERNS_SCOPED_TEXT))
 })
 
 const rowsOf = (turns: TurnRecord[], cost?: ReviewState['sessionCostUsd']): PaneRow[] => buildPaneRows(review(turns, cost))

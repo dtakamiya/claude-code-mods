@@ -29,6 +29,40 @@ export function longestRebuildStreak(records: readonly TurnRecord[]): number {
   return scan.longest
 }
 
+/**
+ * 仮置き（実ログで見直す）: キャッシュの読込・書込がともに 0 のメインのターンが、最新からこの回数以上続いたら、キャッシュが効いていない可能性として注記する。
+ * 再構築の連続（CACHE_REBUILD_STREAK）に合わせた。
+ */
+export const NO_CACHE_STREAK = 3
+/**
+ * 仮置き（実ログで見直す）: キャッシュ未使用とみなすターンの入力（input + 読込 + 書込）の下限。短い入力は 0/0 が正常なことがあるので除く。
+ * キャッシュできる最小長の公式値は未確認のため、それに依らない十分大きい目安にしている。
+ */
+export const NO_CACHE_MIN_PROMPT_TOKENS = 10_000
+
+export type NoCacheStreak = { readonly streak: number; readonly promptTokens: number }
+
+/**
+ * メインループで、最新のターンから遡って、キャッシュの読込・書込がともに 0 で入力が下限以上のターンが何回続いているか。
+ * 過去に未使用でも最新が使用済みなら 0。サブエージェントは数えず連続も切らない。/compact 直後のターンは数えず、連続を切る（再構築と同じ扱い）。
+ * promptTokens は連続したターンの入力の合計。
+ */
+export function noCacheStreak(records: readonly TurnRecord[]): NoCacheStreak {
+  const main = records.filter(record => record.agentId === null)
+  let streak = 0
+  let promptTokens = 0
+  for (let index = main.length - 1; index >= 0; index -= 1) {
+    const record = main[index]
+    if (record === undefined || record.afterCompact === true) break
+    const { input, cacheRead, cacheWrite } = record.tokens
+    const prompt = input + cacheRead + cacheWrite
+    if (cacheRead !== 0 || cacheWrite !== 0 || prompt < NO_CACHE_MIN_PROMPT_TOKENS) break
+    streak += 1
+    promptTokens += prompt
+  }
+  return { streak, promptTokens }
+}
+
 export type TtlCheck = {
   readonly actualUsd: number
   readonly estimateUsd: number

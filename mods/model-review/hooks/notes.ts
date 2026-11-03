@@ -1,9 +1,10 @@
 // ペイン・コマンド出力で共用する注記と合計。$ に触れない純粋関数。
 import type { ReviewState, TurnRecord } from '../types'
 import { estimateRange, estimateTotal } from './analyze'
-import { CACHE_REBUILD_STREAK, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
+import { CACHE_REBUILD_STREAK, NO_CACHE_STREAK, longestRebuildStreak, noCacheStreak, ttlUnderestimateSuspected } from './cache'
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 import { UNKNOWN_MODEL } from './domain'
+import { formatInt } from './format'
 import { turnsSinceBaseline } from './state'
 import { findSwitches } from './switches'
 
@@ -11,11 +12,11 @@ import { findSwitches } from './switches'
 export const UNPRICED_STALE_RATIO = 0.3
 
 /**
- * 注記の種類。動的な警告（rebuild / ttl）と、数字をどこまで信じてよいかの信頼度（それ以外）に分ける。
- * 警告（rebuild / ttl）は所見の中に出し、結論行の「所見の警告 N 件」に数える。切替と信頼度は信頼度の節に出し、結論行の件数に数えない
+ * 注記の種類。動的な警告（rebuild / ttl / nocache）と、数字をどこまで信じてよいかの信頼度（それ以外）に分ける。
+ * 警告（rebuild / ttl / nocache）は所見の中に出し、結論行の「所見の警告 N 件」に数える。切替と信頼度は信頼度の節に出し、結論行の件数に数えない
  * （切替は「切替 N 件」の指摘で別に出るので、数えると二重になる）。
  */
-export type NoteKind = 'rebuild' | 'ttl' | 'switch' | 'stale' | 'priceAge' | 'diverged' | 'planMode'
+export type NoteKind = 'rebuild' | 'ttl' | 'nocache' | 'switch' | 'stale' | 'priceAge' | 'diverged' | 'planMode'
 
 export type Note = {
   readonly kind: NoteKind
@@ -25,14 +26,14 @@ export type Note = {
 }
 
 /** 所見（指摘の節の中）に出す警告。ペインでは指摘の後ろのバッジ、テキストでは【再構築】などの行。 */
-export type FindingKind = 'rebuild' | 'ttl'
+export type FindingKind = 'rebuild' | 'ttl' | 'nocache'
 export type FindingNote = Note & { readonly kind: FindingKind }
 
-const ALERT_KINDS: ReadonlySet<NoteKind> = new Set(['rebuild', 'ttl'])
+const ALERT_KINDS: ReadonlySet<NoteKind> = new Set(['rebuild', 'ttl', 'nocache'])
 /** 結論行の状態を「要確認」に上げる警告。切替は推定方法の但し書きで、切替の指摘を止めている利用者の ✓ を変えないよう除く。 */
-const STATUS_RAISING_KINDS: ReadonlySet<NoteKind> = new Set(['rebuild', 'ttl'])
+const STATUS_RAISING_KINDS: ReadonlySet<NoteKind> = new Set(['rebuild', 'ttl', 'nocache'])
 /** 所見に入る警告。状態を上げる種類と同じ集合だが意味が別（所見の節に置く基準）なので、流用せず独立に持つ。 */
-const FINDING_KINDS: ReadonlySet<NoteKind> = new Set<NoteKind>(['rebuild', 'ttl'])
+const FINDING_KINDS: ReadonlySet<NoteKind> = new Set<NoteKind>(['rebuild', 'ttl', 'nocache'])
 
 export const isAlert = (note: Note): boolean => ALERT_KINDS.has(note.kind)
 export const raisesStatus = (note: Note): boolean => STATUS_RAISING_KINDS.has(note.kind)
@@ -81,6 +82,19 @@ function rebuildStreakNote(records: readonly TurnRecord[]): readonly Note[] {
       kind: 'rebuild',
       text: `キャッシュ書込が読込を上回るターンが ${streak} 回連続しています（プレフィックスが変わり続けている可能性。モデル・effort・MCP・プラグインの変更を確認）`,
       brief: `キャッシュ書込 > 読込が ${streak} ターン連続`,
+    },
+  ]
+}
+
+/** キャッシュの読込・書込がともに 0 のターンが続くとき。原因（接続先・設定・使用量の未記録）は断定せず、「効いていない可能性」に留める。 */
+function noCacheNote(records: readonly TurnRecord[]): readonly Note[] {
+  const { streak, promptTokens } = noCacheStreak(records)
+  if (streak < NO_CACHE_STREAK) return []
+  return [
+    {
+      kind: 'nocache',
+      text: `直近のメイン ${streak} ターンで、キャッシュの読込・書込がともに 0 です（入力 ${formatInt(promptTokens)} tokens）。キャッシュが効いていない可能性があります（接続先や設定で無効、または使用量が記録されていない場合もあります）`,
+      brief: `キャッシュ未使用（読込・書込とも 0）が ${streak} ターン連続`,
     },
   ]
 }
@@ -188,6 +202,7 @@ export function buildNotes(review: ReviewState, nowMs?: number): readonly Note[]
   const totalTurns = records.length + (review.archived?.turns ?? 0)
   return [
     ...rebuildStreakNote(records),
+    ...noCacheNote(records),
     ...ttlNote(review),
     ...staleNote(review, unpricedTurns, totalTurns),
     ...priceAgeNote(nowMs),

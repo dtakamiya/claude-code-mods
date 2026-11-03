@@ -9,7 +9,7 @@ import { HEAVY_TOOL_CALLS, LIGHT_MAX_OUTPUT_TOKENS, LIGHT_MAX_TOOL_CALLS, mainTu
 import { shortModel } from './domain'
 import { cellWidth, formatInt, formatUsd } from './format'
 import type { Drafts, LoopDraft } from './recorder'
-import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, type TermKey } from './labels'
+import { CONCERN_TEXT, FINDING_LABEL, HEADING, NO_CONCERNS_SCOPED_TEXT, NO_OTHER_CONCERNS_TEXT, PAST_CONCERNS_HEADING, TERM_TEXT, UNPRICED_BADGE_LABEL, unpricedOverspecText, type TermKey } from './labels'
 import { CONCERN_TONE, NO_RECORDS_CONCLUSION, type Tone } from './conclusion'
 import { WHATIF_NOTE } from './whatif'
 import { turnLabelText } from './turnref'
@@ -84,7 +84,6 @@ export type PaneRow =
   | { kind: 'badge'; label: string; tone: Tone; text: string }
   | { kind: 'example'; text: string }
   | { kind: 'next'; text: string }
-  | { kind: 'ok'; text: string }
   | { kind: 'note'; text: string }
 
 const TIER_OF_RANK: Readonly<Record<number, Tier>> = { 0: 'haiku', 1: 'sonnet', 2: 'opus' }
@@ -193,26 +192,37 @@ function oneConcernRows(concern: Concern, next: string | null, recent: boolean):
   ]
 }
 
-/** 所見の中の警告（再構築・TTL 乖離）。バッジは種類の名前、本文はそのまま。 */
+/** 所見の中の警告（再構築・TTL 乖離・キャッシュ未使用）。バッジは種類の名前、本文はそのまま。 */
 const findingRows = (findings: readonly FindingNote[]): PaneRow[] =>
   findings.map((note): PaneRow => ({ kind: 'badge', label: FINDING_LABEL[note.kind], tone: 'warning', text: note.text }))
 
+/** 全ターン単価不明のとき、判定を保留している旨のバッジ（警告ではないので結論の「所見の警告」には数えない）。 */
+const unpricedRows = (totalTurns: number | null): PaneRow[] =>
+  totalTurns === null ? [] : [{ kind: 'badge', label: UNPRICED_BADGE_LABEL, tone: 'plain', text: unpricedOverspecText(totalTurns) }]
+
+/** 範囲つきの「指摘なし」。✓ は付けず、注記色で字下げする。直近の指摘がなく、結論が「目立った指摘なし」でないときだけ出す。 */
+const scopedNoConcernRows = (section: ConcernsSection): PaneRow[] =>
+  section.recent.length === 0 && !section.noConcerns
+    ? [{ kind: 'note', text: `  ${section.allUnpricedTurns === null ? NO_CONCERNS_SCOPED_TEXT : NO_OTHER_CONCERNS_TEXT}` }]
+    : []
+
 /**
- * 所見の節（見出し・指摘・警告・空行）。直近の指摘を先に、所見の警告を指摘の後に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
- * 止めている種類は最後に注記 1 行だけ。結論が「目立った指摘なし」を言うときは OK 行を出さない。
+ * 所見の節（見出し・指摘・警告・空行）。直近の指摘を先に、所見の警告・判定不能を指摘の後に、窓より前にだけ該当した指摘は注記の小見出しの下に分けて並べる。
+ * 止めている種類は注記 1 行。範囲つきの「指摘なし」は常に最後。結論が「目立った指摘なし」を言うときは出さない。
  * 中身が 1 行も残らないときは、見出しと空行ごと出さない（警告も中身に数える）。
  */
 function concernSectionRows(section: ConcernsSection): PaneRow[] {
-  const { recent, findings, past, nextSteps, numericNote, mutedLine, noConcerns } = section
+  const { recent, findings, past, nextSteps, numericNote, mutedLine, allUnpricedTurns } = section
   const body: PaneRow[] = [
     ...recent.flatMap(concern => oneConcernRows(concern, nextSteps.get(concern) ?? null, true)),
-    ...(recent.length === 0 && !noConcerns ? [{ kind: 'ok', text: NO_CONCERNS_TEXT } satisfies PaneRow] : []),
     ...findingRows(findings),
+    ...unpricedRows(allUnpricedTurns),
     ...(past.length === 0
       ? []
       : [{ kind: 'note', text: PAST_CONCERNS_HEADING } satisfies PaneRow, ...past.flatMap(concern => oneConcernRows(concern, null, false))]),
     ...(numericNote === null ? [] : [{ kind: 'note', text: numericNote } satisfies PaneRow]),
     ...(mutedLine === null ? [] : [{ kind: 'note', text: mutedLine } satisfies PaneRow]),
+    ...scopedNoConcernRows(section),
   ]
   return body.length === 0 ? [] : [{ kind: 'heading', text: HEADING.concerns }, ...body, { kind: 'blank' }]
 }
