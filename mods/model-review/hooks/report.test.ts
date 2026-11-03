@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 
 import type { ReviewState, TurnRecord } from '../types'
 import { ALERT_LABEL } from './conclusion'
-import { HEADING, NO_CONCERNS_TEXT } from './labels'
+import { HEADING, NO_CONCERNS_SCOPED_TEXT, NO_OTHER_CONCERNS_TEXT, unpricedOverspecText } from './labels'
 import { buildPaneRows, type PaneRow } from './pane-model'
 import { NO_TURNS_LINE, buildReportLines, formatInt, formatUsd } from './report'
 import { NEXT_STEP_PREFIX } from './nextstep'
@@ -237,7 +237,7 @@ test('指摘がないときは、ペインと同じ文言を出す', () => {
   const text = buildReportLines(withTurns([turn({ toolCount: 5 })], null, null)).join('\n')
 
   // Assert
-  expect(text).toContain(NO_CONCERNS_TEXT)
+  expect(text).toContain(NO_CONCERNS_SCOPED_TEXT)
 })
 
 test('指摘の例の後に、ペインとテキストで同じ「次の一手」の候補を 1 行添える', () => {
@@ -395,14 +395,16 @@ test('判定基準の出力の上限は桁区切りで書く（1,000 tokens）',
   expect(text).not.toContain('出力 1000 tokens')
 })
 
-test('指摘がないときの行は「過剰・不足の指摘なし」と書く（旧い「指摘なし」は出さない）', () => {
+test('指摘がないときの行は範囲つきの「過剰・不足: 指摘なし」と書く（旧い文言は出さない）', () => {
   // Act
   const lines = buildReportLines(withTurns([turn({ toolCount: 5 })], null, null))
 
   // Assert
-  expect(lines).toContain(`  ${NO_CONCERNS_TEXT}`)
-  expect(NO_CONCERNS_TEXT).toBe('過剰・不足の指摘なし')
+  expect(lines).toContain(NO_CONCERNS_SCOPED_TEXT)
+  expect(NO_CONCERNS_SCOPED_TEXT).toBe('過剰・不足: 指摘なし')
   expect(lines).not.toContain('  指摘なし')
+  expect(lines).not.toContain(`  ${NO_CONCERNS_SCOPED_TEXT}`)
+  expect(lines).not.toContain('  過剰・不足の指摘なし')
 })
 
 test('テキストの TTL 乖離は【TTL 乖離】の行で所見に出し、見出しの後・モデル × effort の前に置く', () => {
@@ -481,4 +483,31 @@ test('判定基準の「編集なし」の語は、テキストとペインで�
   expect(paneNote).toContain('編集なし')
   expect(text).not.toContain('編集系なし')
   expect(paneNote).not.toContain('編集系なし')
+})
+
+test('S4 全ターン単価不明: テキストの所見は判定不能の行と「ほかの過剰・不足: 指摘なし」で、旧文言を出さない', () => {
+  // Arrange
+  const records = ['u0', 'u1', 'u2', 'u3'].map(id => turn({ turnId: id, costUsd: null, costUpperUsd: null }))
+
+  // Act
+  const lines = buildReportLines(withTurns(records, null, null))
+
+  // Assert
+  expect(lines).toContain(`  【判定不能】 ${unpricedOverspecText(4)}`)
+  expect(lines).toContain(NO_OTHER_CONCERNS_TEXT)
+  expect(lines.join('\n')).not.toContain('過剰・不足の指摘なし')
+})
+
+test('S6 キャッシュ未使用: テキストの所見に【キャッシュ未使用】を出し、範囲つきの指摘なしが警告の後ろに来る', () => {
+  // Arrange
+  const records = ['n0', 'n1', 'n2'].map(id => turn({ turnId: id, tokens: { input: 30_000, output: 300, cacheRead: 0, cacheWrite: 0 } }))
+
+  // Act
+  const lines = buildReportLines(withTurns(records, null, null))
+  const warn = lines.findIndex(line => line.startsWith('  【キャッシュ未使用】'))
+
+  // Assert
+  expect(lines[0]).toContain('▲ 要確認')
+  expect(warn).toBeGreaterThan(0)
+  expect(lines[warn + 1]).toBe(NO_CONCERNS_SCOPED_TEXT)
 })

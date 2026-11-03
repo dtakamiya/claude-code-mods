@@ -4,6 +4,7 @@
 import type { ArchivedGroup, TurnRecord } from '../types'
 import type { ReviewAnalysis } from './analysis'
 import type { Concern } from './analyze'
+import { isAllUnpriced } from './conclusion'
 import type { BreakdownView } from './breakdown'
 import type { GrowthView } from './growth'
 import type { FindingNote } from './notes'
@@ -20,6 +21,8 @@ export type ConcernsSection = {
   readonly mutedLine: string | null
   /** 結論が「目立った指摘なし」を言っているか。 */
   readonly noConcerns: boolean
+  /** 全ターンが単価不明のとき、その総ターン数（モデルの過剰を判定できない）。そうでなければ null。 */
+  readonly allUnpricedTurns: number | null
 }
 
 export type GroupsSection = { readonly kind: 'groups'; readonly groups: readonly ArchivedGroup[]; readonly totalUsd: number }
@@ -53,6 +56,7 @@ export function buildSections(analysis: ReviewAnalysis): readonly Section[] {
     numericNote: analysis.numericNote,
     mutedLine: analysis.mutedLine,
     noConcerns: analysis.noConcerns,
+    allUnpricedTurns: isAllUnpriced(analysis.coverage) ? analysis.coverage.totalTurns : null,
   }
   const cost: CostSection = {
     kind: 'cost',

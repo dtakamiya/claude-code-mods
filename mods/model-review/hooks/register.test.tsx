@@ -222,7 +222,8 @@ test('/model-review text はペインが置ける画面でもペインを開か�
 })
 
 // Opus 5.5 の軽い 1 応答（ツールなし・出力 100 tokens）。Sonnet 換算の差額が過剰の下限を超えるよう入力を多めにする。
-const OPUS_LIGHT_USAGE = { ...SONNET_USAGE, model: 'claude-opus-5-5', input_tokens: 50_000, output_tokens: 100 }
+// キャッシュを少し読んでいる（読込・書込がともに 0 だと「キャッシュ未使用」の警告が出て、mutedConcerns の確認と混ざるため）。
+const OPUS_LIGHT_USAGE = { ...SONNET_USAGE, model: 'claude-opus-5-5', input_tokens: 45_000, cache_read_input_tokens: 5_000, output_tokens: 100 }
 
 /** 応答（turn.step）を流さず、終了時の usage だけで Opus の軽作業のターンを 1 つ記録する。 */
 const completeLightOpusTurn = async ($: Engine, turnId: string) => {

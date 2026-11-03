@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
-import { CACHE_REBUILD_STREAK, cacheHitRate, longestRebuildStreak, ttlUnderestimateSuspected } from './cache'
+import { CACHE_REBUILD_STREAK, NO_CACHE_MIN_PROMPT_TOKENS, NO_CACHE_STREAK, cacheHitRate, longestRebuildStreak, noCacheStreak, ttlUnderestimateSuspected } from './cache'
 
 // 架空データのみ。
 const turn = (cacheRead: number, cacheWrite: number, overrides: Partial<TurnRecord> = {}): TurnRecord => ({
@@ -90,4 +90,43 @@ test('/compact 直後のターンは書込多めに数えず、連続も切る',
 
   // Assert
   expect(streak).toBe(1)
+})
+
+const bare = (input: number, overrides: Partial<TurnRecord> = {}): TurnRecord => turn(0, 0, { tokens: { input, output: 1, cacheRead: 0, cacheWrite: 0 }, ...overrides })
+const BIG = NO_CACHE_MIN_PROMPT_TOKENS
+
+test('キャッシュ未使用の連続は、最新のメインから数え、読込・書込がともに 0 で入力が下限以上のターンだけを数える', () => {
+  // Arrange
+  const records = [turn(500, 0), bare(BIG), bare(BIG), bare(BIG + 5)]
+
+  // Act
+  const result = noCacheStreak(records)
+
+  // Assert
+  expect(result).toEqual({ streak: 3, promptTokens: BIG * 3 + 5 })
+  expect(NO_CACHE_STREAK).toBe(3)
+})
+
+test('キャッシュ未使用: 入力が下限未満・書込か読込が 1 でもある・最新が使用済みのターンで連続が切れる', () => {
+  expect(noCacheStreak([bare(BIG), bare(BIG), bare(BIG - 1)]).streak).toBe(0)
+  expect(noCacheStreak([bare(BIG), bare(BIG), bare(BIG), turn(0, 1, { tokens: { input: BIG, output: 1, cacheRead: 0, cacheWrite: 1 } })]).streak).toBe(0)
+  expect(noCacheStreak([bare(BIG), bare(BIG), bare(BIG), turn(100, 0)]).streak).toBe(0)
+  expect(noCacheStreak([bare(BIG), turn(100, 0), bare(BIG)]).streak).toBe(1)
+})
+
+test('キャッシュ未使用: 複数ステップのターンは 1 ステップ目の入力で見る（ツール 4 回・合計 12,000・1 ステップ目 3,000 の 3 連続では出ない）', () => {
+  // Arrange: 合計は 12,000 で下限を超えるが、1 ステップ目の入力は 3,000。
+  const multiStep = () => bare(12_000, { toolCount: 4, firstStepPromptTokens: 3_000 })
+
+  // Act / Assert
+  expect(noCacheStreak([multiStep(), multiStep(), multiStep()]).streak).toBe(0)
+  // 1 ステップ目が下限以上なら数え、合計もその値で足す。
+  expect(noCacheStreak([bare(40_000, { firstStepPromptTokens: BIG }), bare(40_000, { firstStepPromptTokens: BIG })])).toEqual({ streak: 2, promptTokens: BIG * 2 })
+  // firstStepPromptTokens の無い古い記録は合計で代用する。
+  expect(noCacheStreak([bare(BIG), bare(BIG)]).streak).toBe(2)
+})
+
+test('キャッシュ未使用: サブエージェントは数えず連続も切らない。/compact 直後のターンは数えず連続を切る', () => {
+  expect(noCacheStreak([bare(BIG), bare(BIG), bare(BIG, { agentId: 'a1' }), bare(BIG)]).streak).toBe(3)
+  expect(noCacheStreak([bare(BIG), bare(BIG, { afterCompact: true }), bare(BIG), bare(BIG)]).streak).toBe(2)
 })

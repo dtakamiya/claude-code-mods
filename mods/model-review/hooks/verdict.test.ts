@@ -97,6 +97,37 @@ test('S4 全ターンが単価不明のとき、「判定不能」と理由 1 �
   expect(tone).toBe('plain')
 })
 
+test('S6 キャッシュの読込・書込がともに 0 のまま 3 ターン続くとき、「問題なし」にせず「要確認」と理由を出す（断定しない）', () => {
+  // Arrange: 入力 30,000 のメインが 3 ターン、キャッシュ 0。
+  const turns = times(3, index => healthy(`n${index}`, { tokens: { input: 30_000, output: 300, cacheRead: 0, cacheWrite: 0 } }))
+
+  // Act
+  const { text, tone } = verdictOf(review(turns))
+  const report = buildReportLines(review(turns)).join('\n')
+
+  // Assert
+  expect(text.startsWith('▲ 要確認 · 結論: キャッシュ未使用（読込・書込とも 0）が 3 ターン連続')).toBe(true)
+  expect(text).not.toContain('✓')
+  expect(tone).toBe('warning')
+  expect(report).toContain('効いていない可能性があります')
+})
+
+test('S7+S6 再構築の連続（過去）とキャッシュ未使用（直近）が併発しても、結論の理由は先頭の再構築で、キャッシュ未使用は「ほか 1 件」に回る（挙動の固定）', () => {
+  // Arrange: 古い 5 ターンが再構築、直近 3 ターンがキャッシュ未使用。
+  const turns = [
+    ...rebuildStreak(),
+    ...times(3, index => healthy(`n${index}`, { tokens: { input: 30_000, output: 300, cacheRead: 0, cacheWrite: 0 } })),
+  ]
+
+  // Act
+  const { text, tone } = verdictOf(review(turns))
+
+  // Assert
+  expect(text).toContain('▲ 要確認 · 結論: キャッシュ書込 > 読込が 5 ターン連続')
+  expect(text).toContain('ほか 1 件')
+  expect(tone).toBe('warning')
+})
+
 test('S4b 5 ターン中 1 ターンだけ単価不明なら、状態はそのままで理由に「単価不明 1/5 ターン」を足す', () => {
   // Arrange: モデルは同じなので切替の指摘は出ない。
   const turns = [...times(4, index => healthy(`h${index}`)), healthy('u', { costUsd: null, costUpperUsd: null })]

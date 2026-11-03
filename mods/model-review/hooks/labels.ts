@@ -19,6 +19,7 @@ export const HEADING = {
 export const FINDING_LABEL: Readonly<Record<FindingKind, string>> = {
   rebuild: '再構築',
   ttl: 'TTL 乖離',
+  nocache: 'キャッシュ未使用',
 }
 
 /** 指摘の種類の短い名前と、1 行の説明。 */
@@ -33,8 +34,17 @@ export const CONCERN_TEXT: Readonly<Record<ConcernKind, { readonly label: string
   switch: { label: '切替', summary: 'モデル / effort の切替でキャッシュを再構築' },
 }
 
-/** 直近の指摘がないときの 1 行（ペインとテキストで共用）。 */
-export const NO_CONCERNS_TEXT = '過剰・不足の指摘なし'
+/**
+ * 直近の指摘がないときの 1 行（ペインとテキストで共用）。「✓」は付けない: 所見の節は結論が ✓ でないときにだけ出るので、
+ * ✓ を付けると結論や隣の警告と食い違う。範囲（過剰・不足）を言い、警告の後ろに置く。
+ */
+export const NO_CONCERNS_SCOPED_TEXT = '過剰・不足: 指摘なし'
+/** 全ターン単価不明でモデルの過剰を判定できないとき、ほかの過剰・不足について言う 1 行。 */
+export const NO_OTHER_CONCERNS_TEXT = 'ほかの過剰・不足: 指摘なし'
+/** 全ターン単価不明の所見のバッジ名（結論の状態語と同じ）。 */
+export const UNPRICED_BADGE_LABEL = '判定不能'
+export const unpricedOverspecText = (totalTurns: number): string =>
+  `モデルの過剰（Sonnet 換算の差額）は、全 ${totalTurns} ターンが単価不明のため判定できません`
 /** 直近の窓より前にだけ該当した指摘の小見出し。結論の ▲ には数えない。 */
 export const PAST_CONCERNS_HEADING = `過去の指摘（メインの直近 ${RECENT_CONCERN_MAIN_TURNS} ターンには該当なし）`
 /** 結論行で、過去の指摘の種類数を示す語。 */
