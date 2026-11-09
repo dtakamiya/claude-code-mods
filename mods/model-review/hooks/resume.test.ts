@@ -1,6 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
+import { cellWidth } from './format'
 import { MS_PER_HOUR, MS_PER_MINUTE, PROMPT_DROP_RATIO, findResumes, idleGapMs, resumeNoteText } from './resume'
 
 // 架空データのみ。主な値: 直前ターンの入力 100,000 tokens、再開したターンは全文を書き直して書込 90,000・読込 500。
@@ -134,7 +135,7 @@ test('件数は全体、latest は最も新しい 1 件。既存の「連続再�
   expect(text).toContain('2 件')
   expect(text).toContain('#4（3 分前）')
   expect(text).toContain('放置後の可能性')
-  expect(text).toContain('1 時間 TTL でも')
+  expect(text).toContain('1 時間どちらの TTL でも')
   expect(text).not.toContain('連続')
 })
 
@@ -146,10 +147,38 @@ test('5 分以上 1 時間未満の再開は「TTL が 5 分なら」と条件�
   expect(text).toContain('約 8 分')
   expect(text).toContain('TTL が 5 分なら')
   expect(text).toContain('放置後の可能性')
-  expect(text).not.toContain('1 時間 TTL でも')
+  expect(text).not.toContain('1 時間どちら')
 })
 
 test('該当が無ければ文面は null', () => {
   expect(resumeNoteText(findResumes([previous(), resumedAfter(MS_PER_MINUTE)]))).toBeNull()
   expect(resumeNoteText(findResumes([]))).toBeNull()
+})
+
+test('注記は 1 文 2 本に収まる長さ（全角換算で 80 桁 2 行ほど）で、断定のヘッジは末尾の 1 回だけ', () => {
+  const text = resumeNoteText(findResumes([previous(), resumedAfter(8 * MS_PER_MINUTE)])) ?? ''
+
+  expect(cellWidth(text)).toBeLessThanOrEqual(170)
+  expect(text.match(/断定/g)).toHaveLength(1)
+})
+
+test('同じターンがモデルの切替でもあるときは、金額を重ねず切替側に任せる（件数は数える）', () => {
+  // Arrange: 直前は sonnet、再開したターンは opus（モデルが替わった）。
+  const summary = findResumes([previous(), resumedAfter(8 * MS_PER_MINUTE, { model: 'claude-opus-5-5' })])
+
+  // Act
+  const text = resumeNoteText(summary) ?? ''
+
+  // Assert
+  expect(summary.count).toBe(1)
+  expect(summary.latest?.overlapsSwitch).toBe(true)
+  expect(text).toContain('切替と重なるため金額は切替側')
+  expect(text).not.toContain('$')
+})
+
+test('切替でないターンは金額（再構築の推定）を出す', () => {
+  const summary = findResumes([previous(), resumedAfter(8 * MS_PER_MINUTE)])
+
+  expect(summary.latest?.overlapsSwitch).toBe(false)
+  expect(resumeNoteText(summary)).toContain('再構築の推定 $')
 })

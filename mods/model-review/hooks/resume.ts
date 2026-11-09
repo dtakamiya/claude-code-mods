@@ -3,7 +3,7 @@
 import type { TurnRecord } from '../types'
 import { formatDuration, formatInt, formatUsd } from './format'
 import { cacheRebuildCostUsd } from './pricing'
-import { MIN_REBUILD_WRITE_TOKENS } from './switches'
+import { MIN_REBUILD_WRITE_TOKENS, isSwitchBetween } from './switches'
 import { turnRefText } from './turnref'
 
 export const MS_PER_MINUTE = 60_000
@@ -27,6 +27,8 @@ export type ResumeEvent = {
   readonly ttlOver: '5m' | '1h'
   /** このターンの書込トークン数。 */
   readonly writeTokens: number
+  /** 同じターンがモデル・effort の切替でもある。再構築の金額は切替の推定に出るので、ここでは重ねない。 */
+  readonly overlapsSwitch: boolean
 }
 
 export type ResumeSummary = {
@@ -67,7 +69,7 @@ function looksRebuilt(prev: TurnRecord, current: TurnRecord): boolean {
 function eventOf(prev: TurnRecord, current: TurnRecord): ResumeEvent | null {
   const gapMs = idleGapMs(prev, current)
   if (gapMs === null || gapMs < TTL_SHORT_MS || !looksRebuilt(prev, current)) return null
-  return { record: current, gapMs, ttlOver: gapMs >= TTL_LONG_MS ? '1h' : '5m', writeTokens: current.firstStepCacheWrite ?? 0 }
+  return { record: current, gapMs, ttlOver: gapMs >= TTL_LONG_MS ? '1h' : '5m', writeTokens: current.firstStepCacheWrite ?? 0, overlapsSwitch: isSwitchBetween(prev, current) }
 }
 
 /** メインループで、放置後の再開の可能性があるターンを数える。サブエージェントのターンは対象外で、直前にも数えない。 */
@@ -86,15 +88,15 @@ export function findResumes(records: readonly TurnRecord[]): ResumeSummary {
 const gapText = (ms: number): string => `約 ${ms >= MS_PER_HOUR ? `${Math.floor(ms / MS_PER_HOUR)} 時間` : formatDuration(ms)}`
 
 /**
- * 1 行の注記。該当が無ければ null。TTL は断定せず、間隔と書込量の事実と「放置後の可能性」に留める。
- * 金額は、書込を読込単価との差で評価した推定（切替の再構築と同じ式）。単価不明なら金額は出さない。
+ * 注記（80 桁で 2 行ほど）。該当が無ければ null。TTL は断定せず、間隔と書込量の事実と「放置後の可能性」に留める。
+ * 金額は、書込を読込単価との差で評価した推定（切替の再構築と同じ式）。単価不明なら出さない。切替と重なるターンは金額を切替側に任せる。
  */
 export function resumeNoteText(summary: ResumeSummary, nowMs?: number): string | null {
   const { latest } = summary
   if (latest === null) return null
-  const ttl = latest.ttlOver === '1h' ? '5 分 TTL でも 1 時間 TTL でも切れる間隔' : 'TTL が 5 分なら切れる間隔'
+  const ttl = latest.ttlOver === '1h' ? '5 分・1 時間どちらの TTL でも切れる間隔' : 'TTL が 5 分なら切れる間隔'
   const cost = cacheRebuildCostUsd(latest.record.model, latest.writeTokens, latest.record.firstStepPromptTokens)
-  const costText = cost === null ? '' : `、読んでいれば払わなかった額の推定 ${formatUsd(cost)}`
+  const costText = latest.overlapsSwitch ? '（切替と重なるため金額は切替側）' : cost === null ? '' : `（再構築の推定 ${formatUsd(cost)}）`
   const ref = turnRefText(latest.record, summary.latestTurnsAgo, nowMs)
-  return `放置後の可能性があるターン: ${summary.count} 件。直近は ${ref}で、直前のターンから${gapText(latest.gapMs)}あいていました（${ttl}）。キャッシュ書込 ${formatInt(latest.writeTokens)} tokens${costText}。放置が原因とは断定できません`
+  return `放置後の可能性: ${summary.count} 件。直近は ${ref}で、直前から${gapText(latest.gapMs)}あき、${ttl}。書込 ${formatInt(latest.writeTokens)} tokens${costText}。原因は断定できません。`
 }
