@@ -5,6 +5,7 @@ import { CACHE_REBUILD_STREAK, NO_CACHE_STREAK, longestRebuildStreak, noCacheStr
 import { PRICE_TABLE_FETCHED_AT, PRICE_TABLE_STALE_DAYS } from './pricing'
 import { UNKNOWN_MODEL } from './domain'
 import { formatInt } from './format'
+import { findResumes, resumeNoteText } from './resume'
 import { turnsSinceBaseline } from './state'
 import { findSwitches } from './switches'
 
@@ -16,7 +17,7 @@ export const UNPRICED_STALE_RATIO = 0.3
  * 警告（rebuild / ttl / nocache）は所見の中に出し、結論行の「所見の警告 N 件」に数える。切替と信頼度は信頼度の節に出し、結論行の件数に数えない
  * （切替は「切替 N 件」の指摘で別に出るので、数えると二重になる）。
  */
-export type NoteKind = 'rebuild' | 'ttl' | 'nocache' | 'switch' | 'stale' | 'priceAge' | 'diverged' | 'planMode'
+export type NoteKind = 'rebuild' | 'ttl' | 'nocache' | 'switch' | 'stale' | 'priceAge' | 'diverged' | 'planMode' | 'resume'
 
 export type Note = {
   readonly kind: NoteKind
@@ -194,6 +195,12 @@ function planModeNote(records: readonly TurnRecord[]): readonly Note[] {
   ]
 }
 
+/** 放置後の再開の可能性があるターン（事後の事実の 1 行）。連続再構築（rebuild）とは別の注記で、結論行の件数・状態には入れない。 */
+function resumeNote(records: readonly TurnRecord[], nowMs: number | undefined): readonly Note[] {
+  const text = resumeNoteText(findResumes(records), nowMs)
+  return text === null ? [] : [{ kind: 'resume', text }]
+}
+
 /** 状況に応じた注記（常に出す 1 行を除く）。記録がなければ空。順序は従来のまま（動的な警告と信頼度に分けるのは splitNotes）。 */
 export function buildNotes(review: ReviewState, nowMs?: number): readonly Note[] {
   const records = review.turns
@@ -207,6 +214,7 @@ export function buildNotes(review: ReviewState, nowMs?: number): readonly Note[]
     ...staleNote(review, unpricedTurns, totalTurns),
     ...priceAgeNote(nowMs),
     ...switchNote(records),
+    ...resumeNote(records, nowMs),
     ...divergedNote(records),
     ...planModeNote(records),
   ]

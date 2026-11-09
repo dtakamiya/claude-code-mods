@@ -1112,3 +1112,35 @@ test('C4 桁数が不明（undefined）の行は、広（100）の行と同じ',
   // Assert
   expect(rowsAt(fixtureTwo(), undefined)).toEqual(rowsAt(fixtureTwo(), 100))
 })
+
+test('R9 放置後の再開の注記（resume）は、狭幅（40 桁未満）では出さず、通常幅では出す', () => {
+  // Arrange: 直前から 8 分あいて、全文を書き直した（書込大・読込小）メインのターン。架空データ。
+  const baseMs = 1_000_000_000_000
+  const warm = turn({
+    turnId: 'w1',
+    mainSeq: 1,
+    completedAtMs: baseMs,
+    tokens: { input: 50, output: 300, cacheRead: 99_000, cacheWrite: 1_000 },
+    firstStepCacheWrite: 1_000,
+    firstStepCacheRead: 99_000,
+    firstStepPromptTokens: 100_050,
+  })
+  const resumed = turn({
+    turnId: 'w2',
+    mainSeq: 2,
+    completedAtMs: baseMs + 8 * 60_000 + 1_000,
+    durationMs: 1_000,
+    tokens: { input: 50, output: 300, cacheRead: 500, cacheWrite: 90_000 },
+    firstStepCacheWrite: 90_000,
+    firstStepCacheRead: 500,
+    firstStepPromptTokens: 90_550,
+  })
+  const notesAt = (columns: number): string[] => reliabilityNotes(buildPaneRows(review([warm, resumed]), {}, baseMs + 9 * 60_000, columns))
+  const has = (notes: string[]): boolean => notes.some(text => text.startsWith('放置後の可能性'))
+
+  // Act / Assert
+  expect(has(notesAt(36))).toBe(false)
+  expect(has(notesAt(39))).toBe(false)
+  expect(has(notesAt(60))).toBe(true)
+  expect(has(notesAt(100))).toBe(true)
+})

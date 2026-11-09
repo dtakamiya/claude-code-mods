@@ -61,6 +61,9 @@ const effortChangeCountsAsSwitch = (model: string): boolean => isPricedModel(mod
 const isEffortChange = (prev: TurnRecord, current: TurnRecord): boolean =>
   prev.effort !== null && current.effort !== null && prev.effort !== current.effort
 
+/** 2 つのメインのターンの間が、数える切替（モデル・キャッシュを切らす effort 変更）か。再開の注記が金額を重ねて出さないために使う。 */
+export const isSwitchBetween = (prev: TurnRecord, current: TurnRecord): boolean => switchKind(prev, current) !== null
+
 function switchKind(prev: TurnRecord, current: TurnRecord): SwitchKind | null {
   if (prev.model === UNKNOWN_MODEL || current.model === UNKNOWN_MODEL) return null
   if (normalizeModelId(prev.model) !== normalizeModelId(current.model)) return 'model'

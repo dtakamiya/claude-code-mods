@@ -288,3 +288,49 @@ test('キャッシュ未使用が連続すると nocache の警告を出し、�
   expect(splitFindings(buildNotes(flagged)).findings.map(note => note.kind)).toEqual(['nocache'])
   expect(splitNotes(buildNotes(flagged)).alerts.map(note => note.kind)).toEqual(['nocache'])
 })
+
+// 放置後の再開（resume.ts）。再構築の根拠は firstStepCacheWrite 大・firstStepCacheRead 小。
+const RESUME_BASE_MS = 1_000_000_000_000
+const warmTurn: TurnRecord = {
+  ...turn,
+  turnId: 'w1',
+  mainSeq: 1,
+  completedAtMs: RESUME_BASE_MS,
+  tokens: { input: 50, output: 300, cacheRead: 99_000, cacheWrite: 1_000 },
+  firstStepCacheWrite: 1_000,
+  firstStepCacheRead: 99_000,
+  firstStepPromptTokens: 100_050,
+}
+/** warmTurn の完了から gapMs あいたあとの、全文を書き直したターン。 */
+const resumedTurn = (gapMs: number): TurnRecord => ({
+  ...warmTurn,
+  turnId: 'w2',
+  mainSeq: 2,
+  completedAtMs: RESUME_BASE_MS + gapMs + 1_000,
+  durationMs: 1_000,
+  tokens: { input: 50, output: 300, cacheRead: 500, cacheWrite: 90_000 },
+  firstStepCacheWrite: 90_000,
+  firstStepCacheRead: 500,
+  firstStepPromptTokens: 90_550,
+})
+const reviewOf = (turns: readonly TurnRecord[]): ReviewState => ({ turns, sessionCostUsd: { baseline: null, current: null } })
+
+test('放置後の可能性のターンは resume の注記を 1 行出し、警告（rebuild）ではなく信頼度の側に置く', () => {
+  // Arrange
+  const state = reviewOf([warmTurn, resumedTurn(8 * 60_000)])
+
+  // Act
+  const notes = buildNotes(state, RESUME_BASE_MS + 9 * 60_000)
+  const { alerts, reliability } = splitNotes(notes)
+
+  // Assert
+  expect(notes.map(note => note.kind)).toEqual(['resume'])
+  expect(alerts).toEqual([])
+  expect(reliability[0]?.text).toContain('放置後の可能性')
+})
+
+test('間隔が 5 分未満・時刻欠損の古い記録では resume の注記を出さない', () => {
+  const { completedAtMs: _omit, ...oldRecord } = resumedTurn(2 * 3_600_000)
+  expect(kindsOf(reviewOf([warmTurn, resumedTurn(4 * 60_000)]))).toEqual([])
+  expect(kindsOf(reviewOf([warmTurn, oldRecord]))).toEqual([])
+})
