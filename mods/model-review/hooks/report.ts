@@ -53,14 +53,14 @@ function rateLines(rate: RateView | null): string[] {
 }
 
 /** 差の推定の基準の注記。金額行の「差」に付く説明で、金額行を長くしないよう別行にする。 */
-const DIFF_BASIS_NOTE = '※ 差の推定は単価表の値。ターン外の要求は含まない'
+const DIFF_BASIS_NOTE = '  ※ 差の推定は単価表の値。ターン外の要求は含まない'
 
 /**
  * コストの節の本文。推定・実・差は結論の次の金額行に 1 回だけ出すので、ここでは再掲しない。
- * 内訳・推移と、差がある場合の基準の注記だけを並べる。
+ * 内訳・推移だけを並べる（差の基準の注記は『対象』行の直下に出すので、ここには含めない）。
  */
 function costLines(section: CostSection): string[] {
-  const { breakdown, growth, diff } = section
+  const { breakdown, growth } = section
   const breakdownLines =
     breakdown === null ? [] : [`${BREAKDOWN_LABEL}: ${breakdown.items}`, ...(breakdown.hint === null ? [] : [`  → ${breakdown.hint}`]), `  ${breakdown.note}`]
   const growthLines =
@@ -72,7 +72,7 @@ function costLines(section: CostSection): string[] {
           ...(growth.hint === null ? [] : [`  → ${growth.hint}`]),
           `  ${growth.note}`,
         ]
-  return [...breakdownLines, ...growthLines, ...(diff === null ? [] : [DIFF_BASIS_NOTE])]
+  return [...breakdownLines, ...growthLines]
 }
 
 /** 指摘 1 件の行。過去の指摘には「次の一手」を付けない（いま直す対象ではないため）。 */
@@ -134,7 +134,7 @@ function loopLines(section: LoopsSection): string[] {
 
 const whatIfLines = (section: WhatIfSection): string[] => [`■ ${HEADING.whatIf}`, ...section.options.map(text => `  ${text}`), `  ${WHATIF_NOTE}`, '']
 
-/** コストの節。中身（内訳・推移・差の注記・使用率・advisor）があるときだけ、見出しと空行を出す（ペインの costSectionRows と同じ条件）。 */
+/** コストの節。中身（内訳・推移・使用率・advisor。差の注記だけでは出さない）があるときだけ、見出しと空行を出す（ペインの costSectionRows と同じ条件）。 */
 function costSectionLines(section: CostSection, rate: RateView | null): string[] {
   const body = [...costLines(section), ...rateLines(rate), ...(section.advisorText === null ? [] : [`advisor ${section.advisorText}`])]
   return body.length === 0 ? [] : [`■ ${HEADING.cost}`, ...body, '']
@@ -185,6 +185,7 @@ export function buildReportLines(review: ReviewState, nowMs?: number, muted?: Re
     moneyLineFrom(analysis.estimate, analysis.diff, rate !== null),
     '',
     `対象: ${analysis.totalTurns} ターン（サブエージェント ${analysis.subagents} 件）。Mod 読み込み前のターンは含みません。`,
+    ...(analysis.diff === null ? [] : [DIFF_BASIS_NOTE]),
     '',
     ...buildSections(analysis).flatMap(section => sectionLines(section, nowMs, rate)),
     ...footerLines(analysis),

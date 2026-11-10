@@ -79,7 +79,7 @@ test('S8 再構築の連続と TTL 乖離が重なるとき、最重要の理由
   // Assert
   expect(text).toContain('▲ 要確認')
   expect(text).toContain('キャッシュ書込 > 読込が 4 ターン連続')
-  expect(text).toContain('ほか 1 件')
+  expect(text).toContain('所見の警告 ほか 1 件')
   expect(tone).toBe('warning')
 })
 
@@ -235,7 +235,7 @@ test('D0 基準点より前のターンは、差の推定に入れない（符�
   expect(micro(diff?.estimateUsd)).toBe(30_000)
   expect(micro(diff?.diffUsd)).toBe(10_000)
   expect(rows.some(row => row.kind === 'kv' && row.value.includes('差 +$0.0100'))).toBe(true)
-  expect(lines).toContain('※ 差の推定は単価表の値。ターン外の要求は含まない')
+  expect(lines).toContain('  ※ 差の推定は単価表の値。ターン外の要求は含まない')
   expect(lines.filter(line => line.includes('+$0.0100'))).toHaveLength(1)
 })
 

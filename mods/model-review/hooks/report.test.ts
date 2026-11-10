@@ -79,7 +79,7 @@ test('金額（推定・実・差）はコストの節で再掲せず、金額�
 
   // Act
   const lines = buildReportLines(review)
-  const costLines = lines.slice(lines.indexOf('■ コスト'), lines.indexOf('■ 信頼度'))
+  const costLines = lines.slice(lines.indexOf('対象: 2 ターン（サブエージェント 0 件）。Mod 読み込み前のターンは含みません。'), lines.indexOf('■ 信頼度'))
 
   // Assert
   expect(lines.filter(line => line.includes('$0.7500'))).toHaveLength(1)
@@ -368,12 +368,12 @@ test('切替の注記は信頼度の節に入り、所見の中には出ない',
   expect(reliabilityIndex).toBeGreaterThan(concernsIndex)
 })
 
-test('テキストの信頼度は、コスト節の後に空行を挟み、判定基準の前に出す', () => {
+test('テキストの信頼度は、前の節の後に空行を挟み、判定基準の前に出す', () => {
   // Arrange
   const lines = buildReportLines(withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], 1.0, 1.75))
 
   // Act
-  const costIndex = lines.indexOf(`■ ${HEADING.cost}`)
+  const costIndex = lines.findIndex(line => line.startsWith('対象:'))
   const reliabilityIndex = lines.indexOf(`■ ${HEADING.reliability}`)
   const criteriaIndex = lines.findIndex(line => line.startsWith('判定基準（参考）'))
 
@@ -458,7 +458,7 @@ test('コスト節に中身（内訳・推移・差の注記・使用率・advis
   expect(paneRows.some(row => row.kind === 'heading' && row.text === HEADING.cost)).toBe(false)
 })
 
-test('差があるときは、従来どおりコスト節の見出しと差の基準の注記を出す', () => {
+test('差のみのときは『■ コスト』見出しを出さず、差の基準の注記を『対象』行の直下に出す', () => {
   // Arrange
   const review = withTurns([turn({ turnId: 'a' }), turn({ turnId: 'b' })], 1.0, 1.75)
 
@@ -466,8 +466,11 @@ test('差があるときは、従来どおりコスト節の見出しと差の�
   const lines = buildReportLines(review)
 
   // Assert
-  expect(lines).toContain(`■ ${HEADING.cost}`)
-  expect(lines).toContain('※ 差の推定は単価表の値。ターン外の要求は含まない')
+  expect(lines).not.toContain(`■ ${HEADING.cost}`)
+  const targetIndex = lines.findIndex(line => line.startsWith('対象:'))
+  expect(lines[targetIndex + 1]).toBe('  ※ 差の推定は単価表の値。ターン外の要求は含まない')
+  expect(lines[targetIndex + 2]).toBe('')
+  expect(lines.filter(line => line.includes('※ 差の推定は単価表の値'))).toHaveLength(1)
 })
 
 test('判定基準の「編集なし」の語は、テキストとペインで同じ（旧「編集系なし」は出さない）', () => {

@@ -104,7 +104,7 @@ export function conclusionOf(concerns: readonly Concern[], alerts: readonly Note
   const [first] = raising
   if (first !== undefined) {
     const others = alerts.length - 1
-    return { text: `${lead}${first.brief ?? first.text}${others > 0 ? ` · ほか ${others} 件` : ''}${pastPart}${unpriced}`, tone: status.tone }
+    return { text: `${lead}${first.brief ?? first.text}${others > 0 ? ` · ${ALERT_LABEL} ほか ${others} 件` : ''}${pastPart}${unpriced}`, tone: status.tone }
   }
   // 直近の指摘も状態を上げる警告もない分岐では、全ターン単価不明のときだけ「指摘なし」と言えない（statusOf の判定と同じ）。
   if (!saysNoConcerns(concerns, alerts, coverage)) {
