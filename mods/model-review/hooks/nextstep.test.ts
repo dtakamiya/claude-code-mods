@@ -208,6 +208,52 @@ test('委譲・サブ・切替はそれぞれ決まった候補を返す', () =>
   expect(nextStepText(switching, [])).toBe(`${NEXT_STEP_PREFIX}切替はまとめるのが目安（往復のたびにキャッシュを再構築）`)
 })
 
+test('サブエージェントが全て Haiku の指摘は、model の変更を勧めず呼び方とキャッシュに触れる', () => {
+  // Arrange: S9 相当。サブは全て Haiku・ヒット 0%・コストの大半を占める。
+  const haikuTurn = (index: number): TurnRecord =>
+    turn({ turnId: `s${index}`, agentId: 'a', model: 'claude-haiku-5-5', costUsd: 1, tokens: { input: 1_000, output: 10, cacheRead: 0, cacheWrite: 5_000 } })
+  const records = [turn({ turnId: 'm', costUsd: 1 }), ...repeat(3, haikuTurn)]
+
+  // Act
+  const text = nextStepText(concernOf(records, 'subagent'), records)
+
+  // Assert
+  expect(text?.startsWith(NEXT_STEP_PREFIX)).toBe(true)
+  expect(text).not.toContain('model を haiku / sonnet に')
+  expect(text).toContain('すでに Haiku')
+  expect(text).toContain('キャッシュ')
+  for (const word of ASSERTIVE_WORDS) expect(text).not.toContain(word)
+})
+
+test('サブエージェントに Haiku 以外が混じるときは従来の「model を haiku / sonnet に」を返す', () => {
+  // Arrange: Haiku 2 ターン + Opus 1 ターン。
+  const records = [
+    turn({ turnId: 'm', costUsd: 1 }),
+    turn({ turnId: 's0', agentId: 'a', model: 'claude-haiku-5-5', costUsd: 1 }),
+    turn({ turnId: 's1', agentId: 'a', model: 'claude-haiku-5-5', costUsd: 1 }),
+    turn({ turnId: 's2', agentId: 'a', model: 'claude-opus-5-5', costUsd: 1 }),
+  ]
+
+  // Act
+  const concern = concernOf(records, 'subagent')
+
+  // Assert
+  expect(concern.subagentAllHaiku).toBeUndefined()
+  expect(nextStepText(concern, records)).toContain('サブエージェントの定義で model を haiku / sonnet に')
+})
+
+test('サブエージェントが全て Sonnet でも従来の文言を返す', () => {
+  // Arrange
+  const records = [turn({ turnId: 'm', costUsd: 1 }), ...repeat(3, index => turn({ turnId: `s${index}`, agentId: 'a', model: 'claude-sonnet-5-5', costUsd: 1 }))]
+
+  // Act
+  const concern = concernOf(records, 'subagent')
+
+  // Assert
+  expect(concern.subagentAllHaiku).toBeUndefined()
+  expect(nextStepText(concern, records)).toContain('model を haiku / sonnet に')
+})
+
 test('材料（facts）のない過剰・不足は、何も言えないので null を返す', () => {
   expect(nextStepText({ kind: 'overspec', count: 3, examples: [], amountUsd: null }, [])).toBeNull()
   expect(nextStepText({ kind: 'underspec', count: 2, examples: [], amountUsd: null }, [])).toBeNull()
@@ -233,6 +279,7 @@ test('どの候補も「候補: 」で始まり、断定・指示の言い回し
     ...(['delegation', 'subagent', 'switch'] as const).map(kind =>
       nextStepText({ kind, count: 1, examples: [], amountUsd: null }, []),
     ),
+    nextStepText({ kind: 'subagent', count: 1, examples: [], amountUsd: null, subagentAllHaiku: true }, []),
     nextStepText({ kind: 'underspec', count: 2, examples: [], amountUsd: null, underspec: { haikuLowMain: true, haikuLowSubagent: true, sonnetLow: true } }, []),
   ]
 
