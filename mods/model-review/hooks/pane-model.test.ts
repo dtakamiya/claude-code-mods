@@ -403,7 +403,7 @@ test('単価不明のターンが 3 割以上なら、単価表が古い可能�
   const notes = noteTexts(rows)
 
   // Assert
-  expect(notes.some(text => text.includes('単価表が古い可能性') && text.includes('2026-10-19'))).toBe(true)
+  expect(notes.some(text => text.includes('単価表が古い可能性') && text.includes('2026-11-16'))).toBe(true)
 })
 
 test('advisor の呼び出しがあれば回数を出し、金額には含まれない旨を明記する', () => {
@@ -1039,7 +1039,7 @@ test('R7 いま切り替えたら（切替見積り）は、狭幅では見出�
 test('R8 信頼度の注記（単価不明・単価表の取得・モデルの食い違い・plan mode）は、狭幅では省き、通常・広では全部出す', () => {
   // Arrange: 単価不明のターン・plan mode・モデルの食い違いを足し、単価表の取得から 73 日後の時刻で描く。
   const turns = [...fixtureTwo(), turn({ turnId: 'n1', model: 'gateway-model', costUsd: null, costUpperUsd: null }), turn({ turnId: 'n2', planMode: true, divergedSteps: 1 })]
-  const notesAt = (columns: number): string[] => reliabilityNotes(buildPaneRows(review(turns), {}, Date.parse('2026-12-31T00:00:00Z'), columns))
+  const notesAt = (columns: number): string[] => reliabilityNotes(buildPaneRows(review(turns), {}, Date.parse('2027-01-28T00:00:00Z'), columns))
   const has = (notes: string[], prefix: string): boolean => notes.some(text => text.startsWith(prefix))
 
   // Act
