@@ -100,6 +100,10 @@ function underspecStep(facts: UnderspecFacts): string {
   return pieces.join(PIECE_SEPARATOR)
 }
 
+/** サブがすべて Haiku のとき。model は下げようがないので、呼び方（回数・渡す文脈）とキャッシュに触れる。 */
+const SUBAGENT_ALL_HAIKU_STEP =
+  'サブエージェントはすでに Haiku なので model の変更は候補になりません。呼ぶ回数や渡す文脈の量を見直す（短い調べものはメインで。キャッシュヒットが低いなら、同じ内容を何度も渡していないか）'
+
 const FIXED_STEP: Readonly<Record<'delegation' | 'subagent' | 'switch', string>> = {
   delegation: '調べもの（Read / Grep 中心）は Explore などのサブエージェントへ（メインには結果だけが戻る）',
   subagent: 'サブエージェントの定義で model を haiku / sonnet に（Explore も同じ名前の定義で上書きできる）、短い調べものはメインで',
@@ -112,6 +116,8 @@ function stepBody(concern: Concern, records: readonly TurnRecord[]): string {
       return concern.overspec === undefined ? '' : overspecStep(concern.overspec, records)
     case 'underspec':
       return concern.underspec === undefined ? '' : underspecStep(concern.underspec)
+    case 'subagent':
+      return concern.subagentAllHaiku === true ? SUBAGENT_ALL_HAIKU_STEP : FIXED_STEP.subagent
     default:
       return FIXED_STEP[concern.kind]
   }

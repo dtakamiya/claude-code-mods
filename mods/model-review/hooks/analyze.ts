@@ -101,6 +101,8 @@ export type Concern = {
   readonly underspec?: UnderspecFacts
   /** 最後に該当したターンの後に完了したメインのターン数（0 = 最新のメインのターンで該当）。委譲は直近の窓だけで判定するので付けない。 */
   readonly lastTurnsAgo?: number
+  /** サブエージェントのときだけ付く。指摘の対象のサブのターンがすべて Haiku か（true のとき「model を軽くする」候補は出さない）。 */
+  readonly subagentAllHaiku?: boolean
   /** 切替のときだけ付く。再構築がないとみなして件数・合計から外した切替の件数（0 のときは付けない）。 */
   readonly noRebuildCount?: number
 }
@@ -454,16 +456,15 @@ function subagentConcern(records: readonly TurnRecord[]): Concern | null {
     top === undefined || top.type === UNKNOWN_AGENT_TYPE || top.costUsd <= 0
       ? []
       : [`コストが最も大きい種類: ${top.type} ${top.turns} ターンで推定の ${Math.round((top.costUsd / total) * 100)}%（${top.models.join(' / ')}）`]
-  return withLast(
-    concernOf(
-      'subagent',
-      subs.length,
-      [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`, ...topText],
-      subCost,
-    ),
-    records,
-    subs[subs.length - 1],
+  const concern = concernOf(
+    'subagent',
+    subs.length,
+    [`サブエージェント ${subs.length} ターンが推定コストの ${Math.round((subCost / total) * 100)}%（${formatUsd(subCost)}）${hitText}`, ...topText],
+    subCost,
   )
+  const withFacts: Concern | null =
+    concern !== null && subs.every(record => modelRank(record.model) === RANK_HAIKU) ? { ...concern, subagentAllHaiku: true } : concern
+  return withLast(withFacts, records, subs[subs.length - 1])
 }
 
 /** 不足: 件数が MIN_UNDERSPEC_TURNS 未満なら指摘しない。例は新しいターンから順に並べる。 */
