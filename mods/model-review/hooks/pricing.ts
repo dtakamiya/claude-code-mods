@@ -1,6 +1,8 @@
 import type { CostParts } from '../types'
 
 // 単価表。出典: https://platform.claude.com/docs/en/about-claude/pricing （PRICE_TABLE_FETCHED_AT に取得）。
+// Fable 5.2 / Mythos 5.2（2026-11-16 取得、同ページの価格表の行）: 入力 $8 / 5 分書込 $10 / 1 時間書込 $16 / キャッシュ読込 $0.20 / 出力 $40（MTok）。
+// 長いプロンプトの割増はない（同ページ「Long context pricing」）。公式で確認できない値は表に足さず「単価不明」のままにする。
 // モデル ID・状態の出典: https://platform.claude.com/docs/en/about-claude/models/overview と
 // https://platform.claude.com/docs/en/about-claude/model-deprecations （いずれも 2026-10-19 取得）。
 // 単位は USD / 100 万トークン（MTok）。$ には触れない純粋な表。単価が変わったらここだけを直す。
@@ -53,6 +55,7 @@ const rates = (input: number, cacheWrite: number, cacheRead: number, output: num
 })
 const single = (tierRates: Rates): readonly RateTier[] => [{ maxPromptTokens: UNBOUNDED, rates: tierRates }]
 
+const FABLE_5_2 = rates(8, 10, 0.2, 40, 16)
 const FABLE_5_1 = rates(10, 12.5, 0.25, 50, 20)
 const FABLE_5 = rates(10, 12.5, 1, 50, 20)
 const OPUS_5_5 = rates(4, 5, 0.2, 20, 8)
@@ -64,6 +67,8 @@ const SONNET_4 = rates(3, 3.75, 0.3, 15, 6)
 const HAIKU_4_5 = rates(1, 1.25, 0.1, 5, 2)
 
 const RATE_TABLE: ReadonlyMap<string, readonly RateTier[]> = new Map<string, readonly RateTier[]>([
+  ['claude-fable-5-2', single(FABLE_5_2)],
+  ['claude-mythos-5-2', single(FABLE_5_2)],
   ['claude-fable-5-1', single(FABLE_5_1)],
   ['claude-mythos-5-1', single(FABLE_5_1)],
   ['claude-fable-5', single(FABLE_5)],

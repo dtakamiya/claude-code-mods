@@ -236,3 +236,30 @@ test('priceUsageParts: Haiku 5.5 は応答ごとのプロンプト長で単価�
   expectNear(low?.output, 0.5)
   expectNear(high?.output, 2.5)
 })
+
+test('Fable 5.2 の単価（公式 2026-11-16 取得）を、日付サフィックス・[1m]・Bedrock 表記でも同じ値で固定する', () => {
+  // Arrange: 入力 $8 / 出力 $40 / 書込 5 分 $10・1 時間 $16 / 読込 $0.20（MTok）。各 100 万 tokens。
+  const sample = usage({
+    model: 'claude-fable-5-2',
+    input_tokens: 1_000_000,
+    output_tokens: 1_000_000,
+    cache_creation_input_tokens: 1_000_000,
+    cache_read_input_tokens: 1_000_000,
+  })
+
+  // Act / Assert: 5 分 = 8 + 40 + 10 + 0.2、1 時間 = 8 + 40 + 16 + 0.2。
+  expect(priceUsage(sample)?.toFixed(6)).toBe('58.200000')
+  expect(priceUsage(sample, '1h')?.toFixed(6)).toBe('64.200000')
+  for (const alias of ['claude-fable-5-2-20261101', 'claude-fable-5-2[1m]', 'claude-fable-5-2-20261101[1m]', 'Claude-Fable-5-2']) {
+    expect(priceUsage({ ...sample, model: alias }), alias).toBe(priceUsage(sample))
+  }
+})
+
+test('Fable 5.2 は長いプロンプトでも単価が変わらない（割増なし）', () => {
+  expect(ratesFor('claude-fable-5-2', 0)).toEqual(ratesFor('claude-fable-5-2', 900_000))
+  expect(ratesFor('claude-mythos-5-2', 0)).toEqual(ratesFor('claude-fable-5-2', 0))
+})
+
+test('表にない Fable の版（5.3 など）は推定で埋めず null（単価不明）のまま', () => {
+  expect(ratesFor('claude-fable-5-3', 0)).toBeNull()
+})

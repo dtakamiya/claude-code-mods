@@ -90,6 +90,8 @@
 
 ## 単価表の更新手順
 
+現在の単価表の出典と取得日: https://platform.claude.com/docs/en/about-claude/pricing（2026-11-16 取得）。Fable 5.2 は入力 $8 / 5 分書込 $10 / 1 時間書込 $16 / キャッシュ読込 $0.20 / 出力 $40（MTok）。公式で確認できない値は推定で埋めず「単価不明」のままにする。
+
 1. 公式の価格表（https://platform.claude.com/docs/en/about-claude/pricing）を取得する。
 2. `hooks/pricing.ts` の `RATE_TABLE` と `PRICE_TABLE_FETCHED_AT` を更新する。
 3. 新世代が出たら `HAIKU_REFERENCE_MODEL` / `SONNET_REFERENCE_MODEL` / `OPUS_REFERENCE_MODEL` を差し替える（`pricing.test.ts` が、参照モデルと `CACHE_SAFE_EFFORT_MODELS` が表に引けることを確認する）。
@@ -99,4 +101,4 @@
 
 ## 開発
 
-`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。動作確認済みバージョン: Claude Code 2.1.321（validate / test / tsc）。
+`claude plugin validate mods/model-review` / `claude plugin test mods/model-review` / `scripts/typecheck.sh model-review <claude-code.d.ts>`。手順は `CLAUDE.md`。ペインの見た目は目視未確認。動作確認済みバージョン: Claude Code 2.1.325（validate / test / tsc）。
