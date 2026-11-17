@@ -2,6 +2,12 @@
 // 断定せず「候補」「目安」で書く。コマンド名は公式 docs で確認したもの（`/model [model]`・`/effort [level]`、
 // サブエージェント定義の frontmatter `model`、組み込みの Explore、`/model opusplan`）だけを書く。
 // `/model`・`/effort` はメインのセッションに効く。サブエージェント由来の指摘には定義側の設定を示す。
+// サブエージェントの effort の文言の出典（取得日 2026-11-17、公式 CHANGELOG のみ。公式 docs の sub-agents / model-config /
+// env-vars には CLAUDE_CODE_SUBAGENT_EFFORT の記載なし）:
+//   https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
+//   2.1.316「Added `CLAUDE_CODE_SUBAGENT_EFFORT` to set the effort level subagents run at when nothing else names one」
+//   2.1.317 は別モデルのサブエージェントが「そのモデルの保存済み effort か既定」で動くよう変更（セッションの effort を引き継がない）。
+//   frontmatter `effort` は https://code.claude.com/docs/en/sub-agents.md（同日取得）。
 import type { TurnRecord } from '../types'
 import { RANK_SONNET, RANK_UNRANKED, modelRank, type Concern, type OverspecFacts, type UnderspecFacts } from './analyze'
 import { formatUsd } from './format'
@@ -86,7 +92,7 @@ function overspecStep(facts: OverspecFacts, records: readonly TurnRecord[]): str
     opusplanPiece(facts, records),
     facts.subagentModel ? 'サブエージェントは定義の model を sonnet / haiku に' : null,
     mainEffortPiece(facts),
-    facts.subagentEffort ? 'サブエージェントの effort は定義側の設定による' : null,
+    facts.subagentEffort ? 'サブエージェントの effort は環境変数 CLAUDE_CODE_SUBAGENT_EFFORT か定義の effort で指定' : null,
   ].flatMap(piece => piece ?? [])
   return pieces.join(PIECE_SEPARATOR)
 }

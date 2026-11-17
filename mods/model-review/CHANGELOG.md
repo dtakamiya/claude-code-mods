@@ -2,6 +2,11 @@
 
 version は `.claude-plugin/plugin.json`。0.14.0 以前は版ごとの記録を残していないため、`git log -- mods/model-review` の PR 単位で示す（#19〜#39）。0.14.1 以降は版ごとに記録する。
 
+## 0.41.4
+- サブエージェント由来の effort 指摘の文言を、公式 CHANGELOG（2.1.316 / 2.1.317）で確認できた範囲に合わせた（mr-043）。文言のみの修正で、判定・件数・金額は変えない。
+  - 旧『サブエージェントの effort は定義側の設定による』→『サブエージェントの effort は環境変数 CLAUDE_CODE_SUBAGENT_EFFORT か定義の effort で指定』。
+  - 出典（取得日 2026-11-17）: https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md の 2.1.316 / 2.1.317。公式 docs の sub-agents には frontmatter `effort` の記載はあるが、CLAUDE_CODE_SUBAGENT_EFFORT は CHANGELOG のみで確認。
+
 ## 0.41.3
 - サブエージェント指摘の『候補』が、すでに Haiku のサブに『model を haiku / sonnet に』と勧めないようにした（mr-029）。文言のみの修正で、判定・件数・金額は変えない。
   - 指摘の対象のサブのターンが**すべて Haiku**のとき、候補を『サブエージェントはすでに Haiku なので model の変更は候補になりません。呼ぶ回数や渡す文脈の量を見直す（短い調べものはメインで。キャッシュヒットが低いなら、同じ内容を何度も渡していないか）』に差し替える。
