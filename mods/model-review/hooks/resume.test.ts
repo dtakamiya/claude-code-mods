@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 
 import type { TurnRecord } from '../types'
 import { cellWidth } from './format'
-import { MS_PER_HOUR, MS_PER_MINUTE, PROMPT_DROP_RATIO, findResumes, idleGapMs, resumeNoteText } from './resume'
+import { CACHE_ALIVE_READ_RATIO, MS_PER_HOUR, MS_PER_MINUTE, PROMPT_DROP_RATIO, findResumes, idleGapMs, resumeNoteText } from './resume'
 
 // 架空データのみ。主な値: 直前ターンの入力 100,000 tokens、再開したターンは全文を書き直して書込 90,000・読込 500。
 const BASE_MS = 1_000_000_000_000
@@ -109,6 +109,22 @@ test('入力の減り方の境界: 直前の PROMPT_DROP_RATIO 以下は圧縮�
     resumedAfter(2 * MS_PER_HOUR, { firstStepCacheWrite: prompt, firstStepCacheRead: 0, firstStepPromptTokens: prompt })
   expect(findResumes([previous(), mk(atRatio)]).count).toBe(0)
   expect(findResumes([previous(), mk(atRatio + 1_000)]).count).toBe(1)
+})
+
+test('FP1（mr-038）: 8 分あき・読込 50,000（直前の入力 50,500 にほぼ一致）・書込 60,000 の大きな貼付は、キャッシュが生きているので出さない', () => {
+  const prev = previous({ firstStepPromptTokens: 50_500, firstStepCacheRead: 50_000, firstStepCacheWrite: 500 })
+  const pasted = resumedAfter(8 * MS_PER_MINUTE, { firstStepCacheRead: 50_000, firstStepCacheWrite: 60_000, firstStepPromptTokens: 110_500 })
+  expect(findResumes([prev, pasted]).count).toBe(0)
+})
+
+test('読込の境界（mr-038）: 直前の入力の CACHE_ALIVE_READ_RATIO 以上を読めていれば出さず、わずかに下なら出す。書込大・読込小は従来どおり出る', () => {
+  const prevPrompt = previous().firstStepPromptTokens!
+  const atRatio = Math.ceil(prevPrompt * CACHE_ALIVE_READ_RATIO)
+  const mk = (read: number) =>
+    resumedAfter(2 * MS_PER_HOUR, { firstStepCacheRead: read, firstStepCacheWrite: 150_000, firstStepPromptTokens: read + 150_000 })
+  expect(findResumes([previous(), mk(atRatio)]).count).toBe(0)
+  expect(findResumes([previous(), mk(atRatio - 1)]).count).toBe(1)
+  expect(findResumes([previous(), resumedAfter(2 * MS_PER_HOUR)]).count).toBe(1)
 })
 
 test('直前ターンの入力長が分からなければ、圧縮でないと言えないので出さない', () => {
