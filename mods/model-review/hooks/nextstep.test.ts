@@ -128,7 +128,7 @@ test('サブエージェントだけの effort 起因の過剰には、メイン
 
   const text = nextStepText(concernOf(records, 'overspec'), records)
 
-  expect(text).toBe(`${NEXT_STEP_PREFIX}サブエージェントの effort は定義側の設定による`)
+  expect(text).toBe(`${NEXT_STEP_PREFIX}サブエージェントの effort は環境変数 CLAUDE_CODE_SUBAGENT_EFFORT か定義の effort で指定`)
 })
 
 test('サブエージェントのモデル起因の過剰は、サブエージェント定義の model を候補にする', () => {
