@@ -19,6 +19,12 @@ export const TTL_LONG_MS = MS_PER_HOUR
  */
 export const PROMPT_DROP_RATIO = 0.5
 
+/**
+ * 仮置き（実ログで見直す。mr-038）: 読込が直前のメインのターンの入力長のこの割合以上なら、キャッシュは生きていたとみなして再開と言わない。
+ * 大きな貼付で書込が増えても、読込が直前の入力に届いていれば再構築ではない。割合は実ログが無く根拠がないので、0.8 は暫定値。
+ */
+export const CACHE_ALIVE_READ_RATIO = 0.8
+
 export type ResumeEvent = {
   readonly record: TurnRecord
   /** 直前のメインのターンの完了から、このターンの開始までの間隔（ms）。 */
@@ -53,7 +59,7 @@ export function idleGapMs(prev: TurnRecord, current: TurnRecord): number | null 
 }
 
 /**
- * 全文を書き直した形か: 最初の応答の書込が下限以上で読込より大きい。圧縮直後（afterCompact・入力の急減）と、根拠の記録が無いものは除く。
+ * 全文を書き直した形か: 最初の応答の書込が下限以上で読込より大きく、読込が直前の入力長に届いていない（キャッシュが生きていない）。圧縮直後（afterCompact・入力の急減）と、根拠の記録が無いものは除く。
  * 直前ターンの入力長が無ければ、圧縮でないと言えないので除く。
  */
 function looksRebuilt(prev: TurnRecord, current: TurnRecord): boolean {
@@ -63,6 +69,7 @@ function looksRebuilt(prev: TurnRecord, current: TurnRecord): boolean {
   if (write < MIN_REBUILD_WRITE_TOKENS || write <= read) return false
   const prevPrompt = prev.firstStepPromptTokens
   if (prevPrompt === undefined || prevPrompt <= 0) return false
+  if (read >= prevPrompt * CACHE_ALIVE_READ_RATIO) return false
   return prompt > prevPrompt * PROMPT_DROP_RATIO
 }
 
